@@ -2,10 +2,12 @@
 
 | 字段 | 内容 |
 |------|------|
-| 版本 | v0.2 |
-| 日期 | 2026-08-27 |
+| 版本 | v0.3 |
+| 日期 | 2026-08-30 |
 | 状态 | 已批准 |
-| 语言 | **TypeScript + Node** |
+| 语言 | **TypeScript + Node（bun 装依赖，node 跑产物）** |
+
+> v0.3 变更：目录结构按 macaron-agent 分层纪律重排（types/enums/constant/domain 前置、biz 与 service 分离、data 层统一管 SQLite）；新增展示层——自包含 HTML 报告（report/）。流水线 + 两洞的核心架构不变。
 
 ## 核心观念
 
@@ -48,6 +50,30 @@
 | 评测重放 | pi 起干净会话跑任务 | 与打标同内核，环境一致 |
 
 ---
+
+## 展示层：自包含 HTML 报告（不做 GUI / web 服务）
+
+Demo 的核心镜头是「500 步的墙 → 30 步的精华」，载体是**流水线最后一步导出的单个 .html 文件**（内嵌结果 JSON + vanilla JS，零依赖、零服务器）：
+
+- 组会投屏双击打开；发文件即演示。
+- HTML 报告就是 Playback Cut（给人看的产物）的实例化；Training Cut 继续是 JSONL，不需要 UI。
+- 报告里每个被删段落可点开：删除理由 + 打标来源（规则名 / 洞 B 标签 + 置信度）。**可解释的裁剪是信任来源**，也是区别于「光给一条短 trace」的卖点。
+- 成本可视化必放首页：规则层处理了多少段、LLM 只看了百分之几——这是第二个卖点。
+
+明确不做：Electron/Tauri 桌面 GUI（一周工作量，零增益）；本地 web server（demo 无法传播）。`report/` 与 `eval/` 分开：eval 出数字，report 出给人看的东西。
+
+## 内核：薄包 pi SDK，不引入 agent 框架
+
+整个系统**不是 agent**，是流水线。需要封装的只有两个函数，放 `agent/sessions/`：
+
+```text
+skeletonPass(trace)                          → 骨架 + 场景分类（洞 A，强模型）
+labelWindow(segments, skeleton, skill)      → 四类标签 + 置信度（洞 B）
+```
+
+场景分类不单独烧调用：它是洞 A 骨架 pass 的副产品输出（`scenario` 字段），orchestrator 拿它查 skill 路由表（`constant/`），确定性路由。工具只有 `label_segment` / `check_continuity` 两个，不加第三个——工具越多洞里的 LLM 越分心，成本卖点就没了。
+
+
 
 ## 分层与职责
 
@@ -120,23 +146,40 @@
 
 ## 目录结构
 
+按 macaron-agent 分层纪律重排：**types / enums / constant / domain 前置（契约先于实现）；biz 纯逻辑与 service 入口薄壳分离；所有库操作走 data 层**。
+
 ```text
 trace-distiller/
+├─ AGENTS.md              # 工程规则：命令、TS 风格、分层纪律
+├─ package.json           # bun 装依赖、node 跑产物；typecheck / lint / test scripts
+├─ tsconfig.json / tsconfig.build.json / eslint.config.js
+├─ script/
+│  └─ run-distill.ts      # CLI 入口：distill <trace.jsonl> [--report out.html]
 ├─ src/
-│  ├─ adapters/           # L0: pi session / claude-code / swebench
-│  ├─ pipeline/
-│  │  ├─ segmenter.ts     # 切段
-│  │  ├─ rules.ts         # 规则打标
-│  │  ├─ orchestrator.ts  # 纯 TS 编排（无 LLM）
-│  │  └─ assembler.ts     # 全局重组
+│  ├─ types/              # Trace 契约：trace.ts segment.ts label.ts cut_plan.ts
+│  ├─ enums/              # label_enum.ts scenario_enum.ts agent_role_enum.ts（每 enum 一文件）
+│  ├─ constant/           # 压缩率目标、窗口大小、保守不裁阈值、skill 场景路由表
+│  ├─ domain/             # LabelDecision / CutDecision / SpanViolation 纯模型
+│  ├─ adapters/           # L0: pi session / claude-code / swebench → 规范 Trace
+│  ├─ pipeline/           # biz 层：segmenter.ts rules.ts orchestrator.ts assembler.ts
 │  ├─ agent/              # pi 二开（仅两洞）
+│  │  ├─ sessions/        # skeletonPass / labelWindow（唯一 pi 依赖点）
 │  │  ├─ extension.ts     # label_segment / check_continuity
-│  │  ├─ skills/          # 分场景裁剪 skill（Markdown）
-│  │  └─ sessions/        # 骨架 / 打标会话封装（内核可换边界）
-│  └─ eval/               # L4: 指标 + QA + 重放
-├─ data/                  # 原料与产物（JSONL 等）
-└─ benchmark/             # 数据集 + 基线报告
+│  │  └─ skills/           # 分场景裁剪 skill（Markdown）
+│  ├─ data/               # SQLite：打标结果、指标（biz 不直接碰库）
+│  ├─ eval/               # L4: 指标统计 + QA + 重放
+│  ├─ service/            # 入口薄壳：cli.ts（命令）、report.ts（调 renderer）
+│  ├─ report/             # HTML 报告渲染（纯函数：结果 JSON → html 字符串）
+│  └─ utils/              # 仅无状态小函数：token 估算、jsonl 读写、logger
+│                         # 状态相关的一律进 domain / data，不许堆 utils
+├─ tests/                 # biz 层单测为主
+├─ examples/              # 3–5 条原料 + 跑出的报告（demo 素材）
+├─ data/                  # 运行时原料与产物（大文件 gitignore）
+├─ benchmark/             # 数据集 + 基线报告
+└─ docs/                  # 架构、里程碑、ADR
 ```
+
+与 macaron-agent 的对应：**biz → pipeline + agent；service → service/cli；data/Mongo → data/SQLite**。macaron 的 remote / middleware / decorator / response / observability（在线服务那套）不抄——离线工具的 observability 就是 SQLite 打标表 + 报告里的成本统计。
 
 MVP 先固定 **3–5 个** skill 文件，再扩场景。
 
@@ -167,13 +210,14 @@ ADR-0006 已由 [0008](./adr/0008-pipeline-plus-two-agent-holes.md) 取代。
 
 ## 落地顺序（建议）
 
-1. 规范 Trace 契约 + L0 适配器（先 Claude Code / JSONL）  
-2. `segmenter` + `rules` + SQLite 段表  
+1. `types/` + `enums/`：Trace 契约（JSONL schema）——一切的前提，纯设计活不依赖原料  
+2. L0 适配器（先 Claude Code / JSONL）+ `segmenter` + `rules` + SQLite 段表  
 3. `orchestrator` 串 L0→L1→（跳过洞）→保守导出，打通压缩率统计  
-4. 洞 A 骨架 pass（pi session 封装）  
-5. 洞 B `label_segment` + map-reduce + skill×3  
-6. `assembler` + `check_continuity` + 双产物导出  
-7. `eval/`：QA + 成本比；重放接 benchmark  
+4. `report/` HTML 报告骨架——demo 骨架提前到 M1 中段就有，报告要边做边录讲解视频  
+5. 洞 A 骨架 pass（pi session 封装 + 场景分类输出）  
+6. 洞 B `label_segment` + map-reduce + skill×3  
+7. `assembler` + `check_continuity` + 双产物导出  
+8. `eval/`：QA + 成本比；重放接 benchmark  
 
 ---
 
@@ -182,4 +226,4 @@ ADR-0006 已由 [0008](./adr/0008-pipeline-plus-two-agent-holes.md) 取代。
 - 用 LangChain / CrewAI 等编排整条 Distiller  
 - 让 LLM 决定切段粒度、流水线步骤顺序或重试策略  
 - 把重放成功率塞进每个打标窗口（太贵；属 L4 / 发布门禁）  
-- MVP 先做 GUI  
+- MVP 先做 GUI；也不做本地 web server——展示层只做自包含 HTML 报告导出  

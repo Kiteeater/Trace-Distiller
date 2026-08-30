@@ -2,7 +2,7 @@
 
 > Agent 一次任务可能留下几百步记录。本工具只处理「最终做对了」的那条，把它剪短：训练能用，人也能看懂。
 
-**当前状态**：v0.2 架构已定（流水线 + 两个 agent 洞，TypeScript + pi）。产品 PRD 仍为草案；代码尚未开始。
+**当前状态**：v0.3 架构已定（流水线 + 两个 agent 洞，TypeScript + pi，自包含 HTML 报告做展示层，目录按 macaron-agent 分层纪律重排）。产品 PRD 仍为草案；代码尚未开始。
 
 ---
 
@@ -70,11 +70,12 @@ MVP 只看两件事：
 先看这个 README 建立直觉，再按需深入：
 
 - [PRD.md](./PRD.md) — 完整需求（范围、指标、风险）  
-- [docs/architecture.md](./docs/architecture.md) — **流水线 + 两个 agent 洞**（编排纯 TS；LLM 只在洞里）  
+- [docs/architecture.md](./docs/architecture.md) — **流水线 + 两个 agent 洞**（TS + pi；v0.3 含分层与 HTML 报告展示层）  
 - [benchmark/README.md](./benchmark/README.md) — 怎么打分、怎么防作弊（压缩和保真必须绑在一起看）  
 - [CONTEXT.md](./CONTEXT.md) — 项目里专用词的统一定义  
 - [docs/milestones.md](./docs/milestones.md) — 分期做什么、怎么算完成  
-- [docs/adr/](./docs/adr/) — 已经拍板的关键决定  
+- [docs/TODO.md](./docs/TODO.md) — **执行队列**（动工从这看：Trace JSON 设计是 P0 前置项）  
+- [docs/adr/](./docs/adr/) — 已经拍板的关键决定（0009：AgentView 卡片流 + 裁剪凭证）  
 
 ---
 
@@ -82,11 +83,13 @@ MVP 只看两件事：
 
 ```text
 PRD.md / CONTEXT.md / README.md   产品与语言
-docs/architecture.md              流水线 + 洞 A/B（TS + pi）
+docs/architecture.md              流水线 + 洞 A/B（v0.3，含分层与 HTML 报告展示层）
 benchmark/                        评测设计与（后续）跑分
 docs/                             里程碑、决策记录
-data/                             原料与产物（JSONL 等）
-src/adapters|pipeline|agent|eval  实现（见 src/README）
+data/                             运行时原料与产物（JSONL 等，大文件 gitignore）
+examples/                         3–5 条原料 + 跑出的报告（demo 素材，待建）
+src/                              实现（types/enums/constant/domain 契约前置；见 src/README）
+script/                           CLI 入口（run-distill，待建）
 ```
 
 ---
