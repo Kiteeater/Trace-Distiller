@@ -32,3 +32,27 @@ src/
 ```
 
 落地顺序见 architecture「落地顺序」。当前为空，待按契约开工。
+
+模块设计文档（字段、边界、开放问题、完成标准）在 [docs/modules/](../docs/modules/)：
+
+| 目录 | 设计文档 |
+|------|----------|
+| `types/` | [types.md](../docs/modules/types.md) |
+| `enums/` | [enums.md](../docs/modules/enums.md) |
+| `constant/` | [constant.md](../docs/modules/constant.md) |
+| `domain/` | [domain.md](../docs/modules/domain.md) |
+| `adapters/` | [adapters.md](../docs/modules/adapters.md) |
+| `pipeline/segmenter.ts` | [pipeline-segmenter.md](../docs/modules/pipeline-segmenter.md) |
+| `pipeline/rules.ts` | [pipeline-rules.md](../docs/modules/pipeline-rules.md) |
+| `pipeline/orchestrator.ts` | [pipeline-orchestrator.md](../docs/modules/pipeline-orchestrator.md) |
+| `pipeline/assembler.ts` | [pipeline-assembler.md](../docs/modules/pipeline-assembler.md) |
+| `agent/sessions/` | [agent-sessions.md](../docs/modules/agent-sessions.md) |
+| `agent/extension.ts` | [agent-extension.md](../docs/modules/agent-extension.md) |
+| `agent/skills/` | [agent-skills.md](../docs/modules/agent-skills.md) |
+| `data/` | [data.md](../docs/modules/data.md) |
+| `eval/` | [eval.md](../docs/modules/eval.md) |
+| `report/` | [report.md](../docs/modules/report.md) |
+| `service/` | [service.md](../docs/modules/service.md) |
+| `utils/` | [utils.md](../docs/modules/utils.md) |
+
+进程入口 `script/run-distill.ts`：[script-run-distill.md](../docs/modules/script-run-distill.md)。索引：[docs/modules/README.md](../docs/modules/README.md)。

@@ -71,6 +71,7 @@ MVP 只看两件事：
 
 - [PRD.md](./PRD.md) — 完整需求（范围、指标、风险）  
 - [docs/architecture.md](./docs/architecture.md) — **流水线 + 两个 agent 洞**（TS + pi；v0.3 含分层与 HTML 报告展示层）  
+- [docs/modules/](./docs/modules/) — **模块设计契约**（types → 洞 A/B → assembler → 报告；动工按模块看）  
 - [benchmark/README.md](./benchmark/README.md) — 怎么打分、怎么防作弊（压缩和保真必须绑在一起看）  
 - [CONTEXT.md](./CONTEXT.md) — 项目里专用词的统一定义  
 - [docs/milestones.md](./docs/milestones.md) — 分期做什么、怎么算完成  
@@ -84,8 +85,9 @@ MVP 只看两件事：
 ```text
 PRD.md / CONTEXT.md / README.md   产品与语言
 docs/architecture.md              流水线 + 洞 A/B（v0.3，含分层与 HTML 报告展示层）
+docs/modules/                     各 src 模块设计契约（不是实现）
 benchmark/                        评测设计与（后续）跑分
-docs/                             里程碑、决策记录
+docs/                             里程碑、决策记录、模块设计
 data/                             运行时原料与产物（JSONL 等，大文件 gitignore）
 examples/                         3–5 条原料 + 跑出的报告（demo 素材，待建）
 src/                              实现（types/enums/constant/domain 契约前置；见 src/README）
