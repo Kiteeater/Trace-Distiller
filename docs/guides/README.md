@@ -20,17 +20,18 @@
 - 编排纯 TypeScript，无 LangChain；LLM 只在洞 A / 洞 B
 - 洞 A = 头尾意图 + 验证点锚点 + 增量骨架，不是全量读（[ADR-0009](../adr/0009-agent-view-and-cut-warrant.md)）
 - 规则优先；Admission Gate；Training / Playback 双产物同源 CutPlan
-- 产品形态：CLI + CutProfile；展示层只有自包含 HTML 报告
-- 失败 Trace 不分析；不做实时干预
+- 产品形态：CLI + CutProfile；训练侧主入口 CLI（Training Cut / JSONL）；复盘侧 CLI + 只读即时页，另有事后自包含 HTML Playback
+- **live = 同步 Distiller 自己的裁剪过程与结果**，不是盯 Claude Code / 其它 coding agent 的运行进度
+- 失败 Trace 不分析；只读 live 绝不干预；蒸馏主链路仍离线
 
 ## 全部 guides
 
 | 文档 | 一句话 | 从哪路来 |
 |------|--------|----------|
-| [users-and-surfaces.md](./users-and-surfaces.md) | 两类读者、CLI / CutProfile / HTML 报告、一天怎么跑通一条 | 用户面 |
-| [tools.md](./tools.md) | 洞内只有 `label_segment` / `check_continuity` / 确定性 `read_segment` | 用户面 |
-| [ingest-and-preprocess.md](./ingest-and-preprocess.md) | 过门之后：切段 → 规则 → 未决才进洞 | 用户面 |
-| [agent-gateway.md](./agent-gateway.md) | 「Agent Gateway」= 离线 Trace 接入门面，不是在线流量网关 | 评测 / 接入 |
+| [users-and-surfaces.md](./users-and-surfaces.md) | 两类读者；训练 CLI；复盘 CLI + 只读 live（盯 Distiller 裁剪，不是对方 agent）+ 事后 HTML | 用户面 |
+| [tools.md](./tools.md) | 洞内工具草案（稍后拍板）+ Live 复盘工具闭集（已拍） | 用户面 |
+| [ingest-and-preprocess.md](./ingest-and-preprocess.md) | 过门之后：切段 → 规则 → 未决才进洞；GT / 锚点 / sig / token / 切段默认已收 | 用户面 |
+| [agent-gateway.md](./agent-gateway.md) | 「Agent Gateway」= 离线 Trace 接入门面，不是在线网关，也不是 live 页 | 评测 / 接入 |
 | [datasets.md](./datasets.md) | 原料从哪来、GT 门槛、M1 的 3–5 条、怎么双标 | 评测 / 接入 |
 | [file-architecture.md](./file-architecture.md) | architecture v0.3 目录树确认书：已定 vs OPEN | 架构 / harness |
 | [agent-harness.md](./agent-harness.md) | 两个洞的 harness，不是 Distiller Runtime Agent | 架构 / harness |
@@ -68,7 +69,7 @@ guides 不是可执行手册的替代——CLI 还没建。跑通一条成功 Tr
 node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report out.html]
 ```
 
-无 Ground Truth → 拒之门外。展示层是一个 `.html` 文件，没有 `--serve`。
+无 Ground Truth → 拒之门外。事后展示层仍是自包含 `.html`；复盘跑着时可挂只读 live 页（同步 Distiller 裁剪进度，不是对方 agent）。
 
 ## 你还没点名但该有
 
@@ -99,10 +100,11 @@ node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report ou
 
 写在 PRD / architecture，guides 不得开口子：
 
-- 不做实时干预，不代理运行中的 agent
+- 不做实时干预，不代理运行中的 agent；只读 live 页不得改编排
+- **live ≠ 盯 coding agent**：同步的是 Distiller 自己的裁剪过程与结果
 - 不做失败 Trace 分析
 - 不改模型权重
-- 不做 GUI / 本地 web server（展示 = 自包含 HTML）
+- 不做完整 GUI / 账号体系；蒸馏主链路仍离线。为本机复盘允许轻量只读本地页；事后 Playback 仍是自包含 HTML
 - 不用 LangChain / CrewAI 编排；LLM 不决定切段粒度或步骤顺序
 - 不把重放成功率塞进每个打标窗口
 - 不抄 macaron 的 remote / middleware / 在线 observability
@@ -121,7 +123,7 @@ node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report ou
 
 未拍板的不在 guides 里私自定案。总入口：[docs/TODO.md](../TODO.md)。
 
-动工前置（P0）现在卡在 **AgentView Trace JSON 结构体**、token 口径、session ≠ trace 切分、盲测判分协议等。各 guide 文末的「开放问题」都链回 TODO / 对应 module，关闭时改 TODO 和 ADR，而不是只改 guide。
+动工前置（P0）仍卡在 **AgentView Trace JSON 结构体**、盲测判分协议等。token 口径、session ≠ trace 切分、GT / 锚点 / sig / Action Unit 切段等已在 [ingest-and-preprocess.md](./ingest-and-preprocess.md) 收成默认。各 guide 文末剩余「开放问题」链回 TODO / 对应 module，关闭时改 TODO 和 ADR，而不是只改 guide。
 
 ## 边界（非目标）
 

@@ -1,32 +1,42 @@
-# Distiller 洞内工具
+# Distiller 工具闭集
 
-流水线里唯一允许 LLM 动手的地方是两个 **Agent 洞**（[ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)）。洞里的模型不能「写一篇我认为该删什么」，只能通过工具交结构化判断。判断力工具只有两个；另有一个确定性取数通道。
+本文件分两块，**不要混**：
 
-这是 **Distiller 自己的工具**，不是被裁剪的那个 agent 的工具。两者不要混。
+1. **蒸馏洞工具** — 洞 A / 洞 B 里模型能调的闭集（与裁剪判断相关）。
+2. **Live 复盘工具** — 只读即时页订阅 Distiller **自己的**裁剪进度与结果；纯 TS，不套 LLM。
 
-字段级 schema 见 [agent-extension.md](../modules/agent-extension.md)；谁开会话见 [agent-sessions.md](../modules/agent-sessions.md)。本文件只讲「有哪些、为什么只有这些、明确不加什么」。
+这是 **Distiller 自己的工具**，不是被裁剪的那个 agent 的工具。两者不要混。live 也**不是**盯 Claude Code / 其它 coding agent 的运行进度。
+
+字段级 schema 见 [agent-extension.md](../modules/agent-extension.md)；谁开会话见 [agent-sessions.md](../modules/agent-sessions.md)；使用面见 [users-and-surfaces.md](./users-and-surfaces.md)。本文件只讲「有哪些、为什么只有这些、明确不加什么」。
 
 ---
 
 ## 目的
 
-- 给实现者和写 skill 的人一张闭集：洞里能调什么。
+- 给实现者和写 skill 的人一张闭集：洞里能调什么；live 页能订什么。
 - 把「Distiller 工具」和「原料 Trace 里出现的对方工具」切开，避免有人去做代理 / 重放对方的 Read、Bash。
-- 解释 architecture「不加第三个工具」和 TODO 里 `read_segment` 如何同时成立。
+- 把 live 复盘与蒸馏洞分开：前者只读进度，后者才涉及 LLM 判断。
 
 ---
 
 ## 读者
 
 - 实现洞 A / 洞 B / extension 的人。
+- 实现只读 live 页 / job 订阅的人。
 - 写分场景 skill 的人（需要知道模型该调什么、不该幻想有什么）。
-- 误以为 Distiller 会「替原 agent 再跑一遍工具」的人——请先读「和对方工具的区别」。
+- 误以为 Distiller 会「替原 agent 再跑一遍工具」或「live = 盯 Claude Code」的人——请先读边界与「和对方工具的区别」。
 
-日常用户（只要 Training Cut / 只要看报告）不必读本文件，见 [users-and-surfaces.md](./users-and-surfaces.md)。
+日常用户（只要 Training Cut / 只要看报告）不必细读本文件，见 [users-and-surfaces.md](./users-and-surfaces.md)。
 
 ---
 
-## 已定结论
+# 一、蒸馏洞工具
+
+> **状态：稍后拍板。** 下列原文保留作现行设计草案；**本轮用户面 / live 收口并不等于洞工具闭集已通过。** 实现与 ADR 关闭前，勿当成终局契约。
+
+流水线里唯一允许 LLM 动手的地方是两个 **Agent 洞**（[ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)）。洞里的模型不能「写一篇我认为该删什么」，只能通过工具交结构化判断。判断力工具只有两个；另有一个确定性取数通道。
+
+## 已定结论（草案，稍后拍板）
 
 1. **判断力工具只有两个**（[architecture.md](../architecture.md)）：`label_segment`、`check_continuity`。不加第三个判断力工具。工具越多，洞里的模型越分心，成本卖点就没了。
 2. **`read_segment` 不是判断力工具**。它是确定性取数：按 segment id 把 RawTrace 原文拉上来，把注意力从卡片升到 `full`。由 extension 提供、sessions 接到 RawTrace。架构要的「两个判断工具」仍然成立。
@@ -39,7 +49,7 @@
 
 ---
 
-## 怎么用 / 怎么跑
+## 怎么用 / 怎么跑（洞内）
 
 洞里实际能调用的就这三件事：
 
@@ -80,7 +90,7 @@
 
 ---
 
-## 边界（非目标）
+## 洞内边界（非目标）
 
 明确不加：
 
@@ -96,16 +106,17 @@
 
 ---
 
-## 开放问题
+## 洞工具开放问题（稍后拍板）
 
 1. **`read_segment` 的挂载方式**（[agent-extension.md](../modules/agent-extension.md)）：现在的设计是非判断力 pi tool，以同时满足「两个判断工具」和「拉取式注意力」。若审阅要求字面「工具列表只有两个」，则改成 sessions 在 prompt 外的 RPC，而不是 pi tool。未在 ADR 关闭。
 2. **`check_continuity` 分数是否强约束为 1–5**（对齐 benchmark 连贯性量表）。
 3. **洞 B 一窗一会话还是多窗复用**。MVP 建议一窗一会话，贵但干净；工具状态泄漏风险是复用的代价。
 4. **pi SDK spike 未做**：结构化输出、自定义消息序列、provider 降档——工具声明的具体写法以 spike 为准，本文件不锁 SDK API。
+5. **整节洞工具闭集本身**：本轮只保留草案并标注稍后拍板，不视为已通过。
 
 ---
 
-## 完成标准
+## 洞工具完成标准（草案验收勾选，闭集拍板后再当硬门禁）
 
 - [ ] extension 注册表快照里，判断力工具恰好为 `label_segment`、`check_continuity`；另可有确定性 `read_segment`；无 `edit_trace` 一类。
 - [ ] 非法 Label 被工具层拒绝；未知 `segment_id` 的 `read_segment` 报错且不返回其它段。
@@ -113,3 +124,63 @@
 - [ ] 模型不调 `label_segment` 就结束时，该窗 Fail-Closed Keep，而不是被标成死胡同。
 - [ ] skill 文档写明：只使用本闭集；trace 里的对方工具调用是数据不是可调工具。
 - [ ] 全仓库不出现「Distiller 代理原 agent 工具」的实现或指南表述。
+
+---
+
+# 二、Live 复盘工具（已拍板）
+
+与蒸馏洞**分开**。这是只读即时页用的订阅闭集：同步 Distiller **自己的裁剪过程与结果**，不是对方 coding agent 的运行态。
+
+Live 页 **纯 TypeScript 推送**，**不套 LLM**。live 观察与离线蒸馏编排分开；页只挂订阅。
+
+## 已定结论
+
+1. **Live 工具闭集**（仅此）：
+
+| 名字 | 作用 |
+|------|------|
+| `list_jobs` | 列出本机可订阅的蒸馏 job |
+| `attach_job` | 挂上某个 job 的进度流 |
+| `detach_job` | 取消订阅 |
+| `get_cut_progress` | 切段 / 规则 / 洞 / 组装进度 + 压缩率暂值 |
+| `get_partial_result` | 当前 Playback / 卡片流片段 |
+| `get_warrant_tail` | 最新一批 keep / drop（CutWarrant 尾） |
+
+2. **页只读**：只订阅上述进度与片段，不进编排路径。
+3. **明确不加**（硬边界）：
+   - `send_message`
+   - `interrupt`
+   - `inject_prompt`
+   - 代跑对方工具
+   - 改蒸馏编排（改 profile / 改步骤顺序 / 触发重跑以外的任何「动手」——重跑仍走 CLI）
+4. **`list_sessions`（盯 Claude Code JSONL 尾）降级**：可选「原料观察」，**不是 live**，**MVP 不做**。live 只盯 Distiller job，不盯对方 agent 的 session 文件尾。
+
+## 怎么用 / 怎么跑（live）
+
+预期路径（实现未开工）：
+
+1. CLI 启动一条离线蒸馏 job。
+2. 本机只读页 `list_jobs` → `attach_job`。
+3. 轮询或推送：`get_cut_progress` / `get_partial_result` / `get_warrant_tail`。
+4. 结束或离开：`detach_job`。
+5. 事后 Playback 仍可打开自包含 HTML（见 [users-and-surfaces.md](./users-and-surfaces.md)）；HTML 不是 live，是产物。
+
+## Live 边界（非目标）
+
+- 不是 Agent Gateway，不是在线流量网关。
+- 不是盯 Claude Code / 其它 coding agent 的运行进度。
+- 不套 LLM、不做判断、不写 CutWarrant。
+- 不加干预类工具（上表「明确不加」）。
+- MVP 不做 `list_sessions` 原料观察。
+
+## Live 开放问题
+
+1. 推送通道（进程内事件 / 本机 socket / 临时端口）未锁；闭集与只读语义已锁。
+2. 多 job、崩溃重连、progress schema 字段级形状：落 modules 时再写，本 guide 不抄类型表。
+
+## Live 完成标准
+
+- [ ] live 页可订阅 Distiller job 的进度、Partial Playback、warrant 尾；纯 TS，无 LLM。
+- [ ] 工具表面无 `send_message` / `interrupt` / `inject_prompt` / 代跑对方工具 / 改编排入口。
+- [ ] 文档与 `--help` 写明：live = Distiller 裁剪过程，≠ 对方 agent 运行态。
+- [ ] MVP 无 `list_sessions` 盯 JSONL 尾的实现；若目录预留，标注非 live、非 MVP。
