@@ -31,6 +31,8 @@ interface CliArgs {
   sqlite_path?: string
   out_dir?: string
   report_path?: string
+  live_dump_dir?: string
+  live_socket_path?: string
   no_llm?: boolean
 }
 
@@ -66,7 +68,7 @@ function writeReport(model: ReportModel, outPath: string): void
 - import pi。
 - 手写 SQL。
 - 在 cli.ts 里复制一份规则。
-- 启动 HTTP listen。
+- 启动 HTTP listen / TCP 端口。Unix domain socket 只走 `live_socket.ts`，默认关闭。
 
 ---
 
@@ -104,7 +106,8 @@ service
 - [x] `--help` 可用。
 - [x] 无 GT 输入退出码非 0，且不写 distilled 产物。
 - [x] `--no-llm` 在 mock 环境跑通。
-- [x] HTML 由 `src/report/html.ts` 的 `renderHtml` 写出；不另开 `service/report.ts`（树锁在 `cli.ts` + `live.ts`）。
+- [x] HTML 由 `src/report/html.ts` 的 `renderHtml` 写出；不另开 `service/report.ts`（树锁在 `cli.ts` + `live.ts` + `live_socket.ts`）。
 - [x] 无 HTTP server、无 pi import。
 - [x] `eval <trace_id> --sqlite` 读指标；`report <trace_id> --sqlite --out` 从库重建 ReportModel。
-- [x] `--live-dump` / `live-dump` 写出只读 live.json + live.html（file://）；不 listen。
+- [x] `--live-dump` / `live-dump` 写出只读 live.json + live.html（file://）；默认不 listen。
+- [x] 可选 `--live-socket <path>`：distill 期间 Unix domain socket；结束关闭。无 HTTP。

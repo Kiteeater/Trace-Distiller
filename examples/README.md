@@ -33,6 +33,6 @@ node script/run-distill.ts distill examples/add-fix.jsonl \
   --live-dump /tmp/distiller-live
 ```
 
-双击 `/tmp/distiller-live/live.html`（`file://`），不要起 HTTP server。
+双击 `/tmp/distiller-live/live.html`（`file://`），不要起 HTTP server。默认传输是进程内 job 表 + 这份 dump；`--live-socket` 可选，默认关闭。
 
 不要把真实 session 或密钥放进本目录。

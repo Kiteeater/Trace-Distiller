@@ -6,7 +6,8 @@ import type { SegmentCard } from '../types/segment.ts'
 
 /**
  * Live 复盘工具闭集（已拍板）。只读订阅 Distiller 自己的裁剪 job，不是对方 agent。
- * M1 传输 = 进程内 `registerJobFromResult` 内存表。禁止 HTTP listen。Unix socket 以后再说。
+ * 源 = 进程内 `registerJobFromResult` 内存表。禁止 HTTP listen。
+ * 可选 Unix domain socket 见 `live_socket.ts`（默认关闭，不替代本表）。
  */
 export const LIVE_TOOL_NAMES = [
   'list_jobs',

@@ -32,6 +32,7 @@ import {
 } from '../types/raw_trace.ts'
 import { error as logError, info as logInfo } from '../utils/logger.ts'
 import { dumpAllJobs, dumpJobSnapshot, registerJobFromResult, resetLiveState, type StageState } from './live.ts'
+import { startLiveSocket, stopLiveSocket } from './live_socket.ts'
 
 export const EXIT_OK = 0
 export const EXIT_OTHER = 1
@@ -47,6 +48,7 @@ export interface CliArgs {
   report_path?: string
   out_path?: string
   live_dump_dir?: string
+  live_socket_path?: string
   no_llm?: boolean
   help?: boolean
 }
@@ -55,7 +57,7 @@ const L4_NOTE =
   'replay/qa 需真模型 L4（TRACE_DISTILLER_MODEL_L4）与干净会话，本命令不跑重放或 QA'
 
 const HELP = `Usage:
-  node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--live-dump dir] [--no-llm]
+  node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--live-dump dir] [--live-socket path] [--no-llm]
   node script/run-distill.ts eval <trace_id> --sqlite path
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
   node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
@@ -66,7 +68,7 @@ FakeSessionBackend is for tests only. Production with_llm needs TRACE_DISTILLER_
 
 eval reads distill metrics from SQLite. ${L4_NOTE}.
 
-live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. No HTTP listen.
+live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
 Two products: Training Cut / JSONL (train) and Playback + live/report HTML (review). CutProfile is the customisation surface.
 
@@ -92,6 +94,7 @@ export function parseArgv(argv: string[]): CliArgs {
   let report_path: string | undefined
   let out_path: string | undefined
   let live_dump_dir: string | undefined
+  let live_socket_path: string | undefined
   let no_llm: boolean | undefined
 
   const take = (i: number, flag: string): [string, number] => {
@@ -134,6 +137,10 @@ export function parseArgv(argv: string[]): CliArgs {
       ;[live_dump_dir, i] = take(i, token)
       continue
     }
+    if (token === '--live-socket') {
+      ;[live_socket_path, i] = take(i, token)
+      continue
+    }
     if (token === '--no-llm') {
       no_llm = true
       continue
@@ -157,6 +164,7 @@ export function parseArgv(argv: string[]): CliArgs {
   if (report_path !== undefined) args.report_path = report_path
   if (out_path !== undefined) args.out_path = out_path
   if (live_dump_dir !== undefined) args.live_dump_dir = live_dump_dir
+  if (live_socket_path !== undefined) args.live_socket_path = live_socket_path
   if (no_llm !== undefined) args.no_llm = no_llm
   return args
 }
@@ -174,7 +182,13 @@ export async function runCli(args: CliArgs): Promise<number> {
     return EXIT_OTHER
   }
 
+  let socketStarted = false
   try {
+    if (args.live_socket_path !== undefined) {
+      await startLiveSocket({ path: args.live_socket_path })
+      socketStarted = true
+      logInfo('live unix socket listening', { path: args.live_socket_path })
+    }
     const raw = loadRaw(args.input_path)
     const profile = loadProfile(args.profile_path)
     const mode = resolveDistillMode({ no_llm: args.no_llm === true })
@@ -221,6 +235,7 @@ export async function runCli(args: CliArgs): Promise<number> {
       job_id,
     }
     if (live_dump !== undefined) summary.live_dump = live_dump
+    if (args.live_socket_path !== undefined) summary.live_socket = args.live_socket_path
     process.stdout.write(`${JSON.stringify(summary)}\n`)
     return EXIT_OK
   } catch (error) {
@@ -235,6 +250,8 @@ export async function runCli(args: CliArgs): Promise<number> {
     const message = error instanceof Error ? error.message : String(error)
     logError(message)
     return EXIT_OTHER
+  } finally {
+    if (socketStarted) await stopLiveSocket()
   }
 }
 

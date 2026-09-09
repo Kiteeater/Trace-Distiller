@@ -2,7 +2,7 @@
 
 > Agent 一次任务可能留下几百步记录。本工具只处理「最终做对了」的那条，把它剪短：训练能用，人也能看懂。
 
-**当前状态**：TypeScript 流水线 + 两个 agent 洞。无洞（`--no-llm`）与假后端带洞两条通路可跑；自包含 HTML 报告；SQLite 记段 / 打标 / 凭证 / 指标；只读 live dump 页（`file://`，进程内 job 表）。真模型 L4 重放/QA、Unix socket **尚未接通**。
+**当前状态**：TypeScript 流水线 + 两个 agent 洞。无洞（`--no-llm`）与假后端带洞两条通路可跑；自包含 HTML 报告；SQLite 记段 / 打标 / 凭证 / 指标；只读 live dump 页（`file://`，进程内 job 表）。可选本机 Unix domain socket（`--live-socket`，默认关闭）。真模型 L4 重放/QA **尚未接通**。
 
 编排是纯 TypeScript 流水线，不是 runtime agent。LLM 只出现在洞 A（骨架）和洞 B（逐窗打标）。分层见 [docs/architecture.md](./docs/architecture.md)。
 
@@ -27,7 +27,7 @@ bun run test
 入口：
 
 ```text
-node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--live-dump dir] [--no-llm]
+node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--live-dump dir] [--live-socket path] [--no-llm]
 node script/run-distill.ts eval <trace_id> --sqlite path
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
@@ -59,7 +59,7 @@ node script/run-distill.ts report <trace_id> --sqlite /tmp/distiller.sqlite --ou
 
 ### 只读 live 页（Distiller 裁剪，不是对方 agent）
 
-蒸馏成功后 dump 进程内 job 快照，双击 `file://` 打开。禁止 HTTP listen。
+蒸馏成功后 dump 进程内 job 快照，双击 `file://` 打开。默认传输是进程内 `registerJobFromResult` + 这份 dump。禁止 HTTP listen。
 
 ```bash
 node script/run-distill.ts distill examples/add-fix.jsonl \
@@ -68,6 +68,8 @@ node script/run-distill.ts distill examples/add-fix.jsonl \
 # 打开 /tmp/distiller-live/live.html
 node script/run-distill.ts live-dump --sqlite /tmp/distiller.sqlite --out-dir /tmp/distiller-live
 ```
+
+可选：`--live-socket /tmp/distiller.live.sock` 在 distill **期间**听 Unix domain socket（JSON lines：`{"op":"list_jobs"}` 等，回 live 六工具结果）。默认关闭。命令结束会 `stopLiveSocket` 并删除 sock 文件，进程不 keep-alive。事后复盘仍用 `--live-dump`。不是 TCP 端口，不是 HTTP。
 
 ### 带洞（真模型）
 
