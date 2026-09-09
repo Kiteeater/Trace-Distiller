@@ -12,8 +12,10 @@ export const SEGMENT_HEAD_MAX_CHARS = undefined as unknown as number
 
 /**
  * OPEN: 相邻 keep 允许跨过的最大段数未拍板。docs/modules/constant.md §6、ADR-0004。
+ * 未拍板前的保守默认 3：允许相邻保留步之间丢掉少量例行段，长跳仍判违规，
+ * 避免剪过头却声称够得着。collapse 占位算一步。禁止在 pipeline 里另写魔数。
  */
-export const SPAN_MAX_GAP_SEGMENTS = undefined as unknown as number
+export const SPAN_MAX_GAP_SEGMENTS = 3
 
 /**
  * OPEN: 相似重试 token Jaccard 阈值未拍板。docs/modules/constant.md §6、pipeline-rules.md §6。
