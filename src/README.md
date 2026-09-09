@@ -31,7 +31,7 @@ src/
   utils/            # token 估算 / jsonl 读写 / logger
 ```
 
-落地顺序见 architecture「落地顺序」。当前为空，待按契约开工。
+落地顺序见 architecture「落地顺序」。工程骨架已落目录与类型；蒸馏逻辑未实现。
 
 模块设计文档（字段、边界、开放问题、完成标准）在 [docs/modules/](../docs/modules/)：
 
