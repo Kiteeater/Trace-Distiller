@@ -13,3 +13,8 @@ export interface LabelDecision {
   /** 文件依赖图送来的免费信号，不是最终标签。 */
   graph_hints?: GraphHint[]
 }
+
+/** 规则已定标的段不再进洞 B；洞 B 不得覆盖。 */
+export function isResolvedByRules(d: LabelDecision): boolean {
+  return d.source.kind === 'rule'
+}
