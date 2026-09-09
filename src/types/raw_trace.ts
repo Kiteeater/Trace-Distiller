@@ -45,7 +45,16 @@ export const ADMISSION_ERROR_CODES = [
 
 export type AdmissionErrorCode = (typeof ADMISSION_ERROR_CODES)[number]
 
-export interface AdmissionError {
-  code: AdmissionErrorCode
-  message: string
+export class AdmissionError extends Error {
+  readonly code: AdmissionErrorCode
+
+  constructor(code: AdmissionErrorCode, message: string) {
+    super(message)
+    this.name = 'AdmissionError'
+    this.code = code
+  }
+}
+
+export function isAdmissionError(error: unknown): error is AdmissionError {
+  return error instanceof AdmissionError
 }

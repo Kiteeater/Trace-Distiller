@@ -36,7 +36,7 @@
 - `Scenario` 名单未拍板，类型是 `unknown`。不要假装已有 skill 路由或场景码。
 - 窗口大小、span 段数、Jaccard 阈值是命名常量，标注 `OPEN`，未拍板前不得当实现阈值。
 - 卡片字段由代码填，禁止 LLM 生成 `head` / `sig` / `focus`。
-- 本阶段不写 `adapters/`、`pipeline/`、pi 会话、SQLite。
+- L0：`src/adapters/claude_code.ts` 解析单任务 claude-code JSONL 并执行 Admission Gate。不要写 `pipeline/`、pi 会话、SQLite。
 
 ## TypeScript
 
