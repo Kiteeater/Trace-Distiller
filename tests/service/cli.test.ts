@@ -11,12 +11,14 @@ import { ruleCoverage } from '../../src/data/data_label.ts'
 import { FakeSessionBackend, setSessionBackend } from '../../src/agent/sessions/open_session.ts'
 import { SKELETON_PASS_JSON_KIND } from '../../src/agent/sessions/skeleton_pass.ts'
 import { EXIT_ADMISSION, EXIT_OK, parseArgv, runCli } from '../../src/service/cli.ts'
-import { get_cut_progress, list_jobs, resetLiveState } from '../../src/service/live.ts'
+import { LIVE_TOOL_NAMES, get_cut_progress, list_jobs, resetLiveState } from '../../src/service/live.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, '../..')
 const fixtures = join(here, '../fixtures/claude_code')
 const cliSrc = join(here, '../../src/service/cli.ts')
+const liveSrc = join(here, '../../src/service/live.ts')
+const livePageSrc = join(here, '../../src/report/live_page.ts')
 const scriptSrc = join(here, '../../script/run-distill.ts')
 
 function tmp(): string {
@@ -29,10 +31,33 @@ describe('cli', () => {
     resetLiveState()
   })
 
+  it('--help says live is Distiller cut, not the other agent', async () => {
+    const chunks: string[] = []
+    const origWrite = process.stderr.write.bind(process.stderr)
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      const code = await runCli({ command: 'distill', input_path: '', help: true })
+      assert.equal(code, EXIT_OK)
+    } finally {
+      process.stderr.write = origWrite
+    }
+    const help = chunks.join('')
+    assert.match(help, /live-dump/)
+    assert.match(help, /Distiller/)
+    assert.match(help, /not the other agent/)
+    assert.match(help, /No HTTP listen/)
+    assert.match(help, /CutProfile/)
+  })
+
   it('does not import pi, createAgentSession, or listen', () => {
     const src = readFileSync(cliSrc, 'utf8')
     const script = readFileSync(scriptSrc, 'utf8')
-    for (const text of [src, script]) {
+    const live = readFileSync(liveSrc, 'utf8')
+    const page = readFileSync(livePageSrc, 'utf8')
+    for (const text of [src, script, live, page]) {
       assert.doesNotMatch(text, /@mariozechner\/pi/)
       assert.doesNotMatch(text, /createAgentSession/)
       assert.doesNotMatch(text, /from ['"]pi['"]/)
@@ -53,6 +78,8 @@ describe('cli', () => {
       'out',
       '--report',
       'r.html',
+      '--live-dump',
+      'live-out',
       '--no-llm',
     ])
     assert.equal(args.command, 'distill')
@@ -61,6 +88,7 @@ describe('cli', () => {
     assert.equal(args.sqlite_path, 'db.sqlite')
     assert.equal(args.out_dir, 'out')
     assert.equal(args.report_path, 'r.html')
+    assert.equal(args.live_dump_dir, 'live-out')
     assert.equal(args.no_llm, true)
   })
 
@@ -266,6 +294,10 @@ describe('cli', () => {
     ])
     assert.equal(reportArgs.command, 'report')
     assert.equal(reportArgs.out_path, 'out.html')
+    const liveArgs = parseArgv(['live-dump', '--sqlite', 'db.sqlite', '--out-dir', 'live'])
+    assert.equal(liveArgs.command, 'live-dump')
+    assert.equal(liveArgs.sqlite_path, 'db.sqlite')
+    assert.equal(liveArgs.out_dir, 'live')
   })
 
   it('without --no-llm and injected FakeSessionBackend runs with_llm', async () => {
@@ -308,5 +340,60 @@ describe('cli', () => {
     const jobs = list_jobs()
     assert.equal(jobs.length, 1)
     assert.equal(get_cut_progress(jobs[0]!.job_id).holes, 'done')
+  })
+
+  it('--live-dump writes job json and self-contained live.html', async () => {
+    resetLiveState()
+    const outDir = tmp()
+    const liveDir = join(outDir, 'live')
+    const code = await runCli({
+      command: 'distill',
+      input_path: join(fixtures, 'no_llm_conservative.jsonl'),
+      out_dir: outDir,
+      live_dump_dir: liveDir,
+      no_llm: true,
+    })
+    assert.equal(code, EXIT_OK)
+    const jobs = list_jobs()
+    assert.equal(jobs.length, 1)
+    const jobId = jobs[0]!.job_id
+    const dumpPath = join(liveDir, `${jobId}.live.json`)
+    assert.equal(existsSync(dumpPath), true)
+    const snap = JSON.parse(readFileSync(dumpPath, 'utf8')) as Record<string, unknown>
+    for (const name of LIVE_TOOL_NAMES) {
+      assert.ok(Object.hasOwn(snap, name), `dump missing ${name}`)
+    }
+    const html = readFileSync(join(liveDir, 'live.html'), 'utf8')
+    assert.match(html, /不是对方 agent/)
+    assert.match(html, /data-stage="segment"/)
+    assert.doesNotMatch(html, /send_message/)
+  })
+
+  it('live-dump --sqlite exports the latest stored result', async () => {
+    resetLiveState()
+    const outDir = tmp()
+    const sqlite = join(outDir, 'distiller.sqlite')
+    const distillCode = await runCli({
+      command: 'distill',
+      input_path: join(fixtures, 'no_llm_conservative.jsonl'),
+      out_dir: outDir,
+      sqlite_path: sqlite,
+      no_llm: true,
+    })
+    assert.equal(distillCode, EXIT_OK)
+    resetLiveState()
+    const liveDir = join(outDir, 'from-sqlite-live')
+    const dumpCode = await runCli({
+      command: 'live-dump',
+      input_path: '',
+      sqlite_path: sqlite,
+      out_dir: liveDir,
+    })
+    assert.equal(dumpCode, EXIT_OK)
+    assert.equal(existsSync(join(liveDir, 'live.html')), true)
+    const html = readFileSync(join(liveDir, 'live.html'), 'utf8')
+    assert.match(html, /不是对方 agent/)
+    const names = readdirSync(liveDir)
+    assert.ok(names.some((n) => n.endsWith('.live.json')), names.join(','))
   })
 })

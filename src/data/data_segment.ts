@@ -209,6 +209,13 @@ export interface SegmentRow {
   writes: string[]
 }
 
+export function listTraceIds(db: Db): string[] {
+  const rows = db.prepare(
+    `SELECT trace_id FROM traces ORDER BY created_at DESC, trace_id`,
+  ).all()
+  return rows.map((row) => asString(row.trace_id))
+}
+
 export function getTraceMeta(db: Db, trace_id: TraceId): TraceMetaRow | undefined {
   const row = db.prepare(
     `SELECT trace_id, source, ground_truth_ref, total_tokens,

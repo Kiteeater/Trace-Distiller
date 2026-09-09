@@ -158,14 +158,15 @@ Live 页 **纯 TypeScript 推送**，**不套 LLM**。live 观察与离线蒸馏
 
 ## 怎么用 / 怎么跑（live）
 
-预期路径（M1 已落地进程内内存表）：
+预期路径（M1 已落地进程内内存表 + file:// dump 页）：
 
 1. CLI 跑通一条离线蒸馏 job，成功后 `registerJobFromResult`。
 2. 同进程 `list_jobs` → `attach_job`。
 3. 读：`get_cut_progress` / `get_partial_result` / `get_warrant_tail`。
 4. 离开：`detach_job`。
-5. 事后 Playback 仍可打开自包含 HTML（见 [users-and-surfaces.md](./users-and-surfaces.md)）；HTML 不是 live，是产物。
-6. 禁止 HTTP listen。Unix socket 以后再说。
+5. 只读 dump：`dumpJobSnapshot` / `dumpAllJobs`；CLI `--live-dump <dir>` 写 `<job_id>.live.json` 与自包含 `live.html`（`file://`）。也可 `live-dump --sqlite`。
+6. 事后 Playback 仍可打开 `--report` HTML（见 [users-and-surfaces.md](./users-and-surfaces.md)）；那份 HTML 是产物，不是 live。
+7. 禁止 HTTP listen。Unix socket 以后再说。
 
 ## Live 边界（非目标）
 
@@ -182,7 +183,7 @@ Live 页 **纯 TypeScript 推送**，**不套 LLM**。live 观察与离线蒸馏
 
 ## Live 完成标准
 
-- [ ] live 页可订阅 Distiller job 的进度、Partial Playback、warrant 尾；纯 TS，无 LLM。
-- [ ] 工具表面无 `send_message` / `interrupt` / `inject_prompt` / 代跑对方工具 / 改编排入口。
-- [ ] 文档与 `--help` 写明：live = Distiller 裁剪过程，≠ 对方 agent 运行态。
-- [ ] MVP 无 `list_sessions` 盯 JSONL 尾的实现；若目录预留，标注非 live、非 MVP。
+- [x] live 页（M1 dump）可看 Distiller job 的进度、Partial Playback、warrant 尾；纯 TS，无 LLM。`file://` 打开，禁止 HTTP listen。
+- [x] 工具表面无 `send_message` / `interrupt` / `inject_prompt` / 代跑对方工具 / 改编排入口。
+- [x] 文档与 `--help` 写明：live = Distiller 裁剪过程，≠ 对方 agent 运行态。
+- [x] MVP 无 `list_sessions` 盯 JSONL 尾的实现；若目录预留，标注非 live、非 MVP。

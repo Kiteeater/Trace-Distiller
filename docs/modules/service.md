@@ -25,7 +25,7 @@
 ```ts
 /** src/service/cli.ts */
 interface CliArgs {
-  command: 'distill' | 'eval' | 'report'
+  command: 'distill' | 'eval' | 'report' | 'live-dump'
   input_path: string
   profile_path?: string
   sqlite_path?: string
@@ -107,3 +107,4 @@ service
 - [x] HTML 由 `src/report/html.ts` 的 `renderHtml` 写出；不另开 `service/report.ts`（树锁在 `cli.ts` + `live.ts`）。
 - [x] 无 HTTP server、无 pi import。
 - [x] `eval <trace_id> --sqlite` 读指标；`report <trace_id> --sqlite --out` 从库重建 ReportModel。
+- [x] `--live-dump` / `live-dump` 写出只读 live.json + live.html（file://）；不 listen。

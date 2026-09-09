@@ -25,4 +25,14 @@ node script/run-distill.ts report claude-code:sess-no-llm \
   --out /tmp/add-fix-from-db.html
 ```
 
+只读 live dump（Distiller 裁剪过程，不是对方 agent）：
+
+```bash
+node script/run-distill.ts distill examples/add-fix.jsonl \
+  --no-llm \
+  --live-dump /tmp/distiller-live
+```
+
+双击 `/tmp/distiller-live/live.html`（`file://`），不要起 HTTP server。
+
 不要把真实 session 或密钥放进本目录。

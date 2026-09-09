@@ -43,7 +43,7 @@
 5. **蒸馏主链路仍离线**；原料是磁盘上的成功 Trace。失败 Trace 不进（[ADR-0001](../adr/0001-ground-truth-admission-gate.md)）。无 Ground Truth 当场拒绝，不写「失败原因报告」。
 6. **对话调 profile 是 M3 以后的活口**：就算做，agent 也只能改 CutProfile，然后流水线重跑。LLM 永远不进编排 / 执行路径。
 
-CutProfile 的字段级形状在 [types.md](../modules/types.md)；本指南只说它管哪几件事。CLI 入口草图在 [script-run-distill.md](../modules/script-run-distill.md)。**代码尚未开工**，下面的命令是已拍板的使用面，不是现在就能敲的实现。
+CutProfile 的字段级形状在 [types.md](../modules/types.md)；本指南只说它管哪几件事。CLI 入口在 [script-run-distill.md](../modules/script-run-distill.md)。
 
 ---
 
@@ -71,6 +71,7 @@ CutProfile 的字段级形状在 [types.md](../modules/types.md)；本指南只�
 - **硬边界：只读绝不干预**。页面不能发消息、打断、注入 prompt、代跑对方工具、改蒸馏编排。想换剪法：改 CutProfile，CLI 重跑。
 - **live 观察与离线蒸馏编排分开**：编排器照常离线跑；页只挂订阅，不进编排路径。
 - **事后自包含 HTML** 仍是蒸馏产物的 Playback（`--report` 写出的 `.html`），双击 `file://` 打开。它是复盘的事后面，不是唯一面。
+- **M1 live 页**：蒸馏成功后 `--live-dump <dir>` 写出 `<dir>/<job_id>.live.json` 与 `<dir>/live.html`（内嵌 dump，`file://` 打开）。也可 `live-dump --sqlite` 从最近入库结果导出。页展示 job 列表、进度四格、压缩率、Partial Playback 卡片、warrant 尾；无干预按钮。禁止 HTTP listen。
 - 人类可读性盲读（同事 10 分钟复述）是 M3 的事，不进日常自动流水线。
 
 ### 一天跑通一条成功 Trace
@@ -86,15 +87,15 @@ CutProfile 的字段级形状在 [types.md](../modules/types.md)；本指南只�
 3. **跑一条**（落地后的命令草图）
 
    ```text
-   node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report out.html]
+   node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report out.html] [--live-dump dir]
    ```
 
    没有 API key、只想打通切段和规则时：加 `--no-llm`，未决段一律保守保留。这是架构落地顺序里「跳过洞、先出压缩率」的那条路，不是另一种产品。
 
 4. **看出口**  
    - 训练：`data/distilled/*-training.*`（JSONL / Training Cut）  
-   - 复盘（跑着）：只读 live 页订阅 Distiller 裁剪进度与部分结果  
-   - 复盘（事后）：`--report` 的 html，双击打开（`file://`）；也可继续用 live 页看最终态  
+   - 复盘（M1 live）：`--live-dump dir` 后双击 `dir/live.html`（`file://`），看 Distiller 裁剪进度 / Partial Playback / warrant 尾  
+   - 复盘（事后报告）：`--report` 的 html，双击打开（`file://`）  
    - 日志走 stderr；准入拒绝应非 0 退出，且**不写** distilled 产物
 
 5. **过一眼保真**（当天能做的最小版）  
@@ -148,11 +149,11 @@ Training Cut 默认不要铺满报告——太长。墙在左边用卡片索引�
 
 本使用面算就绪，当且仅当：
 
-- [ ] 训练侧能用一条 CLI 命令拿到 `*-training.*`（Training Cut / JSONL），且与 Playback 同源（同一 CutPlan）。
-- [ ] 复盘侧：跑蒸馏时可挂只读 live 页，同步 Distiller 裁剪进度 / Partial Playback / warrant 尾；事后能双击打开 html（左原始 / 右精华 / 点开删除理由 / 首页成本）。
-- [ ] live 页无干预能力（无 send / interrupt / inject / 改编排）；与离线编排进程分离。
-- [ ] 无 Ground Truth 的输入非 0 退出，不写 distilled。
-- [ ] 仓库里没有完整 GUI / Electron / 账号体系入口；为本机复盘允许的轻量本地页不得变成第二套编排 UI。
-- [ ] `--help` 能讲清两类产物、CutProfile，以及 live 同步的是 Distiller 裁剪而非对方 agent。
-- [ ] README「怎么跑」与 `script/run-distill.ts` 命令一致。
-- [ ] 本文件不把 types 字段说明书再抄一遍；读者被链到 modules 即可继续。
+- [x] 训练侧能用一条 CLI 命令拿到 `*-training.*`（Training Cut / JSONL），且与 Playback 同源（同一 CutPlan）。
+- [x] 复盘侧 M1：`--live-dump` 写出只读 live.html（进度 / Partial Playback / warrant 尾），`file://` 打开；事后 `--report` html（左原始 / 右精华 / 点开删除理由 / 首页成本）。不是跑着时的 HTTP 订阅。
+- [x] live 页无干预能力（无 send / interrupt / inject / 改编排）；与离线编排进程分离。
+- [x] 无 Ground Truth 的输入非 0 退出，不写 distilled。
+- [x] 仓库里没有完整 GUI / Electron / 账号体系入口；为本机复盘允许的轻量本地页不得变成第二套编排 UI。
+- [x] `--help` 能讲清两类产物、CutProfile，以及 live 同步的是 Distiller 裁剪而非对方 agent。
+- [x] README「怎么跑」与 `script/run-distill.ts` 命令一致。
+- [x] 本文件不把 types 字段说明书再抄一遍；读者被链到 modules 即可继续。

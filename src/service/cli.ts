@@ -7,6 +7,7 @@ import { getMetrics, insertMetrics, type MetricsRow } from '../data/data_metric.
 import {
   getTraceMeta,
   listSegments,
+  listTraceIds,
   openDb,
   replaceSegments,
   runInTransaction,
@@ -21,15 +22,16 @@ import { isSpanFailure } from '../domain/span_violation.ts'
 import { computeDistillMetrics, type DistillMetrics } from '../eval/metrics.ts'
 import { distill, resolveDistillMode, type DistillResult } from '../pipeline/orchestrator.ts'
 import { renderHtml, type ReportModel } from '../report/html.ts'
+import { renderLiveHtml } from '../report/live_page.ts'
+import type { CutPlan, PlaybackCut } from '../types/cut_plan.ts'
 import type { CutProfile } from '../types/cut_profile.ts'
-import type { PlaybackCut } from '../types/cut_plan.ts'
 import {
   AdmissionError,
   isAdmissionError,
   type RawTrace,
 } from '../types/raw_trace.ts'
 import { error as logError, info as logInfo } from '../utils/logger.ts'
-import { registerJobFromResult } from './live.ts'
+import { dumpAllJobs, dumpJobSnapshot, registerJobFromResult, resetLiveState, type StageState } from './live.ts'
 
 export const EXIT_OK = 0
 export const EXIT_OTHER = 1
@@ -37,13 +39,14 @@ export const EXIT_ADMISSION = 2
 export const EXIT_SPAN = 3
 
 export interface CliArgs {
-  command: 'distill' | 'eval' | 'report'
+  command: 'distill' | 'eval' | 'report' | 'live-dump'
   input_path: string
   profile_path?: string
   sqlite_path?: string
   out_dir?: string
   report_path?: string
   out_path?: string
+  live_dump_dir?: string
   no_llm?: boolean
   help?: boolean
 }
@@ -52,15 +55,20 @@ const L4_NOTE =
   'replay/qa 需真模型 L4（TRACE_DISTILLER_MODEL_L4）与干净会话，本命令不跑重放或 QA'
 
 const HELP = `Usage:
-  node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--no-llm]
+  node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--live-dump dir] [--no-llm]
   node script/run-distill.ts eval <trace_id> --sqlite path
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
+  node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
 
 --no-llm forces the conservative no-hole path. Without --no-llm, with_llm runs when a session backend is injected or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B is set; otherwise no_llm.
 
 FakeSessionBackend is for tests only. Production with_llm needs TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
 eval reads distill metrics from SQLite. ${L4_NOTE}.
+
+live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. No HTTP listen.
+
+Two products: Training Cut / JSONL (train) and Playback + live/report HTML (review). CutProfile is the customisation surface.
 
 Exit codes:
   0  success
@@ -83,6 +91,7 @@ export function parseArgv(argv: string[]): CliArgs {
   let out_dir: string | undefined
   let report_path: string | undefined
   let out_path: string | undefined
+  let live_dump_dir: string | undefined
   let no_llm: boolean | undefined
 
   const take = (i: number, flag: string): [string, number] => {
@@ -96,7 +105,7 @@ export function parseArgv(argv: string[]): CliArgs {
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i]
     if (token === undefined) continue
-    if (token === 'distill' || token === 'eval' || token === 'report') {
+    if (token === 'distill' || token === 'eval' || token === 'report' || token === 'live-dump') {
       if (command !== undefined) throw new Error(`重复的子命令 ${token}`)
       command = token
       continue
@@ -121,6 +130,10 @@ export function parseArgv(argv: string[]): CliArgs {
       ;[out_path, i] = take(i, token)
       continue
     }
+    if (token === '--live-dump') {
+      ;[live_dump_dir, i] = take(i, token)
+      continue
+    }
     if (token === '--no-llm') {
       no_llm = true
       continue
@@ -143,6 +156,7 @@ export function parseArgv(argv: string[]): CliArgs {
   if (out_dir !== undefined) args.out_dir = out_dir
   if (report_path !== undefined) args.report_path = report_path
   if (out_path !== undefined) args.out_path = out_path
+  if (live_dump_dir !== undefined) args.live_dump_dir = live_dump_dir
   if (no_llm !== undefined) args.no_llm = no_llm
   return args
 }
@@ -154,6 +168,7 @@ export async function runCli(args: CliArgs): Promise<number> {
   }
   if (args.command === 'eval') return runEval(args)
   if (args.command === 'report') return runReport(args)
+  if (args.command === 'live-dump') return runLiveDump(args)
   if (args.input_path.length === 0) {
     process.stderr.write(HELP)
     return EXIT_OTHER
@@ -193,14 +208,20 @@ export async function runCli(args: CliArgs): Promise<number> {
     })
     logInfo('distill registered live job', { job_id, trace_id: raw.meta.trace_id })
 
-    process.stdout.write(
-      `${JSON.stringify({
-        trace_id: raw.meta.trace_id,
-        compression_ratio: metrics.compression_ratio,
-        out_dir: outDir,
-        job_id,
-      })}\n`,
-    )
+    let live_dump: string | undefined
+    if (args.live_dump_dir !== undefined) {
+      writeLiveDumpDir(args.live_dump_dir)
+      live_dump = args.live_dump_dir
+    }
+
+    const summary: Record<string, unknown> = {
+      trace_id: raw.meta.trace_id,
+      compression_ratio: metrics.compression_ratio,
+      out_dir: outDir,
+      job_id,
+    }
+    if (live_dump !== undefined) summary.live_dump = live_dump
+    process.stdout.write(`${JSON.stringify(summary)}\n`)
     return EXIT_OK
   } catch (error) {
     if (isAdmissionError(error)) {
@@ -373,6 +394,138 @@ function runReport(args: CliArgs): number {
     return EXIT_OTHER
   } finally {
     db.close()
+  }
+}
+
+function writeLiveDumpDir(dir: string): void {
+  mkdirSync(dir, { recursive: true })
+  const dump = dumpAllJobs()
+  for (const row of dump.list_jobs) {
+    const snap = dumpJobSnapshot(row.job_id)
+    writeFileSync(join(dir, `${row.job_id}.live.json`), `${JSON.stringify(snap, null, 2)}\n`)
+  }
+  writeFileSync(join(dir, 'live.html'), renderLiveHtml(dump), 'utf8')
+}
+
+function runLiveDump(args: CliArgs): number {
+  const sqlite = args.sqlite_path
+  const outDir = args.live_dump_dir ?? args.out_dir
+  if (sqlite === undefined || outDir === undefined) {
+    process.stderr.write('live-dump 需要 --sqlite path 与 --out-dir 或 --live-dump dir\n')
+    return EXIT_OTHER
+  }
+  resetLiveState()
+  const db = openDb(sqlite)
+  try {
+    const ids = args.input_path.length > 0 ? [args.input_path] : listTraceIds(db)
+    if (ids.length === 0) {
+      logError('sqlite 里没有可导出的 trace')
+      return EXIT_OTHER
+    }
+    for (const trace_id of ids) {
+      const packed = distillResultFromDb(db, trace_id)
+      registerJobFromResult(packed.result, { holes: packed.holes })
+    }
+    writeLiveDumpDir(outDir)
+    process.stdout.write(
+      `${JSON.stringify({
+        sqlite,
+        out_dir: outDir,
+        jobs: dumpAllJobs().list_jobs.map((row) => row.job_id),
+        live_html: join(outDir, 'live.html'),
+      })}\n`,
+    )
+    return EXIT_OK
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logError(message)
+    return EXIT_OTHER
+  } finally {
+    db.close()
+  }
+}
+
+function distillResultFromDb(
+  db: Db,
+  trace_id: string,
+): { result: DistillResult; holes: StageState } {
+  const metaRow = getTraceMeta(db, trace_id)
+  if (metaRow === undefined) throw new Error(`找不到 trace: ${trace_id}`)
+  const metrics = getMetrics(db, trace_id)
+  if (metrics === undefined) throw new Error(`找不到 trace 指标: ${trace_id}`)
+  const warrant = getWarrant(db, trace_id)
+  if (warrant === undefined) throw new Error(`找不到凭证: ${trace_id}`)
+  const planRow = getCutPlan(db, trace_id)
+  if (planRow === undefined) throw new Error(`找不到 CutPlan: ${trace_id}`)
+  const cards = listSegments(db, trace_id).map(segmentRowToCard)
+  const byId = new Map(cards.map((card) => [card.id, card]))
+  const playback: PlaybackCut = {
+    trace_id,
+    plan_ref: 'sqlite',
+    cards: planRow.kept.flatMap((id) => {
+      const card = byId.get(id)
+      return card === undefined ? [] : [card]
+    }),
+    collapsed: planRow.collapsed,
+  }
+  const decisions: LabelDecision[] = listLabels(db, trace_id).map((row) => {
+    const decision: LabelDecision = {
+      segment_id: row.segment_id,
+      label: row.label,
+      source: { kind: row.source_kind, name: row.source_name },
+      confidence: row.confidence,
+    }
+    if (row.rule_name !== null) decision.rule_name = row.rule_name
+    return decision
+  })
+  const plan: CutPlan = {
+    trace_id,
+    profile_id: planRow.profile_id,
+    warrant_ref: 'sqlite',
+    kept: planRow.kept,
+    collapsed: planRow.collapsed,
+    dropped: planRow.dropped,
+    span_ok: planRow.span_ok,
+    span_violations: [],
+  }
+  const cutTokens = Math.round(metrics.compression_ratio * metaRow.total_tokens)
+  const raw: RawTrace = {
+    meta: {
+      trace_id: metaRow.trace_id,
+      source: metaRow.source,
+      ground_truth_ref: metaRow.ground_truth_ref,
+      total_tokens: metaRow.total_tokens,
+    },
+    ground_truth: { kind: 'task_confirmed', evidence_ref: metaRow.ground_truth_ref },
+    turns: [],
+    anchor_turn_ids: [],
+  }
+  const holes: StageState = decisions.some((d) => d.source.kind === 'llm') ? 'done' : 'skipped'
+  return {
+    holes,
+    result: {
+      raw,
+      view: {
+        meta: raw.meta,
+        intent_hypothesis: metaRow.intent,
+        skeleton: { version: 0, nodes: [] },
+        segments: cards,
+      },
+      warrant,
+      plan,
+      training: {
+        trace_id,
+        plan_ref: 'sqlite',
+        turns:
+          cutTokens > 0
+            ? [{ id: 'cut-tokens', role: 'assistant', content: '', tokens: cutTokens }]
+            : [],
+      },
+      playback,
+      decisions,
+      unresolved_ids: [],
+      metrics_ref: trace_id,
+    },
   }
 }
 
