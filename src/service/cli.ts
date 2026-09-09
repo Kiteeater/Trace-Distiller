@@ -22,6 +22,8 @@ import {
   isAdmissionError,
   type RawTrace,
 } from '../types/raw_trace.ts'
+import { error as logError, info as logInfo } from '../utils/logger.ts'
+import { registerJobFromResult } from './live.ts'
 
 export const EXIT_OK = 0
 export const EXIT_OTHER = 1
@@ -161,25 +163,29 @@ export async function runCli(args: CliArgs): Promise<number> {
       writeFileSync(args.report_path, renderHtml(toReportModel(result, coverage, metrics)), 'utf8')
     }
 
+    const job_id = registerJobFromResult(result)
+    logInfo('distill registered live job', { job_id, trace_id: raw.meta.trace_id })
+
     process.stdout.write(
       `${JSON.stringify({
         trace_id: raw.meta.trace_id,
         compression_ratio: metrics.compression_ratio,
         out_dir: outDir,
+        job_id,
       })}\n`,
     )
     return EXIT_OK
   } catch (error) {
     if (isAdmissionError(error)) {
-      process.stderr.write(`${humanAdmission(error)}\n`)
+      logError(humanAdmission(error))
       return EXIT_ADMISSION
     }
     if (isSpanFailure(error)) {
-      process.stderr.write(`span 约束失败：剪后相邻步不够得着\n`)
+      logError('span 约束失败：剪后相邻步不够得着')
       return EXIT_SPAN
     }
     const message = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`${message}\n`)
+    logError(message)
     return EXIT_OTHER
   }
 }

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { openDb, getTraceMeta, listSegments } from '../../src/data/data_segment.ts'
 import { ruleCoverage } from '../../src/data/data_label.ts'
 import { EXIT_ADMISSION, EXIT_OK, parseArgv, runCli } from '../../src/service/cli.ts'
+import { list_jobs, resetLiveState } from '../../src/service/live.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, '../..')
@@ -56,6 +57,7 @@ describe('cli', () => {
   })
 
   it('writes training/playback json for --no-llm fixture and exits 0', async () => {
+    resetLiveState()
     const outDir = tmp()
     const sqlite = join(outDir, 'distiller.sqlite')
     const report = join(outDir, 'report.html')
@@ -101,6 +103,12 @@ describe('cli', () => {
     } finally {
       db.close()
     }
+
+    const jobs = list_jobs()
+    assert.equal(jobs.length, 1)
+    assert.equal(jobs[0]?.trace_id, trainingJson.trace_id)
+    assert.equal(jobs[0]?.status, 'done')
+    assert.equal(jobs[0]?.attached, false)
   })
 
   it('prints 人话 and exits 2 on no Ground Truth; writes no distilled files', async () => {
