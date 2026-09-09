@@ -464,6 +464,24 @@ describe('hole sessions', () => {
     )
   })
 
+  it('default FakeSessionBackend returns parseable L4 QA/replay/review JSON', async () => {
+    const fake = new FakeSessionBackend()
+    const qa = openQaSession({ backend: fake })
+    const replay = openReplaySession({ backend: fake })
+    const review = openReviewSession({ backend: fake })
+    const qaOut = await qa.prompt({ text: '---QUESTIONS_JSON---\n[{"id":"q9","question":"why"}]\n---END_QUESTIONS_JSON---' })
+    const replayOut = await replay.prompt({ text: 'replay the cut' })
+    const reviewOut = await review.prompt({
+      text: '---PLAYBACK_JSON---\n{"trace_id":"t","cards":[{"id":"s0002"}]}\n---END_PLAYBACK_JSON---',
+    })
+    assert.equal((qaOut.json as { kind: string }).kind, 'l4_qa_v0')
+    assert.equal((replayOut.json as { kind: string; success: boolean }).success, true)
+    assert.equal((reviewOut.json as { kind: string }).kind, 'l4_review_v0')
+    qa.dispose()
+    replay.dispose()
+    review.dispose()
+  })
+
   it('openSession factories still expose role-specific handles', () => {
     const a = openSession({ role: 'hole_a_skeleton', model: 'anthropic/claude-opus-4-5' })
     const review = openReviewSession({ model: 'openai/gpt-4o-mini' })

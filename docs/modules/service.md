@@ -34,6 +34,8 @@ interface CliArgs {
   live_dump_dir?: string
   live_socket_path?: string
   no_llm?: boolean
+  qa?: boolean
+  replay?: boolean
 }
 
 function parseArgv(argv: string[]): CliArgs
@@ -108,6 +110,6 @@ service
 - [x] `--no-llm` 在 mock 环境跑通。
 - [x] HTML 由 `src/report/html.ts` 的 `renderHtml` 写出；不另开 `service/report.ts`（树锁在 `cli.ts` + `live.ts` + `live_socket.ts`）。
 - [x] 无 HTTP server、无 pi import。
-- [x] `eval <trace_id> --sqlite` 读指标；`report <trace_id> --sqlite --out` 从库重建 ReportModel。
+- [x] `eval <trace_id> --sqlite [--qa] [--replay]` 读指标；有后端时跑 L4，否则跳过并注明。`report <trace_id> --sqlite --out` 从库重建 ReportModel。
 - [x] `--live-dump` / `live-dump` 写出只读 live.json + live.html（file://）；默认不 listen。
 - [x] 可选 `--live-socket <path>`：distill 期间 Unix domain socket；结束关闭。无 HTTP。

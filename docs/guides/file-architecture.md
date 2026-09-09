@@ -76,7 +76,10 @@ trace-distiller/
 │  │  │  ├─ open_session.ts      # 工厂 + SessionBackend；createAgentSession 只在这里
 │  │  │  ├─ skeleton_pass.ts
 │  │  │  ├─ label_window.ts
-│  │  │  └─ write_warrant.ts    # 可改纯代码，形状不变
+│  │  │  ├─ write_warrant.ts    # 可改纯代码，形状不变
+│  │  │  ├─ l4_qa.ts            # runQa；role=l4_qa
+│  │  │  ├─ l4_replay.ts        # runReplay；干净会话，不代理原工具历史
+│  │  │  └─ l4_review.ts        # runBlindReview；禁止 warrant/skeleton
 │  │  ├─ extension.ts
 │  │  └─ skills/
 │  ├─ data/                     # SQLite；biz 不直接碰库
@@ -143,10 +146,10 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 | `src/domain/` 三文件 | LabelDecision / CutDecision / SpanViolation | **文件名已定** | 不变量跟 types 一起钉 |
 | `src/adapters/claude_code.ts` | L0 解析 + Admission Gate | **M1 文件已定** | 启发式阈值见 ingest 开放问题；SWE-bench parser MVP 不做 |
 | `src/pipeline/*.ts` 四文件 | 切段 / 规则 / 编排 / 组装 | **文件名已定** | Jaccard / span 数字已拍板；`writeWarrant` 已改纯代码 |
-| `src/agent/sessions/` 四文件 | **唯一 pi 依赖点** | **文件名已定** | `open_session.ts` 工厂已接通；洞 A/B 可经 Fake 打标；`write_warrant.ts` 纯代码 |
+| `src/agent/sessions/` 七文件 | **唯一 pi 依赖点** | **文件名已定** | `open_session.ts` 工厂已接通；洞 A/B 可经 Fake 打标；`write_warrant.ts` 纯代码；L4 `l4_qa` / `l4_replay` / `l4_review` |
 | `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown | **路径已定** | 三工具已拍板闭集（[tools.md](./tools.md)）；五份 skill 只写洞 B 纪律，洞 A/B 仍未接通 |
 | `src/data/data_*.ts` 四文件 | SQLite：段 / 打标 / 凭证 / 指标 | **文件名已定** | **列级 schema OPEN**（P0） |
-| `src/eval/` | L4 数字 | **职责已定** | 盲测协议已拍板（intent + playback；缺骨架回填 keep；最多 2 轮）；LLM review 仍待 spike。复合分见 [benchmark.md](./benchmark.md) |
+| `src/eval/` | L4 数字 | **职责已定** | 盲测协议已拍板（intent + playback；缺骨架回填 keep；最多 2 轮）。QA/replay/review 经 sessions；假后端可测。复合分见 [benchmark.md](./benchmark.md) |
 | `src/report/` | 结果 JSON → 单个 `.html` | **已定** | 视觉细节非契约 |
 | `src/service/cli.ts` | CLI 薄壳 | **已定** | argv 细节 OPEN |
 | `src/service/live.ts` | 只读订阅 Distiller 裁剪进度 | **已定** | 源 = 进程内 `registerJobFromResult`；禁止 HTTP listen；禁止进 pipeline |

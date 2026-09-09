@@ -28,7 +28,7 @@
 
 ```text
 node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--report out.html] [--live-dump dir] [--live-socket path] [--no-llm]
-node script/run-distill.ts eval <trace_id> --sqlite path
+node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
 ```

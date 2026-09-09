@@ -99,6 +99,21 @@ export function holeModelsConfigured(env: NodeJS.Dict<string> = process.env): bo
   return (typeof a === 'string' && a.length > 0) || (typeof b === 'string' && b.length > 0)
 }
 
+/** L4（QA / replay / review）共用 TRACE_DISTILLER_MODEL_L4。 */
+export function l4ModelConfigured(env: NodeJS.Dict<string> = process.env): boolean {
+  const v = env[MODEL_ENV_BY_ROLE.l4_qa]
+  return typeof v === 'string' && v.length > 0
+}
+
+/** 假后端已注入，或真模型档已设。CLI eval --qa/--replay 无此后端则跳过。 */
+export function l4BackendAvailable(env: NodeJS.Dict<string> = process.env): boolean {
+  return hasInjectedSessionBackend() || l4ModelConfigured(env)
+}
+
+export const L4_QA_JSON_KIND = 'l4_qa_v0' as const
+export const L4_REPLAY_JSON_KIND = 'l4_replay_v0' as const
+export const L4_REVIEW_JSON_KIND = 'l4_review_v0' as const
+
 export function resolveSessionModel(role: AgentRole, model?: string, env: NodeJS.Dict<string> = process.env): string {
   if (model !== undefined && model.length > 0) return model
   const key = MODEL_ENV_BY_ROLE[role]
@@ -194,13 +209,152 @@ export class FakeSessionBackend implements SessionBackend {
 }
 
 function defaultFakeRespond(input: SessionPromptInput, opts: ResolvedSessionOpts): SessionPromptResult {
-  const json = defaultSpikeLabelJson()
+  const json = defaultFakeJsonForRole(input, opts.role)
+  const tool_calls =
+    opts.role === 'hole_a_skeleton' || opts.role === 'hole_b_label'
+      ? [{ name: 'label_segment', arguments: json }]
+      : []
   return {
     text: JSON.stringify(json),
     json,
-    tool_calls: [{ name: 'label_segment', arguments: json }],
+    tool_calls,
     usage: { role: opts.role, input_tokens: Math.max(1, input.text.length), output_tokens: 8 },
   }
+}
+
+function defaultFakeJsonForRole(input: SessionPromptInput, role: AgentRole): unknown {
+  if (role === 'l4_qa') return defaultFakeQaJson(input)
+  if (role === 'l4_replay') return defaultFakeReplayJson()
+  if (role === 'l4_review') return defaultFakeReviewJson(input)
+  return defaultSpikeLabelJson()
+}
+
+export function defaultFakeQaJson(input: SessionPromptInput): {
+  kind: typeof L4_QA_JSON_KIND
+  items: Array<{ id: string; question: string; answer: string; correct: boolean }>
+} {
+  const marked = readMarkedJson(input.text, 'QUESTIONS_JSON')
+  const questions = parseQaQuestionList(marked)
+  const items =
+    questions.length > 0
+      ? questions.map((q) => ({
+          id: q.id,
+          question: q.question,
+          answer: `fake:${q.id}`,
+          correct: true,
+        }))
+      : [
+          {
+            id: 'q1',
+            question: 'What was the task?',
+            answer: 'fake:q1',
+            correct: true,
+          },
+        ]
+  return { kind: L4_QA_JSON_KIND, items }
+}
+
+export function defaultFakeReplayJson(): {
+  kind: typeof L4_REPLAY_JSON_KIND
+  success: boolean
+  note: string
+} {
+  return {
+    kind: L4_REPLAY_JSON_KIND,
+    success: true,
+    note: 'fake backend; real replay success needs repo+model',
+  }
+}
+
+export function defaultFakeReviewJson(input: SessionPromptInput): {
+  kind: typeof L4_REVIEW_JSON_KIND
+  turning_point_segment_ids: string[]
+  evidence_segment_ids: string[]
+} {
+  const ids = playbackCardIdsFromPrompt(input.text)
+  return {
+    kind: L4_REVIEW_JSON_KIND,
+    turning_point_segment_ids: ids.slice(0, 1),
+    evidence_segment_ids: ids.slice(-1),
+  }
+}
+
+/** 会话正文里的标记块：---NAME--- json ---END_NAME--- */
+export function readMarkedJson(text: string, name: string): unknown | undefined {
+  const start = `---${name}---`
+  const end = `---END_${name}---`
+  const a = text.indexOf(start)
+  const b = text.indexOf(end)
+  if (a < 0 || b < 0 || b <= a) return undefined
+  const raw = text.slice(a + start.length, b).trim()
+  try {
+    return JSON.parse(raw) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+export function formatMarkedJson(name: string, value: unknown): string {
+  return `---${name}---\n${JSON.stringify(value)}\n---END_${name}---`
+}
+
+/** Playback 卡片索引。L4 用；不含 warrant / skeleton。 */
+export function playbackIndexForL4(playback: {
+  trace_id: string
+  cards: ReadonlyArray<{
+    id: string
+    tool: string
+    sig: string
+    outcome: string
+    tokens: number
+    focus: string
+    head: string
+  }>
+  collapsed: ReadonlyArray<{ segment_id: string; summary: string }>
+}): Record<string, unknown> {
+  return {
+    trace_id: playback.trace_id,
+    cards: playback.cards.map((c) => ({
+      id: c.id,
+      tool: c.tool,
+      sig: c.sig,
+      outcome: c.outcome,
+      tokens: c.tokens,
+      focus: c.focus,
+      head: c.head,
+    })),
+    collapsed: playback.collapsed.map((c) => ({
+      segment_id: c.segment_id,
+      summary: c.summary,
+    })),
+  }
+}
+
+function parseQaQuestionList(value: unknown): Array<{ id: string; question: string }> {
+  if (!Array.isArray(value)) return []
+  const out: Array<{ id: string; question: string }> = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const rec = item as Record<string, unknown>
+    if (typeof rec.id !== 'string' || rec.id.length === 0) continue
+    const question = typeof rec.question === 'string' ? rec.question : ''
+    out.push({ id: rec.id, question })
+  }
+  return out
+}
+
+function playbackCardIdsFromPrompt(text: string): string[] {
+  const marked = readMarkedJson(text, 'PLAYBACK_JSON')
+  if (typeof marked !== 'object' || marked === null) return []
+  const cards = (marked as { cards?: unknown }).cards
+  if (!Array.isArray(cards)) return []
+  const ids: string[] = []
+  for (const card of cards) {
+    if (typeof card !== 'object' || card === null) continue
+    const id = (card as { id?: unknown }).id
+    if (typeof id === 'string' && id.length > 0) ids.push(id)
+  }
+  return ids
 }
 
 class FakeSessionHandle implements PiSessionHandle {
@@ -252,9 +406,12 @@ class PiSessionHandleImpl implements PiSessionHandle {
     this.role = opts.role
     this.model = opts.model
     this.tools = opts.tools
-    for (const name of opts.tools) {
-      if ((BANNED_CODING_TOOLS as readonly string[]).includes(name)) {
-        throw new Error(`hole sessions must not enable coding tool '${name}'`)
+    const holeRole = opts.role === 'hole_a_skeleton' || opts.role === 'hole_b_label'
+    if (holeRole) {
+      for (const name of opts.tools) {
+        if ((BANNED_CODING_TOOLS as readonly string[]).includes(name)) {
+          throw new Error(`hole sessions must not enable coding tool '${name}'`)
+        }
       }
     }
   }

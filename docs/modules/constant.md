@@ -27,6 +27,8 @@
 /** 压缩率：剪后 token / 原 token。PRD MVP 目标。 */
 const COMPRESSION_RATIO_TARGET = { min: 0.10, max: 0.30 }
 
+/** 压缩率得分结点与六项及格线见 `src/constant/compression.ts`（ADR-0005）。 */
+
 /** 洞 B 每窗段数。已拍板。 */
 const LABEL_WINDOW_SIZE = 8
 

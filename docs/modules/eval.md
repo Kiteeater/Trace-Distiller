@@ -122,7 +122,7 @@ eval → types, enums, constant, domain, data
 ## 6. 仍开放的设计问题
 
 1. **token 计量口径（P0）**：工具输出全文？卡片？不定则压缩率验收无意义。
-2. **盲测判分协议（已拍板）**：review 会话输入只有 intent + playback（禁止 warrant / skeleton）。答卷为 `turning_point_segment_ids` + `evidence_segment_ids`。代码对照骨架：节点对应段在 playback 中完全看不见则回填那些段 keep。最多 `REVIEW_MAX_ROUNDS=2`。自由文本不判分。LLM 会话仍待 pi spike。
+2. **盲测判分协议（已拍板）**：review 会话输入只有 intent + playback（禁止 warrant / skeleton）。答卷为 `turning_point_segment_ids` + `evidence_segment_ids`。代码对照骨架：节点对应段在 playback 中完全看不见则回填那些段 keep。最多 `REVIEW_MAX_ROUNDS=2`。自由文本不判分。LLM 答卷经 `runBlindReview`；编排器回填仍走纯代码 `reviewAgainstPlan`。
 3. **QA 题怎么从原始 Trace 自动出**：谁写生成器、要不要 LLM、题型列表（「根因是哪行」）未设计。
 4. **重放环境**：SWE-bench docker？本地无沙箱？architecture 只说「pi 起干净会话跑任务」。
 5. **关键步金标** MVP 从哪来：3–5 条可以手标，流程未写。
@@ -133,9 +133,9 @@ eval → types, enums, constant, domain, data
 ## 7. 实现完成标准
 
 - [x] 压缩率、成本比纯函数有单测，不依赖网络。`computeDistillMetrics` 汇总规则覆盖 / LLM 段占比 / Fail-Closed。
-- [ ] blindReview 在 mock 会话下：传入 warrant 会被工厂拒绝或测试断言未注入。（L4 会话未接通）
+- [x] blindReview 在 mock 会话下：review 消息断言没有 warrant / skeleton。
 - [x] 回填 id 只来自骨架节点对应段，不来自模型「我觉得还该留」。
 - [x] metrics 写入 data，report / `eval` 子命令能读到同一数字。
 - [x] grep 无 pi SDK。
 - [x] 未关闭的 P0 口径不得假装「压缩率已达标」。（数字会算，不宣称落入 10%–30%）
-- [ ] replay / QA 需真模型 L4，保持 NotImplemented。
+- [x] replay / QA / review 接口经 sessions（假后端可测；真模型 `TRACE_DISTILLER_MODEL_L4`）。真实重放成功率需仓库+模型，CI 不假装。
