@@ -26,6 +26,12 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
+# SQLite (OPEN schema; runtime db)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
 # Local trace data (keep directory markers only)
 data/raw/**
 !data/raw/.gitkeep
