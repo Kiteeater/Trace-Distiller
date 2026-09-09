@@ -150,3 +150,42 @@ function toSummary(job: StoredJob): DistillJobSummary {
     attached: attached.has(job.job_id),
   }
 }
+
+/**
+ * 六工具只读快照。不 attach / detach，不进 pipeline，不写盘。
+ * 字段名与 LIVE_TOOL_NAMES 对齐，便于 dump 与页面对账。
+ */
+export interface LiveJobSnapshot {
+  list_jobs: DistillJobSummary[]
+  attach_job: DistillJobSummary
+  detach_job: DistillJobSummary
+  get_cut_progress: CutProgress
+  get_partial_result: PartialResult
+  get_warrant_tail: CutWarrantEntry[]
+}
+
+export interface LiveDump {
+  list_jobs: DistillJobSummary[]
+  jobs: LiveJobSnapshot[]
+}
+
+export function dumpJobSnapshot(job_id: string): LiveJobSnapshot {
+  const job = requireJob(job_id)
+  const summary = toSummary(job)
+  return {
+    list_jobs: list_jobs(),
+    attach_job: summary,
+    detach_job: summary,
+    get_cut_progress: get_cut_progress(job_id),
+    get_partial_result: get_partial_result(job_id),
+    get_warrant_tail: get_warrant_tail(job_id),
+  }
+}
+
+export function dumpAllJobs(): LiveDump {
+  const listed = list_jobs()
+  return {
+    list_jobs: listed,
+    jobs: listed.map((row) => dumpJobSnapshot(row.job_id)),
+  }
+}

@@ -27,9 +27,10 @@
 命令草图：
 
 ```text
-node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--report out.html] [--no-llm]
+node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--report out.html] [--live-dump dir] [--no-llm]
 node script/run-distill.ts eval <trace_id> --sqlite path
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
+node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
 ```
 
 stdin/stdout：日志走 stderr；需要机器读的摘要（trace_id、compression_ratio）可在成功时向 stdout 打一行 JSON。是否如此未拍板，见开放问题。

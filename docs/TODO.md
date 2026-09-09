@@ -50,8 +50,7 @@
 ### 仍未接通（禁止假装完成）
 
 - 真模型 L4 重放 / QA / `blindReview`
-- live 页 UI（只有进程内 `registerJob`）
-- Unix socket
+- Unix socket（live M1 已是进程内 job 表 + `file://` dump 页）
 
 ## M2 — 双产物与门禁
 

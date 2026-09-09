@@ -12,6 +12,8 @@ import {
   UnknownJobError,
   attach_job,
   detach_job,
+  dumpAllJobs,
+  dumpJobSnapshot,
   get_cut_progress,
   get_partial_result,
   get_warrant_tail,
@@ -83,5 +85,29 @@ describe('live in-memory jobs', () => {
     assert.equal(after.attached, false)
 
     assert.throws(() => attach_job('missing'), (err: unknown) => err instanceof UnknownJobError)
+  })
+
+  it('dumpJobSnapshot includes the six live tool fields without attaching', async () => {
+    resetLiveState()
+    const raw = parse(readFileSync(join(fixtures, 'no_llm_conservative.jsonl'), 'utf8'))
+    const result = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'no_llm' })
+    const job_id = registerJobFromResult(result)
+    const snap = dumpJobSnapshot(job_id)
+    for (const name of LIVE_TOOL_NAMES) {
+      assert.ok(Object.hasOwn(snap, name), `missing ${name}`)
+    }
+    assert.equal(list_jobs()[0]?.attached, false)
+    assert.equal(snap.attach_job.job_id, job_id)
+    assert.equal(snap.detach_job.job_id, job_id)
+    assert.equal(snap.get_cut_progress.job_id, job_id)
+    assert.equal(snap.get_partial_result.job_id, job_id)
+    assert.ok(Array.isArray(snap.get_warrant_tail))
+    assert.deepEqual(snap.list_jobs.map((row) => row.job_id), [job_id])
+
+    const all = dumpAllJobs()
+    assert.deepEqual(all.list_jobs.map((row) => row.job_id), [job_id])
+    assert.equal(all.jobs.length, 1)
+    assert.equal(all.jobs[0]?.get_cut_progress.job_id, job_id)
+    assert.equal(list_jobs()[0]?.attached, false)
   })
 })

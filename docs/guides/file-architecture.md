@@ -89,6 +89,8 @@ trace-distiller/
 │  │  ├─ cli.ts
 │  │  └─ live.ts                # 只读订阅，不进 pipeline
 │  ├─ report/                   # 结果 JSON → 自包含 HTML；不要再开 service/report.ts
+│  │  ├─ html.ts                # Playback 报告
+│  │  └─ live_page.ts           # 只读 live dump 页（file://）
 │  └─ utils/                    # 仅无状态：token 估算、jsonl、logger
 ├─ tests/
 ├─ examples/
