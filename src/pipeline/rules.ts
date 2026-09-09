@@ -257,18 +257,14 @@ function decision(
   return d
 }
 
-/**
- * OPEN: 阈值未拍板。非 [0,1] 有限数则跳过 similar_retry，全部交给后续规则 / 未决。
- */
+/** 阈值已拍板 0.8。非 [0,1] 有限数则跳过 similar_retry。 */
 function similarRetryThreshold(): number | undefined {
   const t = SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD
   if (typeof t === 'number' && Number.isFinite(t) && t >= 0 && t <= 1) return t
   return undefined
 }
 
-/**
- * OPEN: Jaccard 文本取自 tool_result 原文（缺则卡片 head），不是未拍板的 token 口径。
- */
+/** Jaccard 文本取自 tool_result 原文（缺则卡片 head）。 */
 function retryText(seg: SegmentCard, rawById: Map<string, RawTurn>): string {
   for (const id of seg.raw_refs) {
     const turn = rawById.get(id)

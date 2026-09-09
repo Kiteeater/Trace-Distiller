@@ -90,7 +90,7 @@ node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report ou
 2. **skill 文件** — 分场景先验（洞 B）
 3. **adapter** — 新的 Trace 格式（Gateway / `adapters/`）
 
-对话调优若做（M3 之后）：agent 只能改 profile，然后流水线重跑。默认值在 [constant.md](../modules/constant.md)，字段草图在 [types.md](../modules/types.md)。数字（`max_gap_segments` 等）仍有 OPEN。
+对话调优若做（M3 之后）：agent 只能改 profile，然后流水线重跑。默认值在 [constant.md](../modules/constant.md)，字段草图在 [types.md](../modules/types.md)。窗口 / span / Jaccard / 死胡同数字已拍板。
 
 ### 成本卖点
 
@@ -130,9 +130,7 @@ node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report ou
 
 未拍板的不在 guides 里私自定案。总入口：[docs/TODO.md](../TODO.md)。
 
-动工前置（P0）仍卡在 **AgentView Trace JSON 结构体**、盲测判分协议、pi spike 等。token 口径、session ≠ trace 切分、GT / 锚点 / sig / Action Unit 切段等已在 [ingest-and-preprocess.md](./ingest-and-preprocess.md) 收成默认。文件树、benchmark 公式、金标旁路路径已在本轮收口。
-
-**蒸馏洞三个工具稍后拍**——不要在实现或 ADR 关闭前把 [tools.md](./tools.md) 草案当成终局契约。
+动工前置仍卡在 **pi spike**（洞 A/B 真调用）。盲测协议、窗口数字、Scenario 名单、蒸馏洞三工具闭集已拍板。token 口径、session ≠ trace 切分、GT / 锚点 / sig / Action Unit 切段等已在 [ingest-and-preprocess.md](./ingest-and-preprocess.md) 收成默认。
 
 各 guide 文末剩余「开放问题」链回 TODO / 对应 module，关闭时改 TODO 和 ADR，而不是只改 guide。
 
@@ -153,7 +151,7 @@ node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report ou
 - [x] 上表文件都在 `docs/guides/`，链接能点开。
 - [x] `file-architecture` / `pi-sdk` / `benchmark` / `datasets` 标成已收口。
 - [x] live 定义保持「同步 Distiller 裁剪进度」。
-- [x] 蒸馏洞三个工具标明稍后拍板。
+- [x] 蒸馏洞三个工具标明已拍板闭集。
 - [x] 阅读顺序能让没写过代码的人走到「怎么证明剪好了」。
 - [x] 「CutProfile / 成本 / 明确不做 / 与 modules 分工 / OPEN 入口」五件事在本页能找到落点。
 - [x] 没有任何一篇 guide 把 Distiller 写成单一 Runtime Agent，或把 Gateway 写成在线网关。

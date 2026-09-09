@@ -111,7 +111,7 @@ eval → types, enums, constant, domain, data
 
 - **乘法复合分**（ADR-0005）：六项全及格才计总分；压缩率得分分段映射，不奖励剪到 0%。
 - **连贯性卡下限**不只卡均值。
-- **盲测对抗性**（ADR-0009）：review 只拿意图 + 剪后 trace。缺失骨架点 → 代码回填对应段，最多两轮。这既是门禁也是闭环修正，也是 Fail-Closed 的另一种实现。
+- **盲测对抗性**（ADR-0009，已拍板）：review 只拿意图 + playback。缺失骨架点 → `reviewFillInIds` 回填对应段 keep，最多 `REVIEW_MAX_ROUNDS=2`。这既是门禁也是闭环修正，也是 Fail-Closed 的另一种实现。
 - **关键步召回**：金标来源是人工+强模型双标（benchmark）；MVP 可用洞 A 骨架节点当弱代理，但报告必须写明「非金标」。
 - 压缩率口径与 `TraceMeta.total_tokens`、段 `tokens` 同一套（P0 未定）。
 
@@ -122,7 +122,7 @@ eval → types, enums, constant, domain, data
 ## 6. 仍开放的设计问题
 
 1. **token 计量口径（P0）**：工具输出全文？卡片？不定则压缩率验收无意义。
-2. **盲测判分协议（P0）**：结构化问题长什么样——关键转折点选择 + 从剪后 trace 指认证据段 id。选项怎么生成、几个选项、对上骨架算 pass 的阈值，都没有。
+2. **盲测判分协议（已拍板）**：review 会话输入只有 intent + playback（禁止 warrant / skeleton）。答卷为 `turning_point_segment_ids` + `evidence_segment_ids`。代码对照骨架：节点对应段在 playback 中完全看不见则回填那些段 keep。最多 `REVIEW_MAX_ROUNDS=2`。自由文本不判分。LLM 会话仍待 pi spike。
 3. **QA 题怎么从原始 Trace 自动出**：谁写生成器、要不要 LLM、题型列表（「根因是哪行」）未设计。
 4. **重放环境**：SWE-bench docker？本地无沙箱？architecture 只说「pi 起干净会话跑任务」。
 5. **关键步金标** MVP 从哪来：3–5 条可以手标，流程未写。

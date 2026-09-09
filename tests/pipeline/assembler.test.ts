@@ -57,7 +57,7 @@ function viewOf(segments: SegmentCard[]): AgentView {
       ground_truth_ref: 'turn:t-gt',
       total_tokens: segments.reduce((sum, s) => sum + s.tokens, 0),
     },
-    intent_hypothesis: { version: 0, text: '', scenario: undefined },
+    intent_hypothesis: { version: 0, text: '' },
     skeleton: { version: 0, nodes: [] },
     segments,
   }

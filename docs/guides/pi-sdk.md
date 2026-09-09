@@ -4,7 +4,7 @@
 |------|------|
 | 版本 | v0.2 |
 | 日期 | 2026-09-09 |
-| 状态 | **已收口**：pi 只当 sessions 洞内核；结构化输出 / 骨架注入 / 降档仍待 spike |
+| 状态 | **已收口**：pi 只当 sessions 洞内核；模型档走 env；失败重试 1 次再 Fail-Closed；本仓库仍不 import pi |
 | 权威来源 | [ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)、[architecture.md](../architecture.md)「内核 / 三条活口」、[agent-sessions.md](../modules/agent-sessions.md) |
 
 ## 目的
@@ -41,18 +41,26 @@
 
 | 能力 | 谁 | 说明 |
 |------|----|------|
-| 创建 / 关闭一次 LLM 会话 | **pi** | `createAgentSession()`；一窗一会话（MVP 建议） |
+| 创建 / 关闭一次 LLM 会话 | **pi** | `createAgentSession()`；**一窗一会话**（已拍板） |
 | 多 provider（Anthropic / OpenAI / 自定义；Azure 可接） | **pi** | 打标升/降档后做 A/B；模型名走 env / 入参 |
 | 自定义消息序列（骨架注入 system 或前置消息） | **pi**（待 spike） | 洞 B 每窗要带着骨架 context |
 | 结构化 / JSON 模式输出 | **pi**（待 spike） | 优先走 SDK；失败则 Fail-Closed，不在洞里猜标签 |
-| extension 工具挂载 | **pi** 提供挂载点；**我们**定义工具 | 蒸馏洞三个工具稍后拍板（[tools.md](./tools.md)） |
+| extension 工具挂载 | **pi** 提供挂载点；**我们**定义工具 | 蒸馏洞三工具已拍板闭集（[tools.md](./tools.md)）；handler 纯函数，本 PR 不挂 pi |
 | Skills / Markdown 注入 | **pi 或自读文件**（待 spike） | 策略内容是我们的 `agent/skills/` |
 | 流水线编排、切多少段、何时开洞、重试 | **Distiller** | orchestrator，纯 TS；**不**交给 pi agent loop |
 | Action Unit 切段 / 规则打标 / 执行凭证 | **Distiller** | `pipeline/*` |
 | SQLite / HTML 报告 / CutProfile / CLI / live 订阅 | **Distiller** | `data/`、`report/`、`service/`；sessions 只返回 `usage`，不写库 |
 | Admission Gate、失败 Trace 拒绝 | **Distiller** | adapters；与 pi 无关 |
 
-模型档位（已定原则，具体名字 OPEN）：洞 A 可用更强档；洞 B 日常打标；QA 可降档。换模型走 provider 抽象，不换目录。
+模型档位（已拍板 env 名，具体模型字符串由部署填）：洞 A 可用更强档；洞 B 日常打标；QA / L4 可降档。换模型走 provider 抽象，不换目录。
+
+| 洞 / 角色 | 环境变量 |
+|-----------|----------|
+| 洞 A（骨架） | `TRACE_DISTILLER_MODEL_HOLE_A` |
+| 洞 B（打标 / 衔接） | `TRACE_DISTILLER_MODEL_HOLE_B` |
+| L4（QA / 重放 / review） | `TRACE_DISTILLER_MODEL_L4` |
+
+失败：同一会话 **重试 1 次**（`PI_FAILURE_RETRY`），仍失败则编排器 **Fail-Closed Keep**。`createAgentSession` 仍只允许出现在 `src/agent/sessions/`。**本仓库不真正 import pi。**
 
 ## 怎么用 / 怎么跑
 
@@ -77,7 +85,7 @@ openReviewSession / openReplaySession / openQaSession
 - 挂 extension、注入 skill 文本、注入骨架 context。
 - 限制洞 A 可见 turns（头 + 验证点）。这是注意力设计的实现点，不是调用方的礼貌约定。
 - 把工具调用拦下来变成 `LabelDecision`，而不是解析一篇散文。
-- 解析失败向上抛，让 orchestrator Fail-Closed。
+- 解析失败向上抛；sessions 侧重试 1 次，仍失败让 orchestrator Fail-Closed。
 - review 会话断言：消息里没有 warrant、没有骨架。
 
 薄包不要做的事：切段、跑规则、执行裁剪、写 SQLite、选 skill 文件、决定窗口大小、推 live 进度、当 Distiller 的 agent loop。
@@ -96,7 +104,7 @@ TODO 原文：验证下面三件可用——「内核可换」活口依赖它。
 
 - extension 自定义工具能否按段调用；非法 Label 被拒。
 - 是否用 pi Skills 机制还是 sessions 自读 Markdown。
-- 一窗一 `createAgentSession` 的真实耗时 / 连接成本，好决定要不要复用会话。
+- 一窗一 `createAgentSession` 已拍板；spike 只测耗时，不改成复用。
 
 spike 用假 provider 或便宜档即可；要留下「三项打勾」的记录，不要只存在某次聊天里。
 
@@ -130,10 +138,10 @@ spike 用假 provider 或便宜档即可；要留下「三项打勾」的记录�
 1. **P0 spike 尚未做。** 上表三项是真 OPEN，不是文档能关的。
 2. 骨架注入挂在 system 还是前置消息：取决于 spike。
 3. pi Skills vs 自读 `skills/*.md`：策略文件已定，加载机制未定。
-4. 一窗一会话 vs 复用：architecture 写前者；成本与状态泄漏未测。
-5. `read_segment` 注册成 pi tool 还是 sessions 侧 RPC（[agent-extension.md](../modules/agent-extension.md) §6）；蒸馏洞工具闭集稍后拍板。
-6. 模型名进 constant 还是只进 env（[constant.md](../modules/constant.md) §6）。
-7. 验证点 turn 的读取范围已由 ingest 给出 `anchor_turn_ids`；review 答卷格式未定，sessions 无法实现对应解析。
+4. 一窗一会话已拍板；成本未测，但不改成复用。
+5. `read_segment` 注册成 pi tool 还是 sessions 侧 RPC：handler 纯函数已落地，挂载点等 spike。
+6. 模型名只进 env（上表三变量），不进 constant。
+7. 验证点 turn 的读取范围已由 ingest 给出 `anchor_turn_ids`。盲测协议已拍板（intent + playback；缺骨架节点代码回填 keep；最多 2 轮）；sessions 的 LLM 解析仍待 spike。
 
 ## 完成标准
 

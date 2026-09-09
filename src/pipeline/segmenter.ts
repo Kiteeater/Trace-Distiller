@@ -36,7 +36,7 @@ export function segment(raw: RawTrace): AgentView {
       ground_truth_ref: raw.meta.ground_truth_ref,
       total_tokens: raw.meta.total_tokens,
     },
-    intent_hypothesis: { version: 0, text: '', scenario: undefined },
+    intent_hypothesis: { version: 0, text: '' },
     skeleton: { version: 0, nodes: [] },
     segments: groups.map((turns, index) => toCard(turns, index)),
   }
@@ -192,11 +192,7 @@ function collapseWs(s: string): string {
 
 function firstLineHead(text: string): string {
   const line = text.split(/\r?\n/u, 1)[0] ?? ''
-  // OPEN: SEGMENT_HEAD_MAX_CHARS 未拍板，Number.isFinite 失败时不截。
-  if (Number.isFinite(SEGMENT_HEAD_MAX_CHARS) && SEGMENT_HEAD_MAX_CHARS >= 0) {
-    return line.slice(0, SEGMENT_HEAD_MAX_CHARS)
-  }
-  return line
+  return line.slice(0, SEGMENT_HEAD_MAX_CHARS)
 }
 
 function outcomeOf(result: RawTurn | undefined): SegmentOutcome {

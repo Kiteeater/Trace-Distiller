@@ -160,7 +160,7 @@ function indexContinuity(
 
 /**
  * 相邻 keep 的跨度：collapse 占位算一步。gap = 两步之间的原段数（均为 drop）。
- * 阈值用 SPAN_MAX_GAP_SEGMENTS（OPEN 命名常量）。
+ * 阈值用 SPAN_MAX_GAP_SEGMENTS（已拍板 3）。
  */
 function checkSpan(
   steps: string[],

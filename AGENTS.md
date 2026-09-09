@@ -33,22 +33,21 @@
 ## 契约层约定（当前已落地）
 
 - 一条 `RawTrace` = 一个任务；`ground_truth` 必填。Admission 三码：`no_ground_truth` / `unparseable` / `multi_task_ambiguous`。
-- `Scenario` 名单未拍板，类型是 `unknown`。不要假装已有 skill 路由或场景码。
-- 窗口大小、span 段数、Jaccard 阈值是命名常量，标注 `OPEN`，未拍板前不得当实现阈值。
-- 卡片字段由代码填，禁止 LLM 生成 `head` / `sig` / `focus`。
+- `Scenario` 已拍板：`debug` | `implement` | `refactor` | `test_fix` | `investigate`。`SKILL_ROUTE` 指向 `agent/skills/{name}.md`；查不到回退 `implement`，禁止静默空 prompt。
+- 窗口 / span / Jaccard / head / 死胡同条数已拍板：`LABEL_WINDOW_SIZE=8`、`SPAN_MAX_GAP_SEGMENTS=3`、`SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD=0.8`、`SEGMENT_HEAD_MAX_CHARS=120`、`DEAD_END_MAX_REPRESENTATIVE=3`、`DEAD_END_SUMMARY_MAX_CHARS=80`。`DEFAULT_CUT_PROFILE` 用这些数。禁止在 pipeline 另写魔数。
+- 卡片字段由代码填，禁止 LLM 生成 `head` / `sig` / `focus`。segmenter 截 `head` 到 `SEGMENT_HEAD_MAX_CHARS`。
 - L0：`src/adapters/claude_code.ts` 解析单任务 claude-code JSONL 并执行 Admission Gate。
 - L1：切段 / 规则打标 / 无洞编排 / assembler / SQLite / 自包含报告 / distill CLI 已通。
 - **无洞通路**：`distill({ mode: 'no_llm' })` 与 CLI `--no-llm`。规则已决议按 CutProfile 裁；未决段 Fail-Closed Keep。凭证走 `src/agent/sessions/write_warrant.ts` 纯代码汇总（LabelDecision[] + 未决 keep + decideCut），orchestrator 可复用。
-- Live：`src/service/live.ts` 内存订阅 Distiller job（`list_jobs` / `attach_job` / `detach_job` / `get_cut_progress` / `get_partial_result` / `get_warrant_tail`）。纯 TS，无 LLM。distill 成功后 CLI 调 `registerJobFromResult` 登记内存 job，不 listen HTTP；`src/agent/skills/` 仅 README（Scenario 名单 OPEN，禁止假 skill 冒充 M2）；`src/utils/logger.ts` 无状态打 stderr。
-- Eval：`compressionRatio` / `distillCostRatio` 纯函数（L4 token 不计蒸馏成本）。
+- Live：`src/service/live.ts` 内存订阅 Distiller job（`list_jobs` / `attach_job` / `detach_job` / `get_cut_progress` / `get_partial_result` / `get_warrant_tail`）。纯 TS，无 LLM。M1 传输 = 进程内 `registerJobFromResult`，不 listen HTTP；Unix socket 以后再说。`src/agent/skills/` 五份极简 Markdown + README；`src/utils/logger.ts` 无状态打 stderr。
+- Eval：`compressionRatio` / `distillCostRatio` 纯函数（L4 token 不计蒸馏成本）。盲测协议：review 输入只有 intent + playback；缺骨架节点由代码回填 keep；最多 `REVIEW_MAX_ROUNDS=2`。
+- 蒸馏洞三工具已拍板闭集：`label_segment` / `check_continuity` / `read_segment`。`src/agent/extension.ts` 纯函数 handler（校验枚举 / 取数）；rationale 不进凭证；`read_segment` 只本段；一窗一会话；Fail-Closed Keep。不接 pi。
 
 ## 仍未接通（禁止假装完成）
 
 - 洞 A `skeletonPass`、洞 B `labelWindow`、衔接 `checkContinuityPair`：签名已导出，内部抛 `NotImplementedError`，待 pi spike。禁止假造 LLM 结果。orchestrator 不要接通这两洞。
-- 蒸馏洞三工具（`label_segment` / `check_continuity` / `read_segment`）：`src/agent/extension.ts` 只导出 DRAFT 名单，稍后拍板，无执行体。
-- pi SDK / `createAgentSession`：全仓库不得真正 import；仅 `src/agent/sessions/` 可留 `// TODO createAgentSession` 注释。eval 干净会话必须走 sessions 工厂（同样 NotImplemented）。
-- live 传输细节（进程内事件 / 本机 socket / 临时端口）OPEN；禁止 HTTP listen。
-- OPEN 数字阈值（窗口大小、死胡同条数、Jaccard 正式拍板等）与盲测判分协议。
+- pi SDK / `createAgentSession`：全仓库不得真正 import；仅 `src/agent/sessions/` 可留 `// TODO createAgentSession` 注释。eval 干净会话必须走 sessions 工厂（同样 NotImplemented）。模型档走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`。失败重试 1 次（`PI_FAILURE_RETRY`）再 Fail-Closed。本仓库仍不真正 import pi。
+- live 禁止 HTTP listen。M1 已定进程内 `registerJob`；Unix socket 以后再说。
 
 ## TypeScript
 

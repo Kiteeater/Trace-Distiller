@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { NotImplementedError } from '../../src/agent/sessions/skeleton_pass.ts'
 import { compressionRatio, distillCostRatio } from '../../src/eval/metrics.ts'
 import { replay } from '../../src/eval/replay.ts'
-import { answerQa, blindReview, generateQa } from '../../src/eval/review.ts'
+import { REVIEW_MAX_ROUNDS } from '../../src/constant/window.ts'
+import { answerQa, blindReview, generateQa, reviewFillInIds } from '../../src/eval/review.ts'
 
 const evalDir = join(dirname(fileURLToPath(import.meta.url)), '../../src/eval')
 
@@ -40,12 +41,48 @@ describe('eval ratios', () => {
   })
 })
 
+describe('blind review protocol helpers', () => {
+  it('fills keep ids for skeleton nodes missing from playback, max rounds is 2', () => {
+    assert.equal(REVIEW_MAX_ROUNDS, 2)
+    const fill = reviewFillInIds(
+      {
+        version: 1,
+        nodes: [
+          { id: 'n1', kind: 'turning_point', segment_ids: ['s0002'], note: '' },
+          { id: 'n2', kind: 'verification_anchor', segment_ids: ['s0009'], note: '' },
+        ],
+      },
+      {
+        trace_id: 't',
+        plan_ref: 'p',
+        cards: [
+          {
+            id: 's0002',
+            tool: 'Edit',
+            sig: 'Edit:a',
+            outcome: 'ok',
+            rep_of: null,
+            reads: [],
+            writes: [],
+            tokens: 1,
+            focus: 'card',
+            head: 'kept',
+            raw_refs: ['t2'],
+          },
+        ],
+        collapsed: [],
+      },
+    )
+    assert.deepEqual(fill, ['s0009'])
+  })
+})
+
 describe('eval review / replay shells', () => {
   it('throws NotImplementedError and does not import pi', async () => {
     await assert.rejects(
       () =>
         blindReview({
-          intent: { version: 0, text: '', scenario: undefined },
+          intent: { version: 0, text: '' },
           playback: { trace_id: 't', plan_ref: 'p', cards: [], collapsed: [] },
           skeleton: { version: 0, nodes: [] },
         }),
@@ -85,7 +122,7 @@ describe('eval review / replay shells', () => {
               ground_truth_ref: 'g',
               total_tokens: 1,
             },
-            intent_hypothesis: { version: 0, text: '', scenario: undefined },
+            intent_hypothesis: { version: 0, text: '' },
             skeleton: { version: 0, nodes: [] },
             segments: [],
           },

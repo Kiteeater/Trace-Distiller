@@ -4,7 +4,7 @@
 |------|------|
 | 版本 | v0.2 |
 | 日期 | 2026-09-09 |
-| 状态 | **已收口**（公式与及格线）；token 口径对齐 ingest；盲测协议等实现细节仍 OPEN |
+| 状态 | **已收口**（公式与及格线）；token 口径对齐 ingest；盲测协议已拍板（LLM review 仍待 spike） |
 | 权威来源 | [benchmark/README.md](../../benchmark/README.md)、[ADR-0005](../adr/0005-benchmark-multiplicative-score.md) |
 
 > 压缩和保真绑在一起看。单项好看不算数。设计原文在 [benchmark/README.md](../../benchmark/README.md)，本页把它写成已定验收口径。
@@ -183,7 +183,7 @@ benchmark/
 公式与及格线已收口。仍影响「能不能报分」的实现细节：
 
 1. **token 计数库选型**：口径已定（RawTrace 原文）；用哪套 tokenizer / 是否与 provider 对齐未锁（ingest 开放问题 3）。
-2. **盲测判分协议（P0）**：结构化问题长什么样、对上骨架算 pass 的阈值。
+2. **盲测判分协议（已拍板）**：review 只拿 intent + playback；结构化答卷对照骨架；缺节点由代码回填 keep；最多 2 轮。LLM 会话仍待 spike。
 3. **QA 题怎么从原始 Trace 自动出**；题型列表未设计。
 4. **重放环境**：SWE-bench docker，还是本地无沙箱。
 5. **Playback vs Training 用哪份做 QA/review**：人读用 Playback；模型复述也许 Training 原文更好。未拍板。

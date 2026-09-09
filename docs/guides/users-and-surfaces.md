@@ -140,7 +140,7 @@ Training Cut 默认不要铺满报告——太长。墙在左边用卡片索引�
 3. **stdout 一行 JSON vs 纯人类日志**：机器摘要（trace_id、压缩率）是否打 stdout，未拍板。
 4. **报告内嵌体积**：500 段 full 原文会让 html 巨大。建议内嵌卡片 + 删除理由 + keep 的 head；未拍板。
 5. **对话调 profile**：确认有真实用户反复调才做（TODO M3）。在此之前不要做聊天壳。
-6. **live 页传输细节**（端口约定、进程内推送 vs 本机 socket、多 job 列表 UX）：工具闭集已定（见 [tools.md](./tools.md)），实现形态未锁。
+6. **live 页传输**：M1 = 进程内 `registerJobFromResult`。禁止 HTTP listen。Unix socket 以后再说。
 
 ---
 

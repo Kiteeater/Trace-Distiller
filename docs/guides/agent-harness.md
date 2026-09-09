@@ -145,12 +145,12 @@ Harness 的调用方是 `pipeline/orchestrator.distill`，不是 pi。sessions �
 ## 开放问题
 
 1. **`writeWarrant` 是否走 LLM**：0009 写「主 agent 写 JSON 凭证」；architecture 写重组纯代码。orchestrator 给了兼容建议，**未在 ADR 层关闭**。
-2. **一窗一会话 vs 复用会话**（[agent-sessions.md](../modules/agent-sessions.md) §6）。建议 MVP 一窗一会话。
+2. **一窗一会话已拍板**（不复用）。
 3. **窗并行与确定性 merge 顺序**。
-4. **跳过洞 A**：milestones 允许排期紧先无骨架打通。`skeleton=empty` 仍跑洞 B 需要 default skill。
-5. **`LABEL_WINDOW_SIZE`** 数字未定（constant OPEN）。
-6. **`read_segment` 挂成 pi tool 还是 prompt 外 RPC**：与 architecture「判断力工具只有两个」的字面冲突，模块已定义为非判断力工具，ADR 未关。
-7. 验证点 turn 如何保证传入、review 结构化答卷格式：P0，sessions 实现不了猜。
+4. **跳过洞 A**：milestones 允许排期紧先无骨架打通。`skeleton=empty` 仍跑洞 B 时查不到场景回退 `implement`。
+5. **`LABEL_WINDOW_SIZE=8`** 已拍板。
+6. **`read_segment` 挂成 pi tool 还是 prompt 外 RPC**：handler 纯函数已落地；挂载点等 spike。
+7. 盲测协议已拍板（intent + playback；缺骨架节点代码回填 keep；最多 2 轮）。sessions 的 LLM 解析仍待 spike。
 
 ## 完成标准
 

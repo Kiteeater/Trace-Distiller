@@ -134,18 +134,18 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 | 路径 | 职责（已定） | 状态 | OPEN 时去哪 |
 |------|--------------|------|-------------|
 | `src/types/*.ts`（六文件） | RawTrace / AgentView / Segment / CutPlan / CutWarrant / CutProfile | **文件名已定；字段 OPEN** | [TODO.md](../TODO.md) P0 结构体；草图 [types.md](../modules/types.md) |
-| `src/enums/` 五文件 | Label / Scenario / AgentRole / Focus / CutAction | **文件集合已定** | Label / Focus / CutAction / AgentRole 取值已定；**Scenario 名单 OPEN**（[enums.md](../modules/enums.md) §6） |
-| `src/constant/` 三文件 | 压缩率区间、窗口、skill 路由表 | **文件名已定** | `LABEL_WINDOW_SIZE`、span 数字、死胡同条数、Jaccard、路由表键 OPEN（[constant.md](../modules/constant.md) §6） |
+| `src/enums/` 五文件 | Label / Scenario / AgentRole / Focus / CutAction | **文件集合已定** | Label / Focus / CutAction / AgentRole / **Scenario 五字面量已定**（[enums.md](../modules/enums.md)） |
+| `src/constant/` 三文件 | 压缩率区间、窗口、skill 路由表 | **文件名已定；数字已拍板** | 见 [constant.md](../modules/constant.md) |
 | `src/domain/` 三文件 | LabelDecision / CutDecision / SpanViolation | **文件名已定** | 不变量跟 types 一起钉 |
 | `src/adapters/claude_code.ts` | L0 解析 + Admission Gate | **M1 文件已定** | 启发式阈值见 ingest 开放问题；SWE-bench parser MVP 不做 |
-| `src/pipeline/*.ts` 四文件 | 切段 / 规则 / 编排 / 组装 | **文件名已定** | Jaccard、`writeWarrant` 是否走 LLM、span 定量等见对应 module §6 |
+| `src/pipeline/*.ts` 四文件 | 切段 / 规则 / 编排 / 组装 | **文件名已定** | Jaccard / span 数字已拍板；`writeWarrant` 已改纯代码 |
 | `src/agent/sessions/` 三文件 | **唯一 pi 依赖点** | **文件名已定** | P0 pi spike；`write_warrant.ts` 可改纯代码 |
-| `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown | **路径已定** | 蒸馏洞三个工具**稍后拍板**（[tools.md](./tools.md)）；Scenario 名单未定前不要冒充 M2 完成 |
+| `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown | **路径已定** | 三工具已拍板闭集（[tools.md](./tools.md)）；五份 skill 只写洞 B 纪律，洞 A/B 仍未接通 |
 | `src/data/data_*.ts` 四文件 | SQLite：段 / 打标 / 凭证 / 指标 | **文件名已定** | **列级 schema OPEN**（P0） |
-| `src/eval/` | L4 数字 | **职责已定** | 盲测判分协议是 P0；复合分见 [benchmark.md](./benchmark.md) |
+| `src/eval/` | L4 数字 | **职责已定** | 盲测协议已拍板（intent + playback；缺骨架回填 keep；最多 2 轮）；LLM review 仍待 spike。复合分见 [benchmark.md](./benchmark.md) |
 | `src/report/` | 结果 JSON → 单个 `.html` | **已定** | 视觉细节非契约 |
 | `src/service/cli.ts` | CLI 薄壳 | **已定** | argv 细节 OPEN |
-| `src/service/live.ts` | 只读订阅 Distiller 裁剪进度 | **已定** | 传输细节 OPEN；禁止进 pipeline |
+| `src/service/live.ts` | 只读订阅 Distiller 裁剪进度 | **已定** | M1 传输 = 进程内 `registerJob`；禁止 HTTP listen；禁止进 pipeline |
 | `src/utils/` | token 估算、jsonl、logger | **已定** | 计数库选型未锁（口径已在 ingest 收口） |
 | `script/run-distill.ts` | 进程入口 | **已定** | 仓库还没有 package.json |
 | 锁文件 / 运行时 | bun 装、node 跑、不要 npm lock | **已定** | 工程骨架仍 OPEN（P0） |
@@ -169,8 +169,8 @@ architecture 三条活口也已定：**目录不用为它们预留第四种形�
 1. **AgentView / SegmentCard / CutWarrant / CutProfile 字段**（P0 结构体）。树等它们，不是反过来。
 2. **注意力默认档、token 计数库选型**（P0 / ingest 实现细节）。口径与切段默认已在 ingest 收口。
 3. **工程骨架**：AGENTS.md、package.json、tsconfig、eslint、pi spike、SQLite 列级 schema。
-4. **Scenario 名单** → skill 文件名和 `SKILL_ROUTE` 才能写死。
-5. **蒸馏洞三个工具**稍后拍板，不在本页发明第四个判断力工具。
+4. **Scenario 名单**与 `SKILL_ROUTE` 已拍板；洞 A 仍未接通，不要把 skill 文件当成 M2 完成。
+5. **蒸馏洞三个工具**已拍板闭集，不在本页发明第四个判断力工具。
 
 ## 完成标准
 

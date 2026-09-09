@@ -61,7 +61,7 @@ function actionForLabel(label: Label, profile: CutProfile): CutAction {
   return 'keep'
 }
 
-/** OPEN: summary_max_chars 未拍板时不截。空 head 给占位，避免 assembler 拒 collapse。 */
+/** 空 head 给占位，避免 assembler 拒 collapse。摘要截到 `summary_max_chars`。 */
 export function deadEndSummary(head: string, maxChars: number): string {
   const text = head.length > 0 ? head : 'dead_end'
   if (typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 0) {

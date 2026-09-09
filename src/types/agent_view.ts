@@ -5,7 +5,8 @@ import type { SegmentCard } from './segment.ts'
 export interface IntentHypothesis {
   version: number
   text: string
-  scenario: Scenario
+  /** 洞 A 写出；切段占位可缺省。非法码由 `resolveSkillRoute` 回退 implement。 */
+  scenario?: Scenario
 }
 
 export type SkeletonNodeKind =

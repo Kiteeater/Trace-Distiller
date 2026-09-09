@@ -37,6 +37,7 @@ export interface ContinuityPairResult {
 /**
  * 洞 B 逐窗打标。待 pi spike；禁止假造 Label / 置信度。
  * TODO createAgentSession — 仅本目录在 spike 后可 import pi。
+ * 模型：TRACE_DISTILLER_MODEL_HOLE_B；一窗一会话；失败重试 PI_FAILURE_RETRY 次再 Fail-Closed。
  */
 export async function labelWindow(_input: LabelWindowInput): Promise<LabelWindowOutput> {
   throw new NotImplementedError(

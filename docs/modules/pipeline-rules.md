@@ -101,7 +101,7 @@ rules → types, enums, constant（Jaccard 阈值等）, domain, utils
 ## 6. 仍开放的设计问题
 
 1. **注意力档规则集（P0）**：除「已决议噪音 → line」外，什么情况默认 `full`？几乎不应默认 full（拉取式，不是推送式）。是否 MVP 从不默认 full？
-2. **Jaccard 阈值、文本取自卡片 head 还是工具返回全文**（又撞上 token 口径）。
+2. **Jaccard 阈值已拍板 0.8**。文本取自 tool_result 原文（缺则卡片 head）。token 计数库选型仍 OPEN。
 3. **失败调用一定是死胡同吗**？第一次失败但引出关键决策的，应是有效探索。规则如何避免误杀：建议失败且「后续无写入/无新 sig」才标死胡同，否则未决。
 4. **`sig` 未定**时聚类实现应阻塞。
 
