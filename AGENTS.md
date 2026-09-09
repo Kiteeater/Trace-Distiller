@@ -39,7 +39,7 @@
 - L0：`src/adapters/claude_code.ts` 解析单任务 claude-code JSONL 并执行 Admission Gate。
 - L1：切段 / 规则打标 / 无洞编排 / assembler / SQLite / 自包含报告 / distill CLI 已通。
 - **无洞通路**：`distill({ mode: 'no_llm' })` 与 CLI `--no-llm`。规则已决议按 CutProfile 裁；未决段 Fail-Closed Keep。凭证走 `src/agent/sessions/write_warrant.ts` 纯代码汇总（LabelDecision[] + 未决 keep + decideCut），orchestrator 可复用。
-- Live：`src/service/live.ts` 内存订阅 Distiller job（`list_jobs` / `attach_job` / `detach_job` / `get_cut_progress` / `get_partial_result` / `get_warrant_tail`）。纯 TS，无 LLM。
+- Live：`src/service/live.ts` 内存订阅 Distiller job（`list_jobs` / `attach_job` / `detach_job` / `get_cut_progress` / `get_partial_result` / `get_warrant_tail`）。纯 TS，无 LLM。distill 成功后 CLI 调 `registerJobFromResult` 登记内存 job，不 listen HTTP；`src/agent/skills/` 仅 README（Scenario 名单 OPEN，禁止假 skill 冒充 M2）；`src/utils/logger.ts` 无状态打 stderr。
 - Eval：`compressionRatio` / `distillCostRatio` 纯函数（L4 token 不计蒸馏成本）。
 
 ## 仍未接通（禁止假装完成）
