@@ -197,7 +197,7 @@ skill 文件读取：sessions 可以读磁盘上的 Markdown（这是读策略�
 3. **writeWarrant 是否存在**：见 orchestrator 开放问题。本模块先留函数草图。
 4. **洞 B 一窗一会话已拍板**，不复用。
 5. **骨架注入的具体 prompt 位置**：system 还是前置消息。取决于 spike。
-6. **盲测协议已拍板**（intent + playback；缺骨架节点代码回填 keep；最多 2 轮）。sessions 的 LLM 答卷解析仍待 spike。
+6. **盲测协议已拍板**（intent + playback；缺骨架节点代码回填 keep；最多 2 轮）。`runBlindReview` 解析结构化答卷。
 
 ---
 
@@ -206,6 +206,7 @@ skill 文件读取：sessions 可以读磁盘上的 Markdown（这是读策略�
 - [x] 全仓库 pi SDK import 只出现在 `src/agent/sessions/`（可用 lint/grep 门禁）。
 - [x] `skeletonPass` 单测（mock pi）：prompt 含头/验证点，**不含**中间 full 原文。
 - [x] `labelWindow` 在工具不返回时，函数失败而不是捏造 Label。
-- [ ] usage 带 role，eval 能据此拆成本。
-- [ ] review 工厂注入的消息里断言没有 warrant/skeleton 字段。
+- [x] usage 带 role（洞 A/B 与 L4 分账）；蒸馏成本比分子不含 L4。
+- [x] review 工厂注入的消息里断言没有 warrant/skeleton 字段。
 - [x] 换假 provider 能跑通一次（spike 清单三项打勾）。
+- [x] `runQa` / `runReplay` / `runBlindReview`：假后端可解析 JSON；真 pi 同一入口。

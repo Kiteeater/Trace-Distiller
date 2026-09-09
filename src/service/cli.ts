@@ -19,7 +19,8 @@ import {
 import { getCutPlan, getWarrant, insertCutPlan, insertWarrant } from '../data/data_warrant.ts'
 import type { LabelDecision } from '../domain/label_decision.ts'
 import { isSpanFailure } from '../domain/span_violation.ts'
-import { computeDistillMetrics, type DistillMetrics } from '../eval/metrics.ts'
+import { computeDistillMetrics, compositeScore, type DistillMetrics } from '../eval/metrics.ts'
+import { L4_METRICS_ONLY_NOTE, runOptionalL4 } from '../eval/run.ts'
 import { distill, resolveDistillMode, type DistillResult } from '../pipeline/orchestrator.ts'
 import { renderHtml, type ReportModel } from '../report/html.ts'
 import { renderLiveHtml } from '../report/live_page.ts'
@@ -50,15 +51,14 @@ export interface CliArgs {
   live_dump_dir?: string
   live_socket_path?: string
   no_llm?: boolean
+  qa?: boolean
+  replay?: boolean
   help?: boolean
 }
 
-const L4_NOTE =
-  'replay/qa 需真模型 L4（TRACE_DISTILLER_MODEL_L4）与干净会话，本命令不跑重放或 QA'
-
 const HELP = `Usage:
   node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--live-dump dir] [--live-socket path] [--no-llm]
-  node script/run-distill.ts eval <trace_id> --sqlite path
+  node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
   node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
 
@@ -66,7 +66,7 @@ const HELP = `Usage:
 
 FakeSessionBackend is for tests only. Production with_llm needs TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
-eval reads distill metrics from SQLite. ${L4_NOTE}.
+eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a workspace and model; this command only guarantees the session interface.
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
@@ -96,6 +96,8 @@ export function parseArgv(argv: string[]): CliArgs {
   let live_dump_dir: string | undefined
   let live_socket_path: string | undefined
   let no_llm: boolean | undefined
+  let qa: boolean | undefined
+  let replay: boolean | undefined
 
   const take = (i: number, flag: string): [string, number] => {
     const next = argv[i + 1]
@@ -145,6 +147,14 @@ export function parseArgv(argv: string[]): CliArgs {
       no_llm = true
       continue
     }
+    if (token === '--qa') {
+      qa = true
+      continue
+    }
+    if (token === '--replay') {
+      replay = true
+      continue
+    }
     if (token.startsWith('-')) {
       throw new Error(`未知参数 ${token}`)
     }
@@ -166,6 +176,8 @@ export function parseArgv(argv: string[]): CliArgs {
   if (live_dump_dir !== undefined) args.live_dump_dir = live_dump_dir
   if (live_socket_path !== undefined) args.live_socket_path = live_socket_path
   if (no_llm !== undefined) args.no_llm = no_llm
+  if (qa !== undefined) args.qa = qa
+  if (replay !== undefined) args.replay = replay
   return args
 }
 
@@ -353,11 +365,11 @@ function toReportModel(
   }
 }
 
-function runEval(args: CliArgs): number {
+async function runEval(args: CliArgs): Promise<number> {
   const sqlite = args.sqlite_path
   const trace_id = args.input_path
   if (sqlite === undefined || trace_id.length === 0) {
-    process.stderr.write('eval 需要 <trace_id> --sqlite path\n')
+    process.stderr.write('eval 需要 <trace_id> --sqlite path [--qa] [--replay]\n')
     return EXIT_OTHER
   }
   const db = openDb(sqlite)
@@ -368,6 +380,35 @@ function runEval(args: CliArgs): number {
       return EXIT_OTHER
     }
     const coverage = ruleCoverage(db, trace_id)
+    const packed = distillResultFromDb(db, trace_id)
+    const run_qa = args.qa === true
+    const run_replay = args.replay === true
+    const l4 = await runOptionalL4({
+      intent: packed.result.view.intent_hypothesis,
+      playback: packed.result.playback,
+      run_qa,
+      run_replay,
+    })
+    const qa = l4.qa ?? metrics.qa
+    const replay = l4.replay ?? metrics.replay
+    const composite = compositeScore({
+      compression_ratio: metrics.compression_ratio,
+      key_step_recall: metrics.key_step_recall,
+      replay,
+      qa,
+      coherence_scores: null,
+      distill_cost_ratio: metrics.distill_cost_ratio,
+    })
+    if (l4.qa !== null || l4.replay !== null) {
+      insertMetrics(db, {
+        ...metrics,
+        qa,
+        replay,
+        composite,
+      })
+    }
+    const notes = [...l4.notes]
+    if (!run_qa && !run_replay) notes.push(L4_METRICS_ONLY_NOTE)
     process.stdout.write(
       `${JSON.stringify({
         trace_id,
@@ -379,12 +420,19 @@ function runEval(args: CliArgs): number {
         total_segments: coverage.total,
         ruled_count: coverage.ruled,
         llm_count: coverage.llm,
-        replay: null,
-        qa: null,
-        note: L4_NOTE,
+        key_step_recall: metrics.key_step_recall,
+        replay,
+        qa,
+        coherence: metrics.coherence,
+        composite,
+        note: notes.join('; '),
       })}\n`,
     )
     return EXIT_OK
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logError(message)
+    return EXIT_OTHER
   } finally {
     db.close()
   }

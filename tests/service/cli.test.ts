@@ -52,6 +52,9 @@ describe('cli', () => {
     assert.match(help, /live-socket/)
     assert.match(help, /Unix domain socket/)
     assert.match(help, /CutProfile/)
+    assert.match(help, /--qa/)
+    assert.match(help, /--replay/)
+    assert.match(help, /TRACE_DISTILLER_MODEL_L4/)
   })
 
   it('does not import pi, createAgentSession, or listen', () => {
@@ -271,6 +274,52 @@ describe('cli', () => {
     assert.equal(evalJson.qa, null)
     assert.match(evalJson.note, /L4/)
 
+    const skipChunks: string[] = []
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      skipChunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    try {
+      const skipCode = await runCli({
+        command: 'eval',
+        input_path: traceId,
+        sqlite_path: sqlite,
+        qa: true,
+        replay: true,
+      })
+      assert.equal(skipCode, EXIT_OK)
+    } finally {
+      process.stdout.write = origWrite
+    }
+    const skipJson = JSON.parse(skipChunks.join('')) as { qa: number | null; replay: number | null; note: string }
+    assert.equal(skipJson.qa, null)
+    assert.equal(skipJson.replay, null)
+    assert.match(skipJson.note, /skipped/)
+    assert.match(skipJson.note, /TRACE_DISTILLER_MODEL_L4/)
+
+    setSessionBackend(new FakeSessionBackend())
+    const runChunks: string[] = []
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      runChunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    try {
+      const runCode = await runCli({
+        command: 'eval',
+        input_path: traceId,
+        sqlite_path: sqlite,
+        qa: true,
+        replay: true,
+      })
+      assert.equal(runCode, EXIT_OK)
+    } finally {
+      process.stdout.write = origWrite
+      setSessionBackend(undefined)
+    }
+    const runJson = JSON.parse(runChunks.join('')) as { qa: number | null; replay: number | null }
+    assert.equal(runJson.qa, 1)
+    assert.equal(runJson.replay, 1)
+
     const reportPath = join(outDir, 'from-sqlite.html')
     const reportCode = await runCli({
       command: 'report',
@@ -289,6 +338,9 @@ describe('cli', () => {
     assert.equal(evalArgs.command, 'eval')
     assert.equal(evalArgs.input_path, 'trace-1')
     assert.equal(evalArgs.sqlite_path, 'db.sqlite')
+    const evalL4 = parseArgv(['eval', 'trace-1', '--sqlite', 'db.sqlite', '--qa', '--replay'])
+    assert.equal(evalL4.qa, true)
+    assert.equal(evalL4.replay, true)
     const reportArgs = parseArgv([
       'report',
       'trace-1',

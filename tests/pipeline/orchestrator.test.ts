@@ -47,6 +47,13 @@ describe('orchestrator no_llm', () => {
     assert.match(src, /agent\/sessions\/write_warrant/)
     assert.match(src, /skeleton_pass/)
     assert.match(src, /label_window/)
+    assert.doesNotMatch(src, /l4_qa/)
+    assert.doesNotMatch(src, /l4_replay/)
+    assert.doesNotMatch(src, /l4_review/)
+    assert.doesNotMatch(src, /\brunQa\b/)
+    assert.doesNotMatch(src, /\brunReplay\b/)
+    assert.doesNotMatch(src, /\brunBlindReview\(/)
+    assert.doesNotMatch(src, /TRACE_DISTILLER_MODEL_L4/)
   })
 
   it('runs adapter fixture to plan + training/playback; resolved drop/collapse, unresolved keep', async () => {

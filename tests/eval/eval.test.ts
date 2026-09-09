@@ -1,13 +1,30 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { NotImplementedError } from '../../src/agent/sessions/skeleton_pass.ts'
+import {
+  FakeSessionBackend,
+  composeSessionPrompt,
+  setSessionBackend,
+} from '../../src/agent/sessions/open_session.ts'
+import { runQa } from '../../src/agent/sessions/l4_qa.ts'
+import { runReplay } from '../../src/agent/sessions/l4_replay.ts'
+import {
+  assertBlindReviewPrompt,
+  composeReviewPrompt,
+  runBlindReview,
+} from '../../src/agent/sessions/l4_review.ts'
+import { BENCHMARK_PASS } from '../../src/constant/compression.ts'
 import {
   compressionRatio,
+  compressionScore,
   computeDistillMetrics,
+  compositeScore,
   distillCostRatio,
+  keyStepRecall,
+  qaRatio,
+  sixMetricsPassed,
 } from '../../src/eval/metrics.ts'
 import { replay } from '../../src/eval/replay.ts'
 import { REVIEW_MAX_ROUNDS } from '../../src/constant/window.ts'
@@ -20,6 +37,11 @@ import {
 } from '../../src/eval/review.ts'
 
 const evalDir = join(dirname(fileURLToPath(import.meta.url)), '../../src/eval')
+const pipelineSrc = join(dirname(fileURLToPath(import.meta.url)), '../../src/pipeline/orchestrator.ts')
+
+afterEach(() => {
+  setSessionBackend(undefined)
+})
 
 describe('eval ratios', () => {
   it('compressionRatio is cut / original', () => {
@@ -140,67 +162,194 @@ describe('blind review protocol helpers', () => {
   })
 })
 
-describe('eval review / replay shells', () => {
-  it('throws NotImplementedError and does not import pi', async () => {
-    await assert.rejects(
-      () =>
-        blindReview({
-          intent: { version: 0, text: '' },
-          playback: { trace_id: 't', plan_ref: 'p', cards: [], collapsed: [] },
-          skeleton: { version: 0, nodes: [] },
-        }),
-      (err: unknown) => err instanceof NotImplementedError,
-    )
-    await assert.rejects(
-      () => replay({ trace_id: 't' }, {
-        trace_id: 't',
-        profile_id: 'default',
-        warrant_ref: 'w',
-        kept: [],
-        collapsed: [],
-        dropped: [],
-        span_ok: true,
-        span_violations: [],
-      }),
-      (err: unknown) => err instanceof NotImplementedError,
-    )
-    await assert.rejects(
-      () =>
-        generateQa(
-          {
-            meta: {
-              trace_id: 't',
-              source: 'claude-code',
-              ground_truth_ref: 'g',
-              total_tokens: 1,
-            },
-            ground_truth: { kind: 'tests_passed', evidence_ref: 'g' },
-            turns: [],
-            anchor_turn_ids: [],
-          },
-          {
-            meta: {
-              trace_id: 't',
-              source: 'claude-code',
-              ground_truth_ref: 'g',
-              total_tokens: 1,
-            },
-            intent_hypothesis: { version: 0, text: '' },
-            skeleton: { version: 0, nodes: [] },
-            segments: [],
-          },
-        ),
-      (err: unknown) => err instanceof NotImplementedError,
-    )
-    await assert.rejects(
-      () => answerQa({ trace_id: 't', plan_ref: 'p', turns: [] }, []),
-      (err: unknown) => err instanceof NotImplementedError,
-    )
+describe('six-metric pure functions', () => {
+  it('compressionScore maps knots and does not reward cutting to 0%', () => {
+    assert.equal(compressionScore(0.3), 60)
+    assert.equal(compressionScore(0.15), 90)
+    assert.equal(compressionScore(0.05), 100)
+    assert.equal(compressionScore(0), 0)
+    assert.ok(compressionScore(0.2) > 60)
+    assert.ok(compressionScore(0.2) < 90)
+  })
 
-    for (const name of ['metrics.ts', 'review.ts', 'replay.ts']) {
+  it('keyStepRecall is kept/gold and empty gold is 0', () => {
+    assert.equal(keyStepRecall({ gold_segment_ids: ['a', 'b'], kept: ['a', 'c'] }), 0.5)
+    assert.equal(keyStepRecall({ gold_segment_ids: [], kept: ['a'] }), 0)
+  })
+
+  it('compositeScore is 0 unless all six pass; missing stays null', () => {
+    const passing = {
+      compression_ratio: 0.2,
+      key_step_recall: 0.96,
+      replay: 0.95,
+      qa: 0.9,
+      coherence_scores: [4, 5, 4],
+      distill_cost_ratio: 0.2,
+    }
+    assert.equal(sixMetricsPassed(passing), true)
+    const score = compositeScore(passing)
+    assert.ok(score !== null)
+    assert.equal(score, compressionScore(0.2) * 0.96 * 0.95)
+    assert.equal(compositeScore({ ...passing, replay: 0.1 }), 0)
+    assert.equal(
+      compositeScore({ ...passing, key_step_recall: null }),
+      null,
+    )
+    assert.ok(BENCHMARK_PASS.qa_min <= passing.qa)
+  })
+})
+
+describe('eval L4 via fake backend', () => {
+  const playback = {
+    trace_id: 't',
+    plan_ref: 'p',
+    cards: [
+      {
+        id: 's0001',
+        tool: 'Edit',
+        sig: 'Edit:a',
+        outcome: 'ok' as const,
+        rep_of: null,
+        reads: [],
+        writes: [],
+        tokens: 1,
+        focus: 'card' as const,
+        head: 'edit add',
+        raw_refs: ['t1'],
+      },
+    ],
+    collapsed: [],
+  }
+  const intent = { version: 0, text: 'Fix add' }
+  const plan = {
+    trace_id: 't',
+    profile_id: 'default',
+    warrant_ref: 'w',
+    kept: ['s0001'],
+    collapsed: [],
+    dropped: [],
+    span_ok: true,
+    span_violations: [],
+  }
+
+  it('runQa / answerQa / generateQa parse fake JSON and do not import pi', async () => {
+    const fake = new FakeSessionBackend()
+    const qa = await runQa({
+      intent,
+      playback,
+      questions: [{ id: 'q1', question: 'What failed?' }],
+      backend: fake,
+    })
+    assert.equal(qa.score.answered, 1)
+    assert.equal(qa.score.correct, 1)
+    assert.equal(qaRatio(qa.score), 1)
+    assert.equal(fake.calls[0]?.role, 'l4_qa')
+    assert.equal(qa.usage.role, 'l4_qa')
+
+    const gen = await generateQa(
+      {
+        meta: {
+          trace_id: 't',
+          source: 'claude-code',
+          ground_truth_ref: 'g',
+          total_tokens: 1,
+        },
+        ground_truth: { kind: 'tests_passed', evidence_ref: 'g' },
+        turns: [],
+        anchor_turn_ids: [],
+      },
+      {
+        meta: {
+          trace_id: 't',
+          source: 'claude-code',
+          ground_truth_ref: 'g',
+          total_tokens: 1,
+        },
+        intent_hypothesis: intent,
+        skeleton: { version: 0, nodes: [] },
+        segments: playback.cards,
+      },
+      { backend: fake, playback },
+    )
+    assert.ok(gen.length >= 1)
+    const scored = await answerQa(playback, gen, { intent, backend: fake })
+    assert.ok(scored.answered >= 1)
+
+    for (const name of ['metrics.ts', 'review.ts', 'review_fill.ts', 'replay.ts', 'run.ts']) {
       const src = readFileSync(join(evalDir, name), 'utf8')
       assert.doesNotMatch(src, /@mariozechner\/pi/)
       assert.doesNotMatch(src, /createAgentSession/)
     }
+  })
+
+  it('runReplay is a clean session and eval.replay wires the score', async () => {
+    const fake = new FakeSessionBackend()
+    const out = await runReplay({
+      task: { trace_id: 't', text: 'Fix add', cwd: '/tmp/workspace' },
+      playback,
+      backend: fake,
+    })
+    assert.equal(out.success, true)
+    assert.equal(fake.calls[0]?.role, 'l4_replay')
+    const composed = fake.calls[0]?.composed ?? ''
+    assert.match(composed, /clean session/i)
+    assert.match(composed, /Do not proxy/)
+    assert.doesNotMatch(composed, /warrant/)
+    const wired = await replay({ trace_id: 't', text: 'Fix add' }, plan, {
+      playback,
+      backend: fake,
+    })
+    assert.equal(wired.success, true)
+  })
+
+  it('review prompt has no warrant/skeleton; blindReview still fills from skeleton in code', async () => {
+    const fake = new FakeSessionBackend()
+    const prompt = composeReviewPrompt({ intent, playback })
+    const composed = composeSessionPrompt(prompt)
+    assertBlindReviewPrompt(composed)
+    assert.doesNotMatch(composed, /warrant/i)
+    assert.doesNotMatch(composed, /skeleton/i)
+    assert.match(composed, /Fix add/)
+    assert.match(composed, /s0001/)
+
+    const session = await runBlindReview({ intent, playback, backend: fake })
+    assert.equal(fake.calls[0]?.role, 'l4_review')
+    assert.deepEqual(session.answer.turning_point_segment_ids, ['s0001'])
+    assertBlindReviewPrompt(fake.calls[0]?.composed ?? '')
+
+    const reviewed = await blindReview({
+      intent,
+      playback,
+      skeleton: {
+        version: 1,
+        nodes: [
+          { id: 'n1', kind: 'turning_point', segment_ids: ['s0001'], note: '' },
+          { id: 'n2', kind: 'verification_anchor', segment_ids: ['s0009'], note: '' },
+        ],
+      },
+      backend: fake,
+    })
+    assert.equal(reviewed.passed, false)
+    assert.deepEqual(reviewed.fill_in_segment_ids, ['s0009'])
+    assert.ok(reviewed.answer)
+    assert.equal(
+      (fake.calls.at(-1)?.composed ?? '').includes('s0009'),
+      false,
+      'dropped skeleton node must not be injected into the review session',
+    )
+  })
+
+  it('orchestrator does not import L4 session runners', () => {
+    const src = readFileSync(pipelineSrc, 'utf8')
+    assert.doesNotMatch(src, /l4_qa/)
+    assert.doesNotMatch(src, /l4_replay/)
+    assert.doesNotMatch(src, /l4_review/)
+    assert.doesNotMatch(src, /\brunQa\b/)
+    assert.doesNotMatch(src, /\brunReplay\b/)
+    assert.doesNotMatch(src, /\brunBlindReview\(/)
+    assert.doesNotMatch(src, /TRACE_DISTILLER_MODEL_L4/)
+    assert.match(src, /reviewAgainstPlan/)
+    assert.match(src, /review_fill/)
+    assert.doesNotMatch(src, /eval\/review\.ts/)
   })
 })

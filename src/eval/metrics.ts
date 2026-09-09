@@ -1,4 +1,9 @@
+import {
+  BENCHMARK_PASS,
+  COMPRESSION_SCORE_KNOTS,
+} from '../constant/compression.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../domain/cut_decision.ts'
+import type { Skeleton } from '../types/agent_view.ts'
 
 export interface CompressionInput {
   original_tokens: number
@@ -51,6 +56,120 @@ export function distillCostRatio(input: CostInput): number {
     return input.hole_a_plus_b_tokens === 0 ? 0 : Number.POSITIVE_INFINITY
   }
   return input.hole_a_plus_b_tokens / input.tokens_removed
+}
+
+export interface QaScoreLike {
+  answered: number
+  correct: number
+}
+
+/** QA：correct / answered；未答题为 0。 */
+export function qaRatio(score: QaScoreLike): number {
+  if (score.answered <= 0) return 0
+  return score.correct / score.answered
+}
+
+/**
+ * 关键步召回：金标段落在 kept 的比例。
+ * 金标应来自旁路文件，禁止用 Distiller 自己的 LabelDecision。
+ * 空金标返回 0，不假装召回 100%。
+ */
+export function keyStepRecall(input: {
+  gold_segment_ids: readonly string[]
+  kept: readonly string[]
+}): number {
+  if (input.gold_segment_ids.length === 0) return 0
+  const kept = new Set(input.kept)
+  let hit = 0
+  for (const id of input.gold_segment_ids) {
+    if (kept.has(id)) hit += 1
+  }
+  return hit / input.gold_segment_ids.length
+}
+
+/**
+ * 洞 A 骨架节点段当弱代理金标。报告必须写明「非金标」。
+ * 只取 turning_point / verification_anchor。
+ */
+export function skeletonWeakGoldIds(skeleton: Skeleton): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const node of skeleton.nodes) {
+    if (node.kind !== 'turning_point' && node.kind !== 'verification_anchor') continue
+    for (const id of node.segment_ids) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      ids.push(id)
+    }
+  }
+  return ids
+}
+
+/** 连贯性：均分 ≥4.0 且任一项不得低于 2。空列表不及格。 */
+export function coherencePass(scores: readonly number[]): boolean {
+  if (scores.length === 0) return false
+  const mean = scores.reduce((sum, n) => sum + n, 0) / scores.length
+  const min = Math.min(...scores)
+  return mean >= BENCHMARK_PASS.coherence_mean_min && min >= BENCHMARK_PASS.coherence_item_min
+}
+
+/** 压缩率得分分段映射（0–100），不奖励剪到 0%。 */
+export function compressionScore(ratio: number): number {
+  const knots = COMPRESSION_SCORE_KNOTS
+  if (ratio <= knots[0]!.ratio) return knots[0]!.score
+  for (let i = 1; i < knots.length; i += 1) {
+    const right = knots[i]!
+    if (ratio <= right.ratio) {
+      const left = knots[i - 1]!
+      return lerp(ratio, left.ratio, left.score, right.ratio, right.score)
+    }
+  }
+  return knots[knots.length - 1]!.score
+}
+
+export interface BenchmarkParts {
+  compression_ratio: number
+  key_step_recall: number | null
+  replay: number | null
+  qa: number | null
+  coherence_scores: readonly number[] | null
+  distill_cost_ratio: number
+}
+
+export function sixMetricsPresent(parts: BenchmarkParts): boolean {
+  return (
+    parts.key_step_recall !== null &&
+    parts.replay !== null &&
+    parts.qa !== null &&
+    parts.coherence_scores !== null
+  )
+}
+
+export function sixMetricsPassed(parts: BenchmarkParts): boolean {
+  if (!sixMetricsPresent(parts)) return false
+  return (
+    parts.compression_ratio <= BENCHMARK_PASS.compression_ratio_max &&
+    parts.key_step_recall! >= BENCHMARK_PASS.key_step_recall_min &&
+    parts.replay! >= BENCHMARK_PASS.replay_min &&
+    parts.qa! >= BENCHMARK_PASS.qa_min &&
+    coherencePass(parts.coherence_scores!) &&
+    parts.distill_cost_ratio <= BENCHMARK_PASS.distill_cost_ratio_max
+  )
+}
+
+/**
+ * 六项全及格才计总分，否则 0。缺项（未跑 L4 / 无金标）返回 null，不假装 0 分样本。
+ * Score = 压缩率得分 × 关键步召回 × 重放成功率（召回与重放用 0–1）。
+ */
+export function compositeScore(parts: BenchmarkParts): number | null {
+  if (!sixMetricsPresent(parts)) return null
+  if (!sixMetricsPassed(parts)) return 0
+  return compressionScore(parts.compression_ratio) * parts.key_step_recall! * parts.replay!
+}
+
+function lerp(x: number, x0: number, y0: number, x1: number, y1: number): number {
+  if (x1 === x0) return y0
+  return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0)
 }
 
 /** 从蒸馏结果汇总压缩率、规则覆盖、LLM 段占比、Fail-Closed 条数。 */
