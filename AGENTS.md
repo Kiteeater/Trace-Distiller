@@ -37,7 +37,7 @@
 - 窗口大小、span 段数、Jaccard 阈值是命名常量，标注 `OPEN`，未拍板前不得当实现阈值。
 - 卡片字段由代码填，禁止 LLM 生成 `head` / `sig` / `focus`。
 - L0：`src/adapters/claude_code.ts` 解析单任务 claude-code JSONL 并执行 Admission Gate。
-- L1：`src/pipeline/segmenter.ts` 按 Action Unit 切段产出 AgentView。不要写 rules / orchestrator / assembler、pi 会话、SQLite。
+- L1：`src/pipeline/segmenter.ts` 切段；`src/pipeline/rules.ts` 规则打标（未决进 unresolved_ids）。不要写 orchestrator / assembler、pi 会话、SQLite。
 
 ## TypeScript
 
