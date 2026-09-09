@@ -158,15 +158,16 @@ Live 页 **纯 TypeScript 推送**，**不套 LLM**。live 观察与离线蒸馏
 
 ## 怎么用 / 怎么跑（live）
 
-预期路径（M1 已落地进程内内存表 + file:// dump 页）：
+预期路径（默认：进程内内存表 + file:// dump 页；Unix socket 可选）：
 
-1. CLI 跑通一条离线蒸馏 job，成功后 `registerJobFromResult`。
+1. CLI 跑通一条离线蒸馏 job，成功后 `registerJobFromResult`（源仍是进程内表）。
 2. 同进程 `list_jobs` → `attach_job`。
 3. 读：`get_cut_progress` / `get_partial_result` / `get_warrant_tail`。
 4. 离开：`detach_job`。
 5. 只读 dump：`dumpJobSnapshot` / `dumpAllJobs`；CLI `--live-dump <dir>` 写 `<job_id>.live.json` 与自包含 `live.html`（`file://`）。也可 `live-dump --sqlite`。
-6. 事后 Playback 仍可打开 `--report` HTML（见 [users-and-surfaces.md](./users-and-surfaces.md)）；那份 HTML 是产物，不是 live。
-7. 禁止 HTTP listen。Unix socket 以后再说。
+6. 可选 Unix domain socket：`--live-socket <path>` 在 distill 期间 `startLiveSocket`；客户端 JSON lines `{"op":"list_jobs"|…}`，服务端回对应 live API。默认关闭。命令结束 `stopLiveSocket`（unlink sock 文件），不 keep-alive。不是 HTTP，不是 TCP 端口。
+7. 事后 Playback 仍可打开 `--report` HTML（见 [users-and-surfaces.md](./users-and-surfaces.md)）；那份 HTML 是产物，不是 live。
+8. 禁止 HTTP listen。
 
 ## Live 边界（非目标）
 
@@ -178,7 +179,7 @@ Live 页 **纯 TypeScript 推送**，**不套 LLM**。live 观察与离线蒸馏
 
 ## Live 开放问题
 
-1. **M1 传输已定**：进程内 `registerJobFromResult` 内存表。禁止 HTTP listen。Unix socket 以后再说。
+1. **传输**：默认进程内 `registerJobFromResult` 内存表 + `file://` dump。禁止 HTTP listen。可选 Unix domain socket（`src/service/live_socket.ts`）是只读窗，不替代进程内表。
 2. 多 job、崩溃重连、progress schema 字段级形状：落 modules 时再写，本 guide 不抄类型表。
 
 ## Live 完成标准

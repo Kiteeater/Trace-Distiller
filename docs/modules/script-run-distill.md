@@ -27,7 +27,7 @@
 命令草图：
 
 ```text
-node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--report out.html] [--live-dump dir] [--no-llm]
+node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--report out.html] [--live-dump dir] [--live-socket path] [--no-llm]
 node script/run-distill.ts eval <trace_id> --sqlite path
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
@@ -90,6 +90,6 @@ script/run-distill.ts → src/service/cli.ts
 
 - [ ] 文件存在且只委托 service。
 - [ ] `--help` 不加载 pi。
-- [ ] 无 `--serve` / `listen(`。
+- [x] 无 `--serve` / HTTP / TCP `listen(`。可选 Unix socket 在 `service/live_socket.ts`。
 - [ ] README 的「怎么跑」与本文件命令一致。
 - [ ] **现在不创建该 ts 文件**——本任务只交文档。

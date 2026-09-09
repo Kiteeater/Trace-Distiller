@@ -49,6 +49,8 @@ describe('cli', () => {
     assert.match(help, /Distiller/)
     assert.match(help, /not the other agent/)
     assert.match(help, /No HTTP listen/)
+    assert.match(help, /live-socket/)
+    assert.match(help, /Unix domain socket/)
     assert.match(help, /CutProfile/)
   })
 
@@ -80,6 +82,8 @@ describe('cli', () => {
       'r.html',
       '--live-dump',
       'live-out',
+      '--live-socket',
+      '/tmp/distiller.live.sock',
       '--no-llm',
     ])
     assert.equal(args.command, 'distill')
@@ -89,6 +93,7 @@ describe('cli', () => {
     assert.equal(args.out_dir, 'out')
     assert.equal(args.report_path, 'r.html')
     assert.equal(args.live_dump_dir, 'live-out')
+    assert.equal(args.live_socket_path, '/tmp/distiller.live.sock')
     assert.equal(args.no_llm, true)
   })
 
@@ -367,6 +372,41 @@ describe('cli', () => {
     assert.match(html, /不是对方 agent/)
     assert.match(html, /data-stage="segment"/)
     assert.doesNotMatch(html, /send_message/)
+  })
+
+  it('--live-socket unlinks the sock file when distill ends', async () => {
+    resetLiveState()
+    const outDir = tmp()
+    const sock = join(outDir, 'live.sock')
+    const chunks: string[] = []
+    const origWrite = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    try {
+      const code = await runCli({
+        command: 'distill',
+        input_path: join(fixtures, 'no_llm_conservative.jsonl'),
+        out_dir: outDir,
+        live_socket_path: sock,
+        no_llm: true,
+      })
+      assert.equal(code, EXIT_OK)
+    } finally {
+      process.stdout.write = origWrite
+    }
+    assert.equal(existsSync(sock), false)
+    const line = chunks
+      .join('')
+      .split('\n')
+      .map((row) => row.trim())
+      .filter((row) => row.startsWith('{'))
+      .at(-1)
+    assert.ok(line, `expected distill summary JSON, got ${JSON.stringify(chunks)}`)
+    const summary = JSON.parse(line) as { live_socket?: string; job_id?: string }
+    assert.equal(summary.live_socket, sock)
+    assert.ok(summary.job_id)
   })
 
   it('live-dump --sqlite exports the latest stored result', async () => {

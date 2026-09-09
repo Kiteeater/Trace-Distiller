@@ -87,7 +87,8 @@ trace-distiller/
 │  ├─ eval/                     # L4 数字；干净会话走 sessions 工厂
 │  ├─ service/
 │  │  ├─ cli.ts
-│  │  └─ live.ts                # 只读订阅，不进 pipeline
+│  │  ├─ live.ts                # 只读订阅，不进 pipeline；进程内 job 表
+│  │  └─ live_socket.ts         # 可选 Unix domain socket；禁止 HTTP / TCP 端口
 │  ├─ report/                   # 结果 JSON → 自包含 HTML；不要再开 service/report.ts
 │  │  ├─ html.ts                # Playback 报告
 │  │  └─ live_page.ts           # 只读 live dump 页（file://）
@@ -148,7 +149,8 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 | `src/eval/` | L4 数字 | **职责已定** | 盲测协议已拍板（intent + playback；缺骨架回填 keep；最多 2 轮）；LLM review 仍待 spike。复合分见 [benchmark.md](./benchmark.md) |
 | `src/report/` | 结果 JSON → 单个 `.html` | **已定** | 视觉细节非契约 |
 | `src/service/cli.ts` | CLI 薄壳 | **已定** | argv 细节 OPEN |
-| `src/service/live.ts` | 只读订阅 Distiller 裁剪进度 | **已定** | M1 传输 = 进程内 `registerJob`；禁止 HTTP listen；禁止进 pipeline |
+| `src/service/live.ts` | 只读订阅 Distiller 裁剪进度 | **已定** | 源 = 进程内 `registerJobFromResult`；禁止 HTTP listen；禁止进 pipeline |
+| `src/service/live_socket.ts` | 可选 Unix domain socket 传输 | **已定** | 默认关闭；JSON lines 调 live 六工具；禁止 HTTP / TCP 端口；不替代进程内表 |
 | `src/utils/` | token 估算、jsonl、logger | **已定** | 计数库选型未锁（口径已在 ingest 收口） |
 | `script/run-distill.ts` | 进程入口 | **已定** | 仓库还没有 package.json |
 | 锁文件 / 运行时 | bun 装、node 跑、不要 npm lock | **已定** | 工程骨架仍 OPEN（P0） |

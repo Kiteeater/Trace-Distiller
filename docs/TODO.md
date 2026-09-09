@@ -50,7 +50,7 @@
 ### 仍未接通（禁止假装完成）
 
 - 真模型 L4 重放 / QA / `blindReview`
-- Unix socket（live M1 已是进程内 job 表 + `file://` dump 页）
+- Unix socket（可选，已接通：`src/service/live_socket.ts`；默认仍进程内 job 表 + `file://` dump）
 
 ## M2 — 双产物与门禁
 
