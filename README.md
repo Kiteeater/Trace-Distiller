@@ -31,6 +31,7 @@ node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite pa
 node script/run-distill.ts eval <trace_id> --sqlite path
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
+node script/run-distill.ts bench [--dir benchmark/datasets]
 ```
 
 `package.json` 里也可以：`bun run distill -- distill …`（仍是 node 跑 `script/run-distill.ts`）。
@@ -56,6 +57,8 @@ node script/run-distill.ts report <trace_id> --sqlite /tmp/distiller.sqlite --ou
 ```
 
 `eval` 读压缩率、规则覆盖、LLM 段占比、Fail-Closed 数。`replay` / QA **不会跑**：需要真模型 L4（`TRACE_DISTILLER_MODEL_L4`），不要把空壳当成已接通。
+
+`bench` 扫 `benchmark/datasets/{short,long,multi_dead_end}`，stdout 打 JSON 分档表。三档禁止合并平均。无金标则召回 skipped（M1 不硬挂）。M1 不强求满数据集。
 
 ### 只读 live 页（Distiller 裁剪，不是对方 agent）
 

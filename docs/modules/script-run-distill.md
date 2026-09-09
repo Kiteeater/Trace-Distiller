@@ -31,6 +31,7 @@ node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite pa
 node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
+node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm]
 ```
 
 stdin/stdout：日志走 stderr；需要机器读的摘要（trace_id、compression_ratio）可在成功时向 stdout 打一行 JSON。是否如此未拍板，见开放问题。

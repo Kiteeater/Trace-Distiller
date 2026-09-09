@@ -55,6 +55,8 @@ describe('cli', () => {
     assert.match(help, /--qa/)
     assert.match(help, /--replay/)
     assert.match(help, /TRACE_DISTILLER_MODEL_L4/)
+    assert.match(help, /bench/)
+    assert.match(help, /never averaged/)
   })
 
   it('does not import pi, createAgentSession, or listen', () => {
@@ -355,6 +357,9 @@ describe('cli', () => {
     assert.equal(liveArgs.command, 'live-dump')
     assert.equal(liveArgs.sqlite_path, 'db.sqlite')
     assert.equal(liveArgs.out_dir, 'live')
+    const benchArgs = parseArgv(['bench', '--dir', 'benchmark/datasets'])
+    assert.equal(benchArgs.command, 'bench')
+    assert.equal(benchArgs.datasets_dir, 'benchmark/datasets')
   })
 
   it('without --no-llm and injected FakeSessionBackend runs with_llm', async () => {
@@ -487,5 +492,45 @@ describe('cli', () => {
     assert.match(html, /不是对方 agent/)
     const names = readdirSync(liveDir)
     assert.ok(names.some((n) => n.endsWith('.live.json')), names.join(','))
+  })
+
+  it('bench prints per-track JSON and does not average bins', async () => {
+    const chunks: string[] = []
+    const origWrite = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    try {
+      const code = await runCli({
+        command: 'bench',
+        input_path: '',
+        datasets_dir: join(repoRoot, 'benchmark/datasets'),
+      })
+      assert.equal(code, EXIT_OK)
+    } finally {
+      process.stdout.write = origWrite
+    }
+    const line = chunks
+      .join('')
+      .split('\n')
+      .map((row) => row.trim())
+      .filter((row) => row.startsWith('{'))
+      .at(-1)
+    assert.ok(line, `expected bench JSON, got ${JSON.stringify(chunks)}`)
+    const report = JSON.parse(line) as {
+      bins: {
+        short: { n: number; samples: Array<{ gold: string; composite: number | null }> }
+        long: { n: number }
+        multi_dead_end: { n: number }
+      }
+      overall?: unknown
+    }
+    assert.equal(report.bins.short.n, 1)
+    assert.equal(report.bins.long.n, 0)
+    assert.equal(report.bins.multi_dead_end.n, 0)
+    assert.equal(report.bins.short.samples[0]?.gold, 'independent')
+    assert.equal(report.overall, undefined)
+    assert.doesNotMatch(line, /"overall"/)
   })
 })

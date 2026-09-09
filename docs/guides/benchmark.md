@@ -82,7 +82,11 @@ Score = 压缩率得分 × 关键步召回率 × 重放成功率
 
 ## 怎么用 / 怎么跑
 
-代码还没写。落地后走同一条数字链路，不要在报告里另算一套。
+评分在 `src/eval/benchmark.ts`；CLI 扫盘。不要在报告里另算一套。
+
+```text
+node script/run-distill.ts bench --dir benchmark/datasets
+```
 
 ### MVP（M1）只强制压缩率 + 保真
 
@@ -116,21 +120,20 @@ M1 操作清单：
 
 M2：六项齐全，复合分当发布门禁，短 / 长分开报。M3+：多死胡同加满；人类可读性每版本手跑；良好档按基线校准。
 
-命令草图（入口未建，以 [script-run-distill.md](../modules/script-run-distill.md) 为准）：
+命令（以 [script-run-distill.md](../modules/script-run-distill.md) 为准）：
 
 ```text
 node script/run-distill.ts distill <trace.jsonl> [--report out.html]
 node script/run-distill.ts eval <trace_id>
+node script/run-distill.ts bench [--dir benchmark/datasets]
 ```
 
-M1 可以 `distill` 顺带盲测，不必先做独立 `eval` 子命令。
-
-建议目录（实现评测代码时再补，现在不要空建）：
+M1 可以 `distill` 顺带盲测；分档报分走 `bench`。不强求满数据集。
 
 ```text
 benchmark/
 ├── README.md      ← 设计原文
-├── datasets/      ← 分赛道样本与金标（真实数据默认不提交）
+├── datasets/      ← 分赛道样本与金标（真实数据默认不提交；short 有合成小样）
 ├── suites/        ← 各指标脚本 / 配置
 └── reports/       ← 跑分（均值 ± 标准差）
 ```
@@ -193,10 +196,10 @@ benchmark/
 
 - [ ] M1：压缩率函数 +（盲测 review 或 QA）可在 3–5 条样本上给出书面通过 / 未通过；计数器未对齐时标明估算。
 - [ ] 报告首页的压缩率、成本比、LLM 段占比与 `data` 指标行同一数字。
-- [ ] 复合分：任一单项不及格 → 0；全删 / 全留夹具拿不到分（单测，不依赖网络）。
-- [ ] 连贯性夹具：均分好看但有一对接头分 &lt; 2 → 该项不及格。
-- [ ] 不存在跨赛道平均分 API；eval 没有赛道字段时不要发明总分榜。
-- [ ] 关键步召回不读取 Distiller 自己的 LabelDecision 当金标。
+- [x] 复合分：任一单项不及格 → 0；全删 / 全留夹具拿不到分（单测，不依赖网络）。
+- [x] 连贯性夹具：均分好看但有一对接头分 &lt; 2 → 该项不及格。
+- [x] 不存在跨赛道平均分 API；eval 没有赛道字段时不要发明总分榜。
+- [x] 关键步召回不读取 Distiller 自己的 LabelDecision 当金标。
 - [ ] L4 用量不进处理成本比分子。
 - [ ] 人类可读性、训练有效性没有被写进自动 suites。
 

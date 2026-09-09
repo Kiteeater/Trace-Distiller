@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parse, sniff } from '../adapters/claude_code.ts'
 import { DEFAULT_CUT_PROFILE } from '../constant/compression.ts'
@@ -19,6 +19,14 @@ import {
 import { getCutPlan, getWarrant, insertCutPlan, insertWarrant } from '../data/data_warrant.ts'
 import type { LabelDecision } from '../domain/label_decision.ts'
 import { isSpanFailure } from '../domain/span_violation.ts'
+import {
+  aggregateBins,
+  BENCHMARK_BINS,
+  keyDecisionFileCandidates,
+  parseKeyDecisions,
+  scoreSample,
+  type ScoredSample,
+} from '../eval/benchmark.ts'
 import { computeDistillMetrics, compositeScore, type DistillMetrics } from '../eval/metrics.ts'
 import { L4_METRICS_ONLY_NOTE, runOptionalL4 } from '../eval/run.ts'
 import { distill, resolveDistillMode, type DistillResult } from '../pipeline/orchestrator.ts'
@@ -41,7 +49,7 @@ export const EXIT_ADMISSION = 2
 export const EXIT_SPAN = 3
 
 export interface CliArgs {
-  command: 'distill' | 'eval' | 'report' | 'live-dump'
+  command: 'distill' | 'eval' | 'report' | 'live-dump' | 'bench'
   input_path: string
   profile_path?: string
   sqlite_path?: string
@@ -50,6 +58,7 @@ export interface CliArgs {
   out_path?: string
   live_dump_dir?: string
   live_socket_path?: string
+  datasets_dir?: string
   no_llm?: boolean
   qa?: boolean
   replay?: boolean
@@ -61,12 +70,15 @@ const HELP = `Usage:
   node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
   node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
+  node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm]
 
 --no-llm forces the conservative no-hole path. Without --no-llm, with_llm runs when a session backend is injected or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B is set; otherwise no_llm.
 
 FakeSessionBackend is for tests only. Production with_llm needs TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
 eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a workspace and model; this command only guarantees the session interface.
+
+bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample (default --no-llm), scores six gates, and prints a JSON table per track. Tracks are never averaged together. Missing data/raw/<id>.key-decisions.json skips key-step recall (M1, not a hard fail). All six must pass or composite is 0. M1 does not require a full dataset.
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
@@ -95,6 +107,7 @@ export function parseArgv(argv: string[]): CliArgs {
   let out_path: string | undefined
   let live_dump_dir: string | undefined
   let live_socket_path: string | undefined
+  let datasets_dir: string | undefined
   let no_llm: boolean | undefined
   let qa: boolean | undefined
   let replay: boolean | undefined
@@ -110,7 +123,13 @@ export function parseArgv(argv: string[]): CliArgs {
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i]
     if (token === undefined) continue
-    if (token === 'distill' || token === 'eval' || token === 'report' || token === 'live-dump') {
+    if (
+      token === 'distill' ||
+      token === 'eval' ||
+      token === 'report' ||
+      token === 'live-dump' ||
+      token === 'bench'
+    ) {
       if (command !== undefined) throw new Error(`重复的子命令 ${token}`)
       command = token
       continue
@@ -141,6 +160,10 @@ export function parseArgv(argv: string[]): CliArgs {
     }
     if (token === '--live-socket') {
       ;[live_socket_path, i] = take(i, token)
+      continue
+    }
+    if (token === '--dir') {
+      ;[datasets_dir, i] = take(i, token)
       continue
     }
     if (token === '--no-llm') {
@@ -175,6 +198,7 @@ export function parseArgv(argv: string[]): CliArgs {
   if (out_path !== undefined) args.out_path = out_path
   if (live_dump_dir !== undefined) args.live_dump_dir = live_dump_dir
   if (live_socket_path !== undefined) args.live_socket_path = live_socket_path
+  if (datasets_dir !== undefined) args.datasets_dir = datasets_dir
   if (no_llm !== undefined) args.no_llm = no_llm
   if (qa !== undefined) args.qa = qa
   if (replay !== undefined) args.replay = replay
@@ -189,6 +213,7 @@ export async function runCli(args: CliArgs): Promise<number> {
   if (args.command === 'eval') return runEval(args)
   if (args.command === 'report') return runReport(args)
   if (args.command === 'live-dump') return runLiveDump(args)
+  if (args.command === 'bench') return runBench(args)
   if (args.input_path.length === 0) {
     process.stderr.write(HELP)
     return EXIT_OTHER
@@ -363,6 +388,71 @@ function toReportModel(
       llm_segment_fraction: computed.llm_segment_fraction,
     },
   }
+}
+
+const DEFAULT_BENCH_DIR = join('benchmark', 'datasets')
+
+async function runBench(args: CliArgs): Promise<number> {
+  const dir = args.datasets_dir ?? (args.input_path.length > 0 ? args.input_path : DEFAULT_BENCH_DIR)
+  const profile = loadProfile(args.profile_path)
+  const cwd = process.cwd()
+  const samples: ScoredSample[] = []
+  try {
+    for (const bin of BENCHMARK_BINS) {
+      const binDir = join(dir, bin)
+      for (const jsonl of listBinJsonl(binDir)) {
+        const raw = loadRaw(jsonl)
+        const result = await distill({ raw, profile, mode: 'no_llm' })
+        const computed = computeDistillMetrics(result)
+        const gold = loadGoldSegmentIds(raw.meta.trace_id, cwd, jsonl)
+        samples.push(
+          scoreSample({
+            bin,
+            trace_id: raw.meta.trace_id,
+            compression_ratio: computed.compression_ratio,
+            distill_cost_ratio: computed.distill_cost_ratio,
+            kept: result.plan.kept,
+            gold_segment_ids: gold,
+            replay: null,
+            qa: null,
+            coherence_scores: null,
+          }),
+        )
+      }
+    }
+    const report = aggregateBins(samples)
+    process.stdout.write(`${JSON.stringify({ dir, bins: report.bins })}\n`)
+    return EXIT_OK
+  } catch (error) {
+    if (isAdmissionError(error)) {
+      logError(humanAdmission(error))
+      return EXIT_ADMISSION
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    logError(message)
+    return EXIT_OTHER
+  }
+}
+
+function listBinJsonl(binDir: string): string[] {
+  if (!existsSync(binDir)) return []
+  return readdirSync(binDir)
+    .filter((name) => name.endsWith('.jsonl'))
+    .map((name) => join(binDir, name))
+    .sort()
+}
+
+function loadGoldSegmentIds(traceId: string, cwd: string, jsonlPath: string): string[] | null {
+  const candidates = keyDecisionFileCandidates({
+    trace_id: traceId,
+    cwd,
+    jsonl_path: jsonlPath,
+  })
+  for (const path of candidates) {
+    if (!existsSync(path)) continue
+    return parseKeyDecisions(readFileSync(path, 'utf8')).segment_ids
+  }
+  return null
 }
 
 async function runEval(args: CliArgs): Promise<number> {
