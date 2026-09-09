@@ -36,15 +36,18 @@ export interface TokenUsage {
 
 export type {
   PiSessionHandle,
+  SessionBackend,
   SessionFactoryOpts,
 } from './open_session.ts'
 
 export {
+  hasInjectedSessionBackend,
+  holeModelsConfigured,
   openQaSession,
   openReplaySession,
   openReviewSession,
   openSession,
-}
+} from './open_session.ts'
 
 /** 洞 A 稳定 JSON schema。Fake backend 按此形状作答。 */
 export const SKELETON_PASS_JSON_KIND = 'skeleton_pass_v0' as const

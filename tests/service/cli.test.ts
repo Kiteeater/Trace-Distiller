@@ -3,12 +3,14 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { openDb, getTraceMeta, listSegments } from '../../src/data/data_segment.ts'
 import { ruleCoverage } from '../../src/data/data_label.ts'
+import { FakeSessionBackend, setSessionBackend } from '../../src/agent/sessions/open_session.ts'
+import { SKELETON_PASS_JSON_KIND } from '../../src/agent/sessions/skeleton_pass.ts'
 import { EXIT_ADMISSION, EXIT_OK, parseArgv, runCli } from '../../src/service/cli.ts'
-import { list_jobs, resetLiveState } from '../../src/service/live.ts'
+import { get_cut_progress, list_jobs, resetLiveState } from '../../src/service/live.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, '../..')
@@ -21,6 +23,11 @@ function tmp(): string {
 }
 
 describe('cli', () => {
+  afterEach(() => {
+    setSessionBackend(undefined)
+    resetLiveState()
+  })
+
   it('does not import pi, createAgentSession, or listen', () => {
     const src = readFileSync(cliSrc, 'utf8')
     const script = readFileSync(scriptSrc, 'utf8')
@@ -154,5 +161,60 @@ describe('cli', () => {
     assert.equal(result.status, 0, result.stderr)
     assert.equal(existsSync(join(outDir, 'claude-code-sess-no-llm-training.json')), true)
     assert.equal(existsSync(join(outDir, 'claude-code-sess-no-llm-playback.json')), true)
+  })
+
+  it('without --no-llm and without backend/env falls back to no_llm', async () => {
+    const outDir = tmp()
+    const code = await runCli({
+      command: 'distill',
+      input_path: join(fixtures, 'no_llm_conservative.jsonl'),
+      out_dir: outDir,
+    })
+    assert.equal(code, EXIT_OK)
+    const jobs = list_jobs()
+    assert.equal(jobs.length, 1)
+    assert.equal(get_cut_progress(jobs[0]!.job_id).holes, 'skipped')
+  })
+
+  it('without --no-llm and injected FakeSessionBackend runs with_llm', async () => {
+    setSessionBackend(
+      new FakeSessionBackend((input, opts) => {
+        if (opts.role === 'hole_a_skeleton') {
+          const json = {
+            kind: SKELETON_PASS_JSON_KIND,
+            intent: { text: 'Fix add' },
+            scenario: 'implement',
+            skeleton: { nodes: [] },
+          }
+          return {
+            text: JSON.stringify(json),
+            json,
+            tool_calls: [],
+            usage: { role: opts.role, input_tokens: 2, output_tokens: 2 },
+          }
+        }
+        const match = input.text.match(/window_segment_ids:\s*(\[[^\]]*\])/)
+        const ids = match?.[1] !== undefined ? (JSON.parse(match[1]) as string[]) : []
+        return {
+          text: '',
+          json: null,
+          tool_calls: ids.map((segment_id) => ({
+            name: 'label_segment',
+            arguments: { segment_id, label: 'key_decision', confidence: 0.8 },
+          })),
+          usage: { role: opts.role, input_tokens: 2, output_tokens: 2 },
+        }
+      }),
+    )
+    const outDir = tmp()
+    const code = await runCli({
+      command: 'distill',
+      input_path: join(fixtures, 'no_llm_conservative.jsonl'),
+      out_dir: outDir,
+    })
+    assert.equal(code, EXIT_OK)
+    const jobs = list_jobs()
+    assert.equal(jobs.length, 1)
+    assert.equal(get_cut_progress(jobs[0]!.job_id).holes, 'done')
   })
 })
