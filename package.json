@@ -1,0 +1,14 @@
+{
+  "name": "trace-distiller",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Distill successful agent traces into training and playback cuts.",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@types/node": "^26.5.0",
+    "typescript": "^7.0.2"
+  }
+}
