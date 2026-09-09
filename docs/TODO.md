@@ -23,7 +23,7 @@
 
 - [ ] AGENTS.md：工程规则（bun 装 / node 跑 / typecheck / lint / 分层纪律——契约前置、biz 纯逻辑、service 薄壳、data 统一管库、utils 只放无状态）
 - [ ] package.json + tsconfig + eslint 建起来（目录树按 architecture.md v0.3）
-- [ ] pi SDK spike：验证结构化输出、自定义消息序列（骨架注入）、provider 降档切换三件事可用——「内核可换」活口依赖它，最贵的假设最先验
+- [x] pi SDK spike：验证结构化输出、自定义消息序列（骨架注入）、provider 降档切换三件事可用——假后端保证；`openSession` 工厂已接通；洞 A/B 打标下一 PR
 - [ ] SQLite schema：段表 / 打标表 / 凭证表 / 指标表（成本数字和「LLM 只看 X%」全从这查；草图见 [modules/data.md](./modules/data.md)）
 - [x] `read_segment` 确定性拉取工具（handler 纯函数已落地；不接 pi。[modules/agent-extension.md](./modules/agent-extension.md)）
 - [ ] 验证点定位：从 trace 中找 ground truth 验证点附近的 turn 作为意图锚点（头尾是启发式，验证点是硬锚点）

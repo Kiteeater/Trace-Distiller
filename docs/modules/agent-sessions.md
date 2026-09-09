@@ -192,7 +192,7 @@ skill 文件读取：sessions 可以读磁盘上的 Markdown（这是读策略�
 
 ## 6. 仍开放的设计问题
 
-1. **pi SDK spike 尚未做**（TODO P0）：结构化输出、自定义消息序列（骨架注入）、provider 降档切换——这三项是「内核可换」最贵假设，文档代替不了一次 spike。
+1. **pi SDK spike 三项已通过**（假后端保证；见 [pi-sdk.md](../guides/pi-sdk.md)）。洞 A/B 正式打标仍未接。
 2. **验证点 turn 如何保证被传入**：依赖 adapter 的 `anchor` 字段，算法未定。
 3. **writeWarrant 是否存在**：见 orchestrator 开放问题。本模块先留函数草图。
 4. **洞 B 一窗一会话已拍板**，不复用。
@@ -203,9 +203,9 @@ skill 文件读取：sessions 可以读磁盘上的 Markdown（这是读策略�
 
 ## 7. 实现完成标准
 
-- [ ] 全仓库 pi SDK import 只出现在 `src/agent/sessions/`（可用 lint/grep 门禁）。
+- [x] 全仓库 pi SDK import 只出现在 `src/agent/sessions/`（可用 lint/grep 门禁）。
 - [ ] `skeletonPass` 单测（mock pi）：prompt 含头/验证点，**不含**中间 full 原文。
 - [ ] `labelWindow` 在工具不返回时，函数失败而不是捏造 Label。
 - [ ] usage 带 role，eval 能据此拆成本。
 - [ ] review 工厂注入的消息里断言没有 warrant/skeleton 字段。
-- [ ] 换假 provider 能跑通一次（spike 清单三项打勾）。
+- [x] 换假 provider 能跑通一次（spike 清单三项打勾）。

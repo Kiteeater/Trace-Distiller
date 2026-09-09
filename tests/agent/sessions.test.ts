@@ -114,7 +114,7 @@ describe('writeWarrant', () => {
 })
 
 describe('hole sessions', () => {
-  it('skeletonPass / labelWindow / continuity / factories throw NotImplementedError', async () => {
+  it('skeletonPass / labelWindow / continuity still throw NotImplementedError', async () => {
     const raw = parse(load('single_task_pytest.jsonl'))
     const view = segment(raw)
     const card: SegmentCard = view.segments[0] ?? {
@@ -160,45 +160,45 @@ describe('hole sessions', () => {
       () => checkContinuityPair(card, card, view.skeleton),
       (err: unknown) => err instanceof NotImplementedError,
     )
-    assert.throws(
-      () => openSession({ role: 'hole_a_skeleton' }),
-      (err: unknown) => err instanceof NotImplementedError,
-    )
-    assert.throws(() => openReviewSession(), (err: unknown) => err instanceof NotImplementedError)
-    assert.throws(() => openReplaySession(), (err: unknown) => err instanceof NotImplementedError)
-    assert.throws(() => openQaSession(), (err: unknown) => err instanceof NotImplementedError)
+    const a = openSession({ role: 'hole_a_skeleton', model: 'anthropic/claude-opus-4-5' })
+    const review = openReviewSession({ model: 'openai/gpt-4o-mini' })
+    const replay = openReplaySession({ model: 'openai/gpt-4o-mini' })
+    const qa = openQaSession({ model: 'openai/gpt-4o-mini' })
+    assert.equal(a.role, 'hole_a_skeleton')
+    assert.equal(review.role, 'l4_review')
+    assert.equal(replay.role, 'l4_replay')
+    assert.equal(qa.role, 'l4_qa')
+    a.dispose()
+    review.dispose()
+    replay.dispose()
+    qa.dispose()
   })
 
-  it('does not import pi SDK; createAgentSession only in comments', () => {
+  it('createAgentSession only appears under src/agent/sessions', () => {
     const files = walkTs(sessionsDir)
-    assert.ok(files.length >= 3)
-    for (const path of files) {
-      const src = readFileSync(path, 'utf8')
-      const imports = src
-        .split('\n')
-        .filter((line) => /^\s*import\s/.test(line))
-        .join('\n')
-      assert.doesNotMatch(imports, /@mariozechner\/pi/)
-      assert.doesNotMatch(imports, /createAgentSession/)
-      assert.doesNotMatch(imports, /from ['"]pi['"]/)
-    }
+    assert.ok(files.length >= 4)
+    const openSrc = readFileSync(join(sessionsDir, 'open_session.ts'), 'utf8')
+    assert.match(openSrc, /createAgentSession/)
+    assert.match(openSrc, /@mariozechner\/pi-coding-agent/)
+    assert.match(openSrc, /SessionManager\.inMemory/)
+    assert.match(openSrc, /noTools/)
 
-    const holeSrc = [
-      readFileSync(join(sessionsDir, 'skeleton_pass.ts'), 'utf8'),
-      readFileSync(join(sessionsDir, 'label_window.ts'), 'utf8'),
-    ].join('\n')
-    assert.match(holeSrc, /TODO createAgentSession/)
+    const warrant = readFileSync(join(sessionsDir, 'write_warrant.ts'), 'utf8')
+    assert.doesNotMatch(warrant, /createAgentSession/)
+    assert.doesNotMatch(warrant, /@mariozechner\/pi/)
 
-    for (const path of walkTs(join(repoRoot, 'src'))) {
-      if (path.includes(`${join('src', 'agent', 'sessions')}`)) continue
-      const src = readFileSync(path, 'utf8')
-      const imports = src
-        .split('\n')
-        .filter((line) => /^\s*import\s/.test(line))
-        .join('\n')
-      assert.doesNotMatch(imports, /createAgentSession/)
-      assert.doesNotMatch(imports, /@mariozechner\/pi/)
-      assert.doesNotMatch(imports, /from ['"]pi['"]/)
+    for (const root of [join(repoRoot, 'src'), join(repoRoot, 'script')]) {
+      for (const path of walkTs(root)) {
+        if (path.includes(`${join('src', 'agent', 'sessions')}`)) continue
+        const src = readFileSync(path, 'utf8')
+        const imports = src
+          .split('\n')
+          .filter((line) => /^\s*import\s/.test(line))
+          .join('\n')
+        assert.doesNotMatch(imports, /createAgentSession/)
+        assert.doesNotMatch(imports, /@mariozechner\/pi/)
+        assert.doesNotMatch(imports, /from ['"]pi['"]/)
+      }
     }
   })
 })

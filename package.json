@@ -6,10 +6,13 @@
   "description": "Distill successful agent traces into training and playback cuts.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/adapters/claude_code.test.ts tests/domain/cut_decision.test.ts tests/pipeline/segmenter.test.ts tests/pipeline/rules.test.ts tests/pipeline/assembler.test.ts tests/pipeline/orchestrator.test.ts tests/agent/sessions.test.ts tests/agent/extension.test.ts tests/agent/skills.test.ts tests/constant/defaults.test.ts tests/data/sqlite.test.ts tests/report/html.test.ts tests/service/cli.test.ts tests/service/live.test.ts tests/eval/eval.test.ts tests/utils/logger.test.ts",
+    "test": "node --test tests/adapters/claude_code.test.ts tests/domain/cut_decision.test.ts tests/pipeline/segmenter.test.ts tests/pipeline/rules.test.ts tests/pipeline/assembler.test.ts tests/pipeline/orchestrator.test.ts tests/agent/sessions.test.ts tests/agent/pi_spike.test.ts tests/agent/extension.test.ts tests/agent/skills.test.ts tests/constant/defaults.test.ts tests/data/sqlite.test.ts tests/report/html.test.ts tests/service/cli.test.ts tests/service/live.test.ts tests/eval/eval.test.ts tests/utils/logger.test.ts",
+    "pi-spike": "node --test tests/agent/pi_spike.test.ts",
     "distill": "node --experimental-strip-types script/run-distill.ts"
   },
   "dependencies": {
+    "@mariozechner/pi-ai": "^0.73.1",
+    "@mariozechner/pi-coding-agent": "^0.73.1",
     "@types/node": "^26.5.0",
     "typescript": "^7.0.2"
   }
