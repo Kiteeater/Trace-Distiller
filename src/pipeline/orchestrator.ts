@@ -26,7 +26,9 @@ export interface DistillResult {
   plan: CutPlan
   training: TrainingCut
   playback: PlaybackCut
-  /** data 层指标行；本阶段不落库。 */
+  decisions: LabelDecision[]
+  unresolved_ids: string[]
+  /** data 层指标行；落库由 service 调 data，本函数不写 SQLite。 */
   metrics_ref: string
 }
 
@@ -84,6 +86,8 @@ export async function distill(input: DistillInput): Promise<DistillResult> {
     plan: assembled.plan,
     training: assembled.training,
     playback: assembled.playback,
+    decisions: ruled.decisions,
+    unresolved_ids: ruled.unresolved_ids,
     metrics_ref: '',
   }
 }
