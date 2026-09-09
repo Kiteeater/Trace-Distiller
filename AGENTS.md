@@ -41,11 +41,12 @@
 - **无洞通路**：`distill({ mode: 'no_llm' })` 与 CLI `--no-llm`。规则已决议按 CutProfile 裁；未决段 Fail-Closed Keep。凭证走 `src/agent/sessions/write_warrant.ts` 纯代码汇总（LabelDecision[] + 未决 keep + decideCut），orchestrator 可复用。
 - Live：`src/service/live.ts` 内存订阅 Distiller job（`list_jobs` / `attach_job` / `detach_job` / `get_cut_progress` / `get_partial_result` / `get_warrant_tail`）。纯 TS，无 LLM。M1 传输 = 进程内 `registerJobFromResult`，不 listen HTTP；Unix socket 以后再说。`src/agent/skills/` 五份极简 Markdown + README；`src/utils/logger.ts` 无状态打 stderr。
 - Eval：`compressionRatio` / `distillCostRatio` 纯函数（L4 token 不计蒸馏成本）。盲测协议：review 输入只有 intent + playback；缺骨架节点由代码回填 keep；最多 `REVIEW_MAX_ROUNDS=2`。
-- 蒸馏洞三工具已拍板闭集：`label_segment` / `check_continuity` / `read_segment`。`src/agent/extension.ts` 纯函数 handler（校验枚举 / 取数）；rationale 不进凭证；`read_segment` 只本段；一窗一会话；Fail-Closed Keep。不接 pi。
+- 蒸馏洞三工具已拍板闭集：`label_segment` / `check_continuity` / `read_segment`。`src/agent/extension.ts` 纯函数 handler（校验枚举 / 取数）；rationale 不进凭证；`read_segment` 只本段；一窗一会话；Fail-Closed Keep。handler 不接 pi。
+- 洞 A `skeletonPass`、洞 B `labelWindow`、衔接 `checkContinuityPair` 已接通：只经 `openSession`。假后端 `FakeSessionBackend` 可测稳定 JSON / `tool_calls`；真模型需 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B`。洞 A 只注入头/验证点原文 + 卡片索引，禁止全量 `raw.turns`。洞 B 一窗一会话，未调 `label_segment` 的 id 不瞎标。orchestrator **不要**接通这两洞。
 
 ## 仍未接通（禁止假装完成）
 
-- 洞 A `skeletonPass`、洞 B `labelWindow`、衔接 `checkContinuityPair`：签名已导出，内部抛 `NotImplementedError`。`openSession` 工厂已接通；正式打标下一 PR。禁止假造 LLM 结果。orchestrator 不要接通这两洞。
+- orchestrator `mode: 'full'`：不要把洞 A/B 接进 `distill`。无洞通路仍是默认。
 - pi SDK / `createAgentSession`：只允许出现在 `src/agent/sessions/`（现为 `open_session.ts`）。eval 干净会话必须走该目录的工厂。模型档走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`。失败重试 1 次（`PI_FAILURE_RETRY`）再 Fail-Closed。生产默认 `PiSessionBackend`；测试注入 `FakeSessionBackend`。
 - live 禁止 HTTP listen。M1 已定进程内 `registerJob`；Unix socket 以后再说。
 

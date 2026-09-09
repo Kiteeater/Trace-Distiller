@@ -110,4 +110,4 @@ extension 允许依赖 pi 的 **tool 类型**，但不允许 `createAgentSession
 - [x] `read_segment` 对未知 id 返回错误，不返回其它段。
 - [x] 无 `edit_trace` 类工具的注册表快照测试。
 - [x] handler 无 sqlite、无二次 LLM。
-- [ ] 与 sessions 的集成测试（mock 模型调工具）能得到 LabelDecision（待 pi spike）。
+- [x] 与 sessions 的集成测试（mock 模型调工具）能得到 LabelDecision。
