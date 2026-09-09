@@ -13,7 +13,7 @@
 - 类型检查：`bun run typecheck` 或 `tsc --noEmit`
 - **不要**提交 `package-lock.json` / `yarn.lock` / `pnpm-lock.yaml`
 
-当前契约层还没有 CLI。以后入口是 `node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report out.html]`。
+入口：`node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report out.html] [--no-llm]`。默认无洞通路。
 
 ## 分层纪律
 
@@ -37,7 +37,18 @@
 - 窗口大小、span 段数、Jaccard 阈值是命名常量，标注 `OPEN`，未拍板前不得当实现阈值。
 - 卡片字段由代码填，禁止 LLM 生成 `head` / `sig` / `focus`。
 - L0：`src/adapters/claude_code.ts` 解析单任务 claude-code JSONL 并执行 Admission Gate。
-- L1：`src/pipeline/segmenter.ts` 切段；`src/pipeline/rules.ts` 规则打标（未决进 unresolved_ids）。不要写 orchestrator / assembler、pi 会话、SQLite。
+- L1：切段 / 规则打标 / 无洞编排 / assembler / SQLite / 自包含报告 / distill CLI 已通。
+- **无洞通路**：`distill({ mode: 'no_llm' })` 与 CLI `--no-llm`。规则已决议按 CutProfile 裁；未决段 Fail-Closed Keep。凭证走 `src/agent/sessions/write_warrant.ts` 纯代码汇总（LabelDecision[] + 未决 keep + decideCut），orchestrator 可复用。
+- Live：`src/service/live.ts` 内存订阅 Distiller job（`list_jobs` / `attach_job` / `detach_job` / `get_cut_progress` / `get_partial_result` / `get_warrant_tail`）。纯 TS，无 LLM。
+- Eval：`compressionRatio` / `distillCostRatio` 纯函数（L4 token 不计蒸馏成本）。
+
+## 仍未接通（禁止假装完成）
+
+- 洞 A `skeletonPass`、洞 B `labelWindow`、衔接 `checkContinuityPair`：签名已导出，内部抛 `NotImplementedError`，待 pi spike。禁止假造 LLM 结果。orchestrator 不要接通这两洞。
+- 蒸馏洞三工具（`label_segment` / `check_continuity` / `read_segment`）：`src/agent/extension.ts` 只导出 DRAFT 名单，稍后拍板，无执行体。
+- pi SDK / `createAgentSession`：全仓库不得真正 import；仅 `src/agent/sessions/` 可留 `// TODO createAgentSession` 注释。eval 干净会话必须走 sessions 工厂（同样 NotImplemented）。
+- live 传输细节（进程内事件 / 本机 socket / 临时端口）OPEN；禁止 HTTP listen。
+- OPEN 数字阈值（窗口大小、死胡同条数、Jaccard 正式拍板等）与盲测判分协议。
 
 ## TypeScript
 
