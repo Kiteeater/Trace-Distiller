@@ -2,101 +2,99 @@
 
 > Agent 一次任务可能留下几百步记录。本工具只处理「最终做对了」的那条，把它剪短：训练能用，人也能看懂。
 
-**当前状态**：v0.3 架构已定（流水线 + 两个 agent 洞，TypeScript + pi，自包含 HTML 报告做展示层，目录按 macaron-agent 分层纪律重排）。产品 PRD 仍为草案；代码尚未开始。
+**当前状态**：TypeScript 流水线 + 两个 agent 洞。无洞（`--no-llm`）与假后端带洞两条通路可跑；自包含 HTML 报告；SQLite 记段 / 打标 / 凭证 / 指标。真模型 L4 重放/QA、live 页 UI、Unix socket **尚未接通**。
+
+编排是纯 TypeScript 流水线，不是 runtime agent。LLM 只出现在洞 A（骨架）和洞 B（逐窗打标）。分层见 [docs/architecture.md](./docs/architecture.md)。
+
+---
+
+## 怎么装
+
+依赖用 bun，产物用 node（不要用 bun 当运行时跑 CLI）。
+
+```bash
+bun install
+bun run typecheck
+bun run test
+```
+
+不要提交 `package-lock.json` / `yarn.lock` / `pnpm-lock.yaml`。锁文件只有 `bun.lock`。
+
+---
+
+## 怎么跑
+
+入口：
+
+```text
+node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--no-llm]
+node script/run-distill.ts eval <trace_id> --sqlite path
+node script/run-distill.ts report <trace_id> --sqlite path --out out.html
+```
+
+`package.json` 里也可以：`bun run distill -- distill …`（仍是 node 跑 `script/run-distill.ts`）。
+
+### 无洞（演示默认）
+
+不调模型。规则已决议按 CutProfile 裁；未决段 Fail-Closed Keep。
+
+```bash
+node script/run-distill.ts distill examples/add-fix.jsonl \
+  --no-llm \
+  --sqlite /tmp/distiller.sqlite \
+  --report /tmp/add-fix.report.html
+```
+
+小样与生成的示例 HTML 在 [examples/](./examples/)。
+
+### 评测指标与从库出报告
+
+```bash
+node script/run-distill.ts eval <trace_id> --sqlite /tmp/distiller.sqlite
+node script/run-distill.ts report <trace_id> --sqlite /tmp/distiller.sqlite --out /tmp/from-db.html
+```
+
+`eval` 读压缩率、规则覆盖、LLM 段占比、Fail-Closed 数。`replay` / QA **不会跑**：需要真模型 L4（`TRACE_DISTILLER_MODEL_L4`），不要把空壳当成已接通。
+
+### 带洞（真模型）
+
+设置洞模型后再跑，不要加 `--no-llm`：
+
+```bash
+export TRACE_DISTILLER_MODEL_HOLE_A=…   # 洞 A 骨架
+export TRACE_DISTILLER_MODEL_HOLE_B=…   # 洞 B 逐窗打标
+# 可选：TRACE_DISTILLER_MODEL_L4=…     # 盲测/QA/重放；尚未接通
+node script/run-distill.ts distill examples/add-fix.jsonl --sqlite /tmp/distiller.sqlite --report /tmp/holes.html
+```
+
+未设上述 env、也没有注入 session 后端时，自动走无洞。
+
+### 假后端
+
+`FakeSessionBackend` **只给测试用**（`tests/` 注入）。生产 CLI 不要用它冒充带洞通路。
 
 ---
 
 ## 它解决什么问题？
 
-Agent 干成一件事，过程里往往有大量试错、重复读文件、确认环境之类的步骤。原始记录又长又脏，带来两个麻烦：
-
-1. **当训练数据**：又贵又噪，模型学不到重点  
-2. **给人看**：复盘、验收要啃几百步，太累
-
-Trace Distiller 做的事很单纯：
+Agent 干成一件事，过程里往往有大量试错、重复读文件、确认环境之类的步骤。原始记录又长又脏：当训练数据又贵又噪；给人看要啃几百步。
 
 ```text
 长且成功的原始记录  →  压缩后的精华版
 （例如约 500 步）         （目标大约 30 步量级）
 ```
 
-剪的时候留「怎么从接到任务走到做对」的主线，去掉没用的弯路和流水账。
+原料必须有「确实做对了」的证明（Ground Truth）。没有验证的、失败的记录一律不进。
 
 ---
 
-## 怎么算剪好了？
+## 文档
 
-MVP 只看两件事：
-
-| 看什么 | 标准（白话） |
-|--------|----------------|
-| **够不够短** | 剪后长度大约是原来的 10%～30% |
-| **还能不能懂 / 走得通** | 只看剪后版本，仍能说清解题路径，并到达同一结论 |
-
-后面才会做：拿剪后数据训练对比效果、找同事盲读是否好懂。细节见 [PRD.md](./PRD.md)。
-
----
-
-## 大致怎么处理？
-
-四步，串起来跑：
-
-1. **切段** — 按「想一下 → 调一次工具 → 拿到结果」切成一段一段  
-2. **打标签** — 标成：关键决策 / 有用的探索 / 死胡同 / 例行操作  
-   （能靠规则判断的先用规则；拿不准的再问模型，省钱也少胡说）  
-3. **剪辑** — 留下关键步骤和有用探索；死胡同最多留一句「试过 X，不行」；例行操作直接删。相邻步骤不能跳太远，否则人看不懂，训练也像喂幻觉  
-4. **出两种结果** — 给模型练的训练版，给人看的回放版  
-
-**原料门槛**：必须有「确实做对了」的证明（比如测试通过）。没有验证的、失败的记录，一律不进。
-
-**明确不做**：不盯着正在跑的 Agent 实时插手；不分析失败记录；不改模型权重。
-
----
-
-## 接下来两周做什么？（MVP）
-
-1. 准备 3～5 条「最终做对了」的记录（优先 SWE-bench，或本地 Claude Code / openclaw 的 session）  
-2. 写切段脚本  
-3. 规则打标 + 模型打标，得到带标签的段落表  
-4. 生成剪后版本，量一下缩短了多少  
-5. 新开一个对话，只给剪后版本，问「它是怎么解决的、关键转折在哪」——答得上来就算过关  
-
-完整清单：[docs/milestones.md](./docs/milestones.md)
-
----
-
-## 文档从哪读？
-
-先看这个 README 建立直觉，再按需深入：
-
-- [PRD.md](./PRD.md) — 完整需求（范围、指标、风险）  
-- [docs/architecture.md](./docs/architecture.md) — **流水线 + 两个 agent 洞**（TS + pi；v0.3 含分层与 HTML 报告展示层）  
-- [docs/modules/](./docs/modules/) — **模块设计契约**（types → 洞 A/B → assembler → 报告；动工按模块看）  
-- [benchmark/README.md](./benchmark/README.md) — 怎么打分、怎么防作弊（压缩和保真必须绑在一起看）  
-- [CONTEXT.md](./CONTEXT.md) — 项目里专用词的统一定义  
-- [docs/milestones.md](./docs/milestones.md) — 分期做什么、怎么算完成  
-- [docs/TODO.md](./docs/TODO.md) — **执行队列**（动工从这看：Trace JSON 设计是 P0 前置项）  
-- [docs/adr/](./docs/adr/) — 已经拍板的关键决定（0009：AgentView 卡片流 + 裁剪凭证）  
-
----
-
-## 目录说明
-
-```text
-PRD.md / CONTEXT.md / README.md   产品与语言
-docs/architecture.md              流水线 + 洞 A/B（v0.3，含分层与 HTML 报告展示层）
-docs/modules/                     各 src 模块设计契约（不是实现）
-benchmark/                        评测设计与（后续）跑分
-docs/                             里程碑、决策记录、模块设计
-data/                             运行时原料与产物（JSONL 等，大文件 gitignore）
-examples/                         3–5 条原料 + 跑出的报告（demo 素材，待建）
-src/                              实现（types/enums/constant/domain 契约前置；见 src/README）
-script/                           CLI 入口（run-distill，待建）
-```
-
----
-
-## 背景
-
-- 8/26 组会：trace 剪枝蒸馏方向（高俊）  
-- 剪的时候步与步要「够得着」，别剪过头（Shilong）
+- [CONTEXT.md](./CONTEXT.md) — 产品用词
+- [docs/architecture.md](./docs/architecture.md) — 流水线 + 两个 agent 洞
+- [docs/modules/](./docs/modules/) — 模块契约
+- [AGENTS.md](./AGENTS.md) — 工程规则（给写代码的人）
+- [docs/TODO.md](./docs/TODO.md) — 执行队列
+- [docs/adr/](./docs/adr/) — 已拍板的决定
+- [PRD.md](./PRD.md) — 需求草案
+- [benchmark/README.md](./benchmark/README.md) — 复合分与防作弊

@@ -45,6 +45,9 @@ describe('data sqlite', () => {
           qa: null,
           coherence: null,
           composite: null,
+          rule_coverage: 0.8,
+          llm_segment_fraction: 0,
+          fail_closed_count: 1,
         })
       })
 
@@ -81,6 +84,9 @@ describe('data sqlite', () => {
       const metrics = getMetrics(db, raw.meta.trace_id)
       assert.equal(metrics?.compression_ratio, 0.2)
       assert.equal(metrics?.key_step_recall, null)
+      assert.equal(metrics?.rule_coverage, 0.8)
+      assert.equal(metrics?.fail_closed_count, 1)
+      assert.deepEqual(segs[0]?.reads, out.view.segments[0]?.reads)
 
       const coverage = ruleCoverage(db, raw.meta.trace_id)
       assert.equal(coverage.total, out.view.segments.length)

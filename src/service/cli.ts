@@ -1,22 +1,28 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { parse, sniff } from '../adapters/claude_code.ts'
 import { DEFAULT_CUT_PROFILE } from '../constant/compression.ts'
-import { insertLabelDecisions, ruleCoverage, type RuleCoverage } from '../data/data_label.ts'
-import { insertMetrics, type MetricsRow } from '../data/data_metric.ts'
+import { insertLabelDecisions, listLabels, ruleCoverage, type RuleCoverage } from '../data/data_label.ts'
+import { getMetrics, insertMetrics, type MetricsRow } from '../data/data_metric.ts'
 import {
+  getTraceMeta,
+  listSegments,
   openDb,
   replaceSegments,
   runInTransaction,
+  segmentRowToCard,
+  upsertIntent,
   upsertTraceMeta,
   type Db,
 } from '../data/data_segment.ts'
-import { insertCutPlan, insertWarrant } from '../data/data_warrant.ts'
-import { FAIL_CLOSED_KEEP_RULE } from '../domain/cut_decision.ts'
+import { getCutPlan, getWarrant, insertCutPlan, insertWarrant } from '../data/data_warrant.ts'
+import type { LabelDecision } from '../domain/label_decision.ts'
 import { isSpanFailure } from '../domain/span_violation.ts'
+import { computeDistillMetrics, type DistillMetrics } from '../eval/metrics.ts'
 import { distill, resolveDistillMode, type DistillResult } from '../pipeline/orchestrator.ts'
 import { renderHtml, type ReportModel } from '../report/html.ts'
 import type { CutProfile } from '../types/cut_profile.ts'
+import type { PlaybackCut } from '../types/cut_plan.ts'
 import {
   AdmissionError,
   isAdmissionError,
@@ -37,14 +43,24 @@ export interface CliArgs {
   sqlite_path?: string
   out_dir?: string
   report_path?: string
+  out_path?: string
   no_llm?: boolean
   help?: boolean
 }
 
+const L4_NOTE =
+  'replay/qa 需真模型 L4（TRACE_DISTILLER_MODEL_L4）与干净会话，本命令不跑重放或 QA'
+
 const HELP = `Usage:
   node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--no-llm]
+  node script/run-distill.ts eval <trace_id> --sqlite path
+  node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 
 --no-llm forces the conservative no-hole path. Without --no-llm, with_llm runs when a session backend is injected or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B is set; otherwise no_llm.
+
+FakeSessionBackend is for tests only. Production with_llm needs TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
+
+eval reads distill metrics from SQLite. ${L4_NOTE}.
 
 Exit codes:
   0  success
@@ -66,6 +82,7 @@ export function parseArgv(argv: string[]): CliArgs {
   let sqlite_path: string | undefined
   let out_dir: string | undefined
   let report_path: string | undefined
+  let out_path: string | undefined
   let no_llm: boolean | undefined
 
   const take = (i: number, flag: string): [string, number] => {
@@ -100,6 +117,10 @@ export function parseArgv(argv: string[]): CliArgs {
       ;[report_path, i] = take(i, token)
       continue
     }
+    if (token === '--out') {
+      ;[out_path, i] = take(i, token)
+      continue
+    }
     if (token === '--no-llm') {
       no_llm = true
       continue
@@ -121,6 +142,7 @@ export function parseArgv(argv: string[]): CliArgs {
   if (sqlite_path !== undefined) args.sqlite_path = sqlite_path
   if (out_dir !== undefined) args.out_dir = out_dir
   if (report_path !== undefined) args.report_path = report_path
+  if (out_path !== undefined) args.out_path = out_path
   if (no_llm !== undefined) args.no_llm = no_llm
   return args
 }
@@ -130,10 +152,8 @@ export async function runCli(args: CliArgs): Promise<number> {
     process.stderr.write(HELP)
     return EXIT_OK
   }
-  if (args.command !== 'distill') {
-    process.stderr.write(`${args.command} 尚未实现\n`)
-    return EXIT_OTHER
-  }
+  if (args.command === 'eval') return runEval(args)
+  if (args.command === 'report') return runReport(args)
   if (args.input_path.length === 0) {
     process.stderr.write(HELP)
     return EXIT_OTHER
@@ -147,8 +167,9 @@ export async function runCli(args: CliArgs): Promise<number> {
     const outDir = args.out_dir ?? join('data', 'distilled')
     writeCuts(outDir, result)
 
-    const metrics = metricsFrom(result)
-    let coverage = coverageFromResult(result)
+    const computed = computeDistillMetrics(result)
+    const metrics = metricsRowFrom(raw.meta.trace_id, computed)
+    let coverage = coverageFromMetrics(computed)
     if (args.sqlite_path !== undefined) {
       const db = openDb(args.sqlite_path)
       try {
@@ -160,7 +181,11 @@ export async function runCli(args: CliArgs): Promise<number> {
     }
 
     if (args.report_path !== undefined) {
-      writeFileSync(args.report_path, renderHtml(toReportModel(result, coverage, metrics)), 'utf8')
+      writeFileSync(
+        args.report_path,
+        renderHtml(toReportModel(result, coverage, computed)),
+        'utf8',
+      )
     }
 
     const job_id = registerJobFromResult(result, {
@@ -229,6 +254,7 @@ function writeCuts(outDir: string, result: DistillResult): void {
 function persistDistill(db: Db, result: DistillResult, metrics: MetricsRow): void {
   runInTransaction(db, () => {
     upsertTraceMeta(db, result.raw)
+    upsertIntent(db, result.raw.meta.trace_id, result.view.intent_hypothesis)
     replaceSegments(db, result.raw.meta.trace_id, result.view.segments)
     insertLabelDecisions(db, result.raw.meta.trace_id, result.decisions)
     insertWarrant(db, result.warrant)
@@ -237,36 +263,38 @@ function persistDistill(db: Db, result: DistillResult, metrics: MetricsRow): voi
   })
 }
 
-function metricsFrom(result: DistillResult): MetricsRow {
-  const after = result.training.turns.reduce((sum, turn) => sum + turn.tokens, 0)
-  const before = result.raw.meta.total_tokens
-  const compression_ratio = before > 0 ? after / before : 0
+function metricsRowFrom(trace_id: string, computed: DistillMetrics): MetricsRow {
   return {
-    trace_id: result.raw.meta.trace_id,
-    compression_ratio,
-    distill_cost_ratio: 0,
+    trace_id,
+    compression_ratio: computed.compression_ratio,
+    distill_cost_ratio: Number.isFinite(computed.distill_cost_ratio)
+      ? computed.distill_cost_ratio
+      : 0,
     key_step_recall: null,
     replay: null,
     qa: null,
     coherence: null,
     composite: null,
+    rule_coverage: computed.rule_coverage,
+    llm_segment_fraction: computed.llm_segment_fraction,
+    fail_closed_count: computed.fail_closed_count,
   }
 }
 
-function coverageFromResult(result: DistillResult): RuleCoverage {
-  const total = result.view.segments.length
-  const ruled = result.decisions.filter((d) => d.source.kind === 'rule').length
-  const llm = result.decisions.filter((d) => d.source.kind === 'llm').length
-  const fail_closed = result.warrant.entries.filter((e) => e.source.name === FAIL_CLOSED_KEEP_RULE).length
-  return { total, ruled, llm, fail_closed }
+function coverageFromMetrics(computed: DistillMetrics): RuleCoverage {
+  return {
+    total: computed.total_segments,
+    ruled: computed.ruled_count,
+    llm: computed.llm_count,
+    fail_closed: computed.fail_closed_count,
+  }
 }
 
 function toReportModel(
   result: DistillResult,
   coverage: RuleCoverage,
-  metrics: MetricsRow,
+  computed: DistillMetrics,
 ): ReportModel {
-  const llm_segment_fraction = coverage.total > 0 ? coverage.llm / coverage.total : 0
   return {
     meta: result.raw.meta,
     intent: result.view.intent_hypothesis,
@@ -278,9 +306,134 @@ function toReportModel(
     labels: result.decisions,
     coverage,
     metrics: {
+      compression_ratio: computed.compression_ratio,
+      distill_cost_ratio: Number.isFinite(computed.distill_cost_ratio)
+        ? computed.distill_cost_ratio
+        : 0,
+      llm_segment_fraction: computed.llm_segment_fraction,
+    },
+  }
+}
+
+function runEval(args: CliArgs): number {
+  const sqlite = args.sqlite_path
+  const trace_id = args.input_path
+  if (sqlite === undefined || trace_id.length === 0) {
+    process.stderr.write('eval 需要 <trace_id> --sqlite path\n')
+    return EXIT_OTHER
+  }
+  const db = openDb(sqlite)
+  try {
+    const metrics = getMetrics(db, trace_id)
+    if (metrics === undefined) {
+      logError(`找不到 trace 指标: ${trace_id}`)
+      return EXIT_OTHER
+    }
+    const coverage = ruleCoverage(db, trace_id)
+    process.stdout.write(
+      `${JSON.stringify({
+        trace_id,
+        compression_ratio: metrics.compression_ratio,
+        distill_cost_ratio: metrics.distill_cost_ratio,
+        rule_coverage: metrics.rule_coverage,
+        llm_segment_fraction: metrics.llm_segment_fraction,
+        fail_closed_count: metrics.fail_closed_count,
+        total_segments: coverage.total,
+        ruled_count: coverage.ruled,
+        llm_count: coverage.llm,
+        replay: null,
+        qa: null,
+        note: L4_NOTE,
+      })}\n`,
+    )
+    return EXIT_OK
+  } finally {
+    db.close()
+  }
+}
+
+function runReport(args: CliArgs): number {
+  const sqlite = args.sqlite_path
+  const trace_id = args.input_path
+  const out = args.out_path
+  if (sqlite === undefined || trace_id.length === 0 || out === undefined) {
+    process.stderr.write('report 需要 <trace_id> --sqlite path --out out.html\n')
+    return EXIT_OTHER
+  }
+  const db = openDb(sqlite)
+  try {
+    const model = reportModelFromDb(db, trace_id)
+    mkdirSync(dirname(out), { recursive: true })
+    writeFileSync(out, renderHtml(model), 'utf8')
+    process.stdout.write(`${JSON.stringify({ trace_id, out })}\n`)
+    return EXIT_OK
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logError(message)
+    return EXIT_OTHER
+  } finally {
+    db.close()
+  }
+}
+
+function reportModelFromDb(db: Db, trace_id: string): ReportModel {
+  const metaRow = getTraceMeta(db, trace_id)
+  if (metaRow === undefined) {
+    throw new Error(`找不到 trace: ${trace_id}`)
+  }
+  const metrics = getMetrics(db, trace_id)
+  if (metrics === undefined) {
+    throw new Error(`找不到 trace 指标: ${trace_id}`)
+  }
+  const warrant = getWarrant(db, trace_id)
+  if (warrant === undefined) {
+    throw new Error(`找不到凭证: ${trace_id}`)
+  }
+  const plan = getCutPlan(db, trace_id)
+  if (plan === undefined) {
+    throw new Error(`找不到 CutPlan: ${trace_id}`)
+  }
+  const cards = listSegments(db, trace_id).map(segmentRowToCard)
+  const byId = new Map(cards.map((card) => [card.id, card]))
+  const playback: PlaybackCut = {
+    trace_id,
+    plan_ref: 'sqlite',
+    cards: plan.kept.flatMap((id) => {
+      const card = byId.get(id)
+      return card === undefined ? [] : [card]
+    }),
+    collapsed: plan.collapsed,
+  }
+  const labels: LabelDecision[] = listLabels(db, trace_id).map((row) => {
+    const decision: LabelDecision = {
+      segment_id: row.segment_id,
+      label: row.label,
+      source: { kind: row.source_kind, name: row.source_name },
+      confidence: row.confidence,
+    }
+    if (row.rule_name !== null) decision.rule_name = row.rule_name
+    return decision
+  })
+  const coverage = ruleCoverage(db, trace_id)
+  return {
+    meta: {
+      trace_id: metaRow.trace_id,
+      source: metaRow.source,
+      ground_truth_ref: metaRow.ground_truth_ref,
+      total_tokens: metaRow.total_tokens,
+    },
+    intent: metaRow.intent,
+    original_step_count: cards.length,
+    kept_step_count: playback.cards.length,
+    segments: cards,
+    playback,
+    warrant,
+    labels,
+    coverage,
+    metrics: {
       compression_ratio: metrics.compression_ratio,
       distill_cost_ratio: metrics.distill_cost_ratio,
-      llm_segment_fraction,
+      llm_segment_fraction: metrics.llm_segment_fraction,
     },
   }
 }

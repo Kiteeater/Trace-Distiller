@@ -63,6 +63,24 @@ export function insertCutPlan(db: Db, plan: CutPlan): void {
   )
 }
 
+export function getWarrant(db: Db, trace_id: TraceId): CutWarrant | undefined {
+  const rows = listWarrants(db, trace_id)
+  if (rows.length === 0) return undefined
+  return {
+    trace_id,
+    entries: rows.map((row) => {
+      const entry: CutWarrant['entries'][number] = {
+        segment_id: row.segment_id,
+        action: row.action,
+        source: { kind: row.source_kind, name: row.source_name },
+        confidence: row.confidence,
+      }
+      if (row.dead_end_summary !== null) entry.dead_end_summary = row.dead_end_summary
+      return entry
+    }),
+  }
+}
+
 export function listWarrants(db: Db, trace_id: TraceId): WarrantRow[] {
   const rows = db.prepare(
     `SELECT trace_id, segment_id, action, source_kind, source_name, confidence, dead_end_summary

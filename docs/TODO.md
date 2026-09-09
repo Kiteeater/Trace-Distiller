@@ -7,45 +7,51 @@
 
 ## P0 — Trace JSON（AgentView）结构体设计
 
-**这是动工前置项：契约一定，segmenter / rules / 卡片流渲染可并行。** 详见 [ADR-0009](./adr/0009-agent-view-and-cut-warrant.md)。设计草图在 [modules/types.md](./modules/types.md)，下列各项仍未拍板。
+**这是动工前置项：契约一定，segmenter / rules / 卡片流渲染可并行。** 详见 [ADR-0009](./adr/0009-agent-view-and-cut-warrant.md)。实现已落 `src/types/` / `src/enums/`；下列为当时拍板项。
 
-- [ ] 定 AgentView 信封结构：`meta`（trace_id / source / ground_truth_ref / total_tokens）+ `intent_hypothesis` + `skeleton`（增量修正）+ `segments`
-- [ ] 定 SegmentCard 字段：`id` / `tool` / `sig`（动作签名）/ `outcome` / `rep_of`（相似重试聚类指针）/ `reads` / `writes` / `tokens` / `focus`（line|card|full 三档注意力）/ `head`（代码截首句，非 LLM 生成）
-- [ ] 定动作签名 `sig` 的生成规则（什么算「同质动作」，聚类 / 归并到什么粒度）
-- [ ] 定 RawTrace ↔ AgentView 的映射关系：Training Cut 取 RawTrace 原文，Playback Cut 取 AgentView 卡片流——同一 CutPlan 两种投影
-- [ ] 定 CutWarrant（裁剪凭证）schema：keep / collapse / drop + source（规则名|LLM）+ 置信度 + 死胡同一句话摘要（唯一允许的改写）
-- [ ] 定 CutProfile schema：标签保留策略 / 压缩率区间 / span 约束 / 死胡同处理——用户自定义面（CLI 吃 profile 跑）
-- [ ] 写成 `src/types/` + `src/enums/` 的 TS 契约（每 enum 一文件；设计见 [modules/types.md](./modules/types.md)、[modules/enums.md](./modules/enums.md)）
-- [ ] 注意力档位默认值的规则集：什么条件给 line / card / full（代码决定，不是 LLM 决定）
-- [ ] 多任务 session 切分：一条 Claude Code session 常含多个任务（修 bug 顺带重构），「一条 trace = 一个任务」是切段和意图推断的前提——session ≠ trace 的切分策略要先定，否则 adapter 没法写
+- [x] 定 AgentView 信封结构：`meta`（trace_id / source / ground_truth_ref / total_tokens）+ `intent_hypothesis` + `skeleton`（增量修正）+ `segments`
+- [x] 定 SegmentCard 字段：`id` / `tool` / `sig`（动作签名）/ `outcome` / `rep_of`（相似重试聚类指针）/ `reads` / `writes` / `tokens` / `focus`（line|card|full 三档注意力）/ `head`（代码截首句，非 LLM 生成）
+- [x] 定动作签名 `sig` 的生成规则（什么算「同质动作」，聚类 / 归并到什么粒度）
+- [x] 定 RawTrace ↔ AgentView 的映射关系：Training Cut 取 RawTrace 原文，Playback Cut 取 AgentView 卡片流——同一 CutPlan 两种投影
+- [x] 定 CutWarrant（裁剪凭证）schema：keep / collapse / drop + source（规则名|LLM）+ 置信度 + 死胡同一句话摘要（唯一允许的改写）
+- [x] 定 CutProfile schema：标签保留策略 / 压缩率区间 / span 约束 / 死胡同处理——用户自定义面（CLI 吃 profile 跑）
+- [x] 写成 `src/types/` + `src/enums/` 的 TS 契约（每 enum 一文件；设计见 [modules/types.md](./modules/types.md)、[modules/enums.md](./modules/enums.md)）
+- [x] 注意力档位默认值的规则集：什么条件给 line / card / full（代码决定，不是 LLM 决定）
+- [x] 多任务 session 切分：一条 Claude Code session 常含多个任务（修 bug 顺带重构），「一条 trace = 一个任务」是切段和意图推断的前提——session ≠ trace 的切分策略要先定，否则 adapter 没法写
 
 ## P0 — 工程骨架
 
-- [ ] AGENTS.md：工程规则（bun 装 / node 跑 / typecheck / lint / 分层纪律——契约前置、biz 纯逻辑、service 薄壳、data 统一管库、utils 只放无状态）
-- [ ] package.json + tsconfig + eslint 建起来（目录树按 architecture.md v0.3）
-- [x] pi SDK spike：验证结构化输出、自定义消息序列（骨架注入）、provider 降档切换三件事可用——假后端保证；`openSession` 工厂已接通；洞 A/B 可经 Fake 打标，真模型需 env；orchestrator 仍不接通
-- [ ] SQLite schema：段表 / 打标表 / 凭证表 / 指标表（成本数字和「LLM 只看 X%」全从这查；草图见 [modules/data.md](./modules/data.md)）
+- [x] AGENTS.md：工程规则（bun 装 / node 跑 / typecheck / lint / 分层纪律——契约前置、biz 纯逻辑、service 薄壳、data 统一管库、utils 只放无状态）
+- [x] package.json + tsconfig 建起来（目录树按 architecture.md v0.3；eslint 未建，不假装有）
+- [x] pi SDK spike：验证结构化输出、自定义消息序列（骨架注入）、provider 降档切换三件事可用——假后端保证；`openSession` 工厂已接通；洞 A/B 可经 Fake 打标，真模型需 env
+- [x] SQLite schema：段表 / 打标表 / 凭证表 / 指标表（成本数字和「LLM 只看 X%」全从这查；草图见 [modules/data.md](./modules/data.md)）。列级仍标 OPEN，但最小可用表已通。
 - [x] `read_segment` 确定性拉取工具（handler 纯函数已落地；不接 pi。[modules/agent-extension.md](./modules/agent-extension.md)）
-- [ ] 验证点定位：从 trace 中找 ground truth 验证点附近的 turn 作为意图锚点（头尾是启发式，验证点是硬锚点）
+- [x] 验证点定位：从 trace 中找 ground truth 验证点附近的 turn 作为意图锚点（头尾是启发式，验证点是硬锚点）
 
 ## M1 — 流水线（milestones 抄录 + 细化）
 
-- [ ] 搞原料：3–5 条带「最终做对了」标记的 Trace（本地 Claude Code session 先用起来）
-- [ ] Admission Gate：无 Ground Truth 拒绝入库
-- [ ] L0 适配器（claude-code JSONL 优先；[modules/adapters.md](./modules/adapters.md)）+ `segmenter`（[modules/pipeline-segmenter.md](./modules/pipeline-segmenter.md)）+ `rules`（含 token Jaccard 相似重试聚类；[modules/pipeline-rules.md](./modules/pipeline-rules.md)）
-- [ ] 文件依赖图：reads/writes 连边，「读过的文件后来被改过」→ 有效探索强信号，喂给洞 B 免费置信度
-- [ ] `orchestrator.ts` 确定性编排（无 LLM；设计见 [modules/pipeline-orchestrator.md](./modules/pipeline-orchestrator.md)）
-- [ ] ① 头尾意图推断（~2k token 一次调用，输出意图 v0 + 场景码；[modules/agent-sessions.md](./modules/agent-sessions.md)）
-- [ ] ② 逐窗打标 map-reduce（骨架注入 context；未决段回报骨架修正，代码合并 v1）
-- [ ] ③ CutWarrant 生成（引用式凭证）
-- [ ] ④ 确定性裁剪 assembler（span 约束在此强制；[modules/pipeline-assembler.md](./modules/pipeline-assembler.md)）
-- [ ] ⑤ 盲测 review + 回填循环（最多两轮；review 拿意图 + 剪后 trace，故意不给凭证；[modules/eval.md](./modules/eval.md)）
-- [x] 盲测判分协议：review 输入只有 intent + playback；结构化答卷对照骨架；缺节点由代码回填 keep；最多 `REVIEW_MAX_ROUNDS=2`。LLM 会话仍待 pi spike。
-- [ ] token 计量口径：压缩率分子分母怎么算（工具输出全文算不算、卡片算不算）——口径不定，10%–30% 验收没法算
+- [ ] 搞原料：3–5 条带「最终做对了」标记的 **真实** Trace（`examples/` 只有脱敏合成小样，不算这项目）
+- [x] Admission Gate：无 Ground Truth 拒绝入库
+- [x] L0 适配器（claude-code JSONL 优先；[modules/adapters.md](./modules/adapters.md)）+ `segmenter`（[modules/pipeline-segmenter.md](./modules/pipeline-segmenter.md)）+ `rules`（含 token Jaccard 相似重试聚类；[modules/pipeline-rules.md](./modules/pipeline-rules.md)）
+- [ ] 文件依赖图：reads/writes 连边，「读过的文件后来被改过」→ 有效探索强信号，喂给洞 B 免费置信度（卡片已有 reads/writes，图信号未当独立层）
+- [x] `orchestrator.ts` 确定性编排（无 LLM；设计见 [modules/pipeline-orchestrator.md](./modules/pipeline-orchestrator.md)）
+- [x] ① 头尾意图推断（洞 A `skeletonPass`；假后端可测，真模型需 `TRACE_DISTILLER_MODEL_HOLE_A`）
+- [x] ② 逐窗打标 map-reduce（骨架注入 context；未决段回报骨架修正，代码合并 v1；真模型需 `TRACE_DISTILLER_MODEL_HOLE_B`）
+- [x] ③ CutWarrant 生成（引用式凭证；`writeWarrant` 纯代码）
+- [x] ④ 确定性裁剪 assembler（span 约束在此强制；[modules/pipeline-assembler.md](./modules/pipeline-assembler.md)）
+- [ ] ⑤ 盲测 review + 回填循环：纯代码对照骨架与 plan 已接通；**调 L4 模型的 `blindReview` 未接通**
+- [x] 盲测判分协议：review 输入只有 intent + playback；结构化答卷对照骨架；缺节点由代码回填 keep；最多 `REVIEW_MAX_ROUNDS=2`。LLM 会话仍待接通。
+- [ ] token 计量口径：压缩率分子分母怎么算（工具输出全文算不算、卡片算不算）——口径不定，10%–30% 验收没法算；现用 `TraceMeta.total_tokens` 与 training turns tokens
 - [ ] 成本基线：跑一次全量 LLM 打标当对照组，量出真实「1/N token」数字（demo 首页成本曲线的数据源）
-- [ ] SQLite 记打标结果 + 规则层覆盖率（「LLM 只看了 X% 的段」进报告首页）
-- [ ] `report/`：自包含 HTML 报告骨架（左原始 / 右精华 / 点开删除理由 / 成本数字）——M1 中段就要有，讲解视频边做边录（[modules/report.md](./modules/report.md)）
+- [x] SQLite 记打标结果 + 规则层覆盖率（「LLM 只看了 X% 的段」进报告首页；`eval` 子命令读同一数字）
+- [x] `report/`：自包含 HTML 报告骨架（左原始 / 右精华 / 点开删除理由 / 成本数字）；`report` 子命令可从库重建
 - [ ] 讲解视频剧本：5 步叙事（500 步的墙 → 规则先干粗活 → 可解释删除 → 盲测 → 压缩率 + 成本两个数字收尾）
+
+### 仍未接通（禁止假装完成）
+
+- 真模型 L4 重放 / QA / `blindReview`
+- live 页 UI（只有进程内 `registerJob`）
+- Unix socket
 
 ## M2 — 双产物与门禁
 

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Trace Distiller · claude-code:sess-no-llm</title>
+<style>
+  :root {
+    --ink: #1c1915;
+    --muted: #6b6459;
+    --paper: #f4efe6;
+    --card: #fffdf8;
+    --line: #d9d0c3;
+    --keep: #2f6f4e;
+    --drop: #9a3412;
+    --collapse: #92400e;
+    --rule: #1e3a5f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    background: var(--paper);
+    color: var(--ink);
+  }
+  header#hero {
+    padding: 2.2rem 1.5rem 1.5rem;
+    border-bottom: 1px solid var(--line);
+  }
+  h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.4rem; }
+  .sub { color: var(--muted); font-size: 0.95rem; }
+  .lens {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 1.2rem;
+  }
+  .wall, .essence, .cost {
+    background: var(--card);
+    border: 1px solid var(--line);
+    padding: 1rem 1.1rem;
+  }
+  .num { font-size: 2.4rem; font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
+  #coverage { margin-top: 1rem; }
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    min-height: 50vh;
+  }
+  #original-index, #playback-seq {
+    padding: 1rem 1.2rem 2rem;
+  }
+  #original-index { border-right: 1px solid var(--line); }
+  button.seg {
+    display: block;
+    width: 100%;
+    text-align: left;
+    margin: 0.35rem 0;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid var(--line);
+    background: var(--card);
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+  }
+  button.seg[data-action="drop"] { border-left: 4px solid var(--drop); }
+  button.seg[data-action="collapse"] { border-left: 4px solid var(--collapse); }
+  button.seg[data-action="keep"] { border-left: 4px solid var(--keep); }
+  #cut-detail {
+    grid-column: 1 / -1;
+    padding: 1rem 1.2rem 2rem;
+    border-top: 1px solid var(--line);
+    background: #efe8dc;
+    min-height: 6rem;
+  }
+  #eval-panel, #metrics-footer {
+    padding: 1rem 1.2rem 1.6rem;
+    border-top: 1px solid var(--line);
+  }
+  .tag { font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+</style>
+</head>
+<body>
+<header id="hero">
+  <h1>500 步的墙 → 精华</h1>
+  <p class="sub">trace <code>claude-code:sess-no-llm</code> · 意图 （无洞：意图未推断）</p>
+  <div class="lens">
+    <div class="wall" id="wall">
+      <div class="tag">原始步数墙</div>
+      <div class="num" data-original-steps="8">8</div>
+    </div>
+    <div class="essence" id="essence">
+      <div class="tag">精华步数</div>
+      <div class="num" data-kept-steps="5">5</div>
+    </div>
+  </div>
+  <div class="cost" id="coverage">
+    <div class="tag">规则覆盖 / 处理成本</div>
+    <p>压缩率 <strong data-compression-ratio="0.7557603686635944">0.7557603686635944</strong>
+       · 规则已定 <strong data-ruled="3">3</strong> / 8
+       · LLM 段比例 <strong data-llm-fraction="0">0</strong>
+       · 蒸馏成本比 <strong data-distill-cost="0">0</strong>
+       · Fail-Closed 5</p>
+  </div>
+</header>
+<main>
+  <section id="original-index">
+    <div class="tag">原始卡片索引</div>
+    <div id="original-list"></div>
+  </section>
+  <section id="playback-seq">
+    <div class="tag">Playback 序列</div>
+    <div id="playback-list"></div>
+  </section>
+  <section id="cut-detail">
+    <div class="tag">点开删除 / 压缩</div>
+    <p id="cut-detail-body">点左侧 drop / collapse 段，查看凭证 source 与理由。</p>
+  </section>
+</main>
+<section id="eval-panel">
+  <div class="tag">盲测结论</div>
+  <p>未跑 eval</p>
+</section>
+<footer id="metrics-footer">
+  <div class="tag">收尾两个数字</div>
+  <p>压缩率 0.7557603686635944 · 处理成本比 0</p>
+</footer>
+<script type="application/json" id="report-data">{"meta":{"trace_id":"claude-code:sess-no-llm","source":"claude-code","ground_truth_ref":"turn:nl-tool-pass","total_tokens":217},"intent":{"version":0,"text":""},"original_step_count":8,"kept_step_count":5,"segments":[{"id":"s0001","tool":"user","sig":"user","outcome":"unknown","rep_of":null,"reads":[],"writes":[],"tokens":12,"focus":"card","head":"Fix the failing test in add.ts so 1+1 equals 2.","raw_refs":["nl-user-1"]},{"id":"s0002","tool":"Read","sig":"Read:add.ts","outcome":"unknown","rep_of":null,"reads":["add.ts"],"writes":[],"tokens":22,"focus":"card","head":"Inspect add.ts then run tests.","raw_refs":["nl-asst-read1","nl-asst-read1#1","nl-tool-read1"]},{"id":"s0003","tool":"Read","sig":"Read:add.ts","outcome":"unknown","rep_of":null,"reads":["add.ts"],"writes":[],"tokens":14,"focus":"line","head":"{\"path\":\"add.ts\"}","raw_refs":["nl-asst-read2","nl-tool-read2"]},{"id":"s0004","tool":"Bash","sig":"Bash:pytest tests/test_add.py","outcome":"error","rep_of":null,"reads":[],"writes":[],"tokens":46,"focus":"card","head":"{\"command\":\"pytest tests/test_add.py\",\"description\":\"first failing run\"}","raw_refs":["nl-asst-fail1","nl-tool-fail1"]},{"id":"s0005","tool":"Bash","sig":"Bash:pytest tests/test_add.py","outcome":"error","rep_of":"s0004","reads":[],"writes":[],"tokens":43,"focus":"line","head":"{\"command\":\"pytest tests/test_add.py\",\"description\":\"similar retry\"}","raw_refs":["nl-asst-fail2","nl-tool-fail2"]},{"id":"s0006","tool":"Edit","sig":"Edit:add.ts","outcome":"unknown","rep_of":null,"reads":["add.ts"],"writes":["add.ts"],"tokens":16,"focus":"card","head":"{\"path\":\"add.ts\",\"old_string\":\"a - b\",\"new_string\":\"a + b\"}","raw_refs":["nl-asst-edit","nl-tool-edit"]},{"id":"s0007","tool":"Bash","sig":"Bash:pytest tests/test_add.py","outcome":"ok","rep_of":null,"reads":[],"writes":[],"tokens":31,"focus":"card","head":"{\"command\":\"pytest tests/test_add.py\",\"description\":\"verify fix\"}","raw_refs":["nl-asst-pass","nl-tool-pass"]},{"id":"s0008","tool":"Bash","sig":"Bash:python -c \"raise SystemExit()\"","outcome":"error","rep_of":null,"reads":[],"writes":[],"tokens":33,"focus":"line","head":"{\"command\":\"python -c \\\"raise SystemExit(1)\\\"\",\"description\":\"unrelated dead end\"}","raw_refs":["nl-asst-dead","nl-tool-dead"]}],"playback":{"trace_id":"claude-code:sess-no-llm","plan_ref":"a7da407f28617e159b7472730868baeadc85b10644626fc76630798907f7eb35","cards":[{"id":"s0001","tool":"user","sig":"user","outcome":"unknown","rep_of":null,"reads":[],"writes":[],"tokens":12,"focus":"card","head":"Fix the failing test in add.ts so 1+1 equals 2.","raw_refs":["nl-user-1"]},{"id":"s0002","tool":"Read","sig":"Read:add.ts","outcome":"unknown","rep_of":null,"reads":["add.ts"],"writes":[],"tokens":22,"focus":"card","head":"Inspect add.ts then run tests.","raw_refs":["nl-asst-read1","nl-asst-read1#1","nl-tool-read1"]},{"id":"s0004","tool":"Bash","sig":"Bash:pytest tests/test_add.py","outcome":"error","rep_of":null,"reads":[],"writes":[],"tokens":46,"focus":"card","head":"{\"command\":\"pytest tests/test_add.py\",\"description\":\"first failing run\"}","raw_refs":["nl-asst-fail1","nl-tool-fail1"]},{"id":"s0006","tool":"Edit","sig":"Edit:add.ts","outcome":"unknown","rep_of":null,"reads":["add.ts"],"writes":["add.ts"],"tokens":16,"focus":"card","head":"{\"path\":\"add.ts\",\"old_string\":\"a - b\",\"new_string\":\"a + b\"}","raw_refs":["nl-asst-edit","nl-tool-edit"]},{"id":"s0007","tool":"Bash","sig":"Bash:pytest tests/test_add.py","outcome":"ok","rep_of":null,"reads":[],"writes":[],"tokens":31,"focus":"card","head":"{\"command\":\"pytest tests/test_add.py\",\"description\":\"verify fix\"}","raw_refs":["nl-asst-pass","nl-tool-pass"]}],"collapsed":[{"segment_id":"s0005","summary":"{\"command\":\"pytest tests/test_add.py\",\"description\":\"similar retry\"}"},{"segment_id":"s0008","summary":"{\"command\":\"python -c \\\"raise SystemExit(1)\\\"\",\"description\":\"unrelated dead end"}]},"warrant":{"trace_id":"claude-code:sess-no-llm","entries":[{"segment_id":"s0001","action":"keep","source":{"kind":"rule","name":"fail_closed_keep"},"confidence":1},{"segment_id":"s0002","action":"keep","source":{"kind":"rule","name":"fail_closed_keep"},"confidence":1},{"segment_id":"s0003","action":"drop","source":{"kind":"rule","name":"repeat_read"},"confidence":1},{"segment_id":"s0004","action":"keep","source":{"kind":"rule","name":"fail_closed_keep"},"confidence":1},{"segment_id":"s0005","action":"collapse","source":{"kind":"rule","name":"similar_retry"},"confidence":1,"dead_end_summary":"{\"command\":\"pytest tests/test_add.py\",\"description\":\"similar retry\"}"},{"segment_id":"s0006","action":"keep","source":{"kind":"rule","name":"fail_closed_keep"},"confidence":1},{"segment_id":"s0007","action":"keep","source":{"kind":"rule","name":"fail_closed_keep"},"confidence":1},{"segment_id":"s0008","action":"collapse","source":{"kind":"rule","name":"failed_call_no_followup"},"confidence":1,"dead_end_summary":"{\"command\":\"python -c \\\"raise SystemExit(1)\\\"\",\"description\":\"unrelated dead end"}]},"labels":[{"segment_id":"s0003","label":"routine","source":{"kind":"rule","name":"repeat_read"},"confidence":1,"rule_name":"repeat_read","graph_hints":["read_then_later_written"]},{"segment_id":"s0005","label":"dead_end","source":{"kind":"rule","name":"similar_retry"},"confidence":1,"rule_name":"similar_retry"},{"segment_id":"s0008","label":"dead_end","source":{"kind":"rule","name":"failed_call_no_followup"},"confidence":1,"rule_name":"failed_call_no_followup"}],"coverage":{"total":8,"ruled":3,"llm":0,"fail_closed":5},"metrics":{"compression_ratio":0.7557603686635944,"distill_cost_ratio":0,"llm_segment_fraction":0}}</script>
+<script>
+(function () {
+  var el = document.getElementById('report-data');
+  var model = JSON.parse(el.textContent);
+  var byId = {};
+  (model.segments || []).forEach(function (s) { byId[s.id] = s; });
+  var labels = {};
+  (model.labels || []).forEach(function (d) { labels[d.segment_id] = d; });
+  var orig = document.getElementById('original-list');
+  var play = document.getElementById('playback-list');
+  var detail = document.getElementById('cut-detail-body');
+
+  function sourceText(entry) {
+    if (!entry || !entry.source) return '';
+    return (entry.source.kind || '') + ':' + (entry.source.name || '');
+  }
+
+  (model.warrant.entries || []).forEach(function (entry) {
+    var card = byId[entry.segment_id] || {};
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'seg';
+    btn.setAttribute('data-action', entry.action);
+    btn.setAttribute('data-segment-id', entry.segment_id);
+    btn.setAttribute('data-source', sourceText(entry));
+    btn.textContent = entry.action + ' · ' + entry.segment_id + ' · ' + (card.head || card.sig || '');
+    btn.addEventListener('click', function () {
+      var lines = [
+        'segment ' + entry.segment_id,
+        'action ' + entry.action,
+        'source ' + sourceText(entry),
+        'confidence ' + String(entry.confidence)
+      ];
+      if (entry.dead_end_summary) lines.push('dead_end: ' + entry.dead_end_summary);
+      var lab = labels[entry.segment_id];
+      if (lab) lines.push('label ' + lab.label + ' (' + (lab.rule_name || lab.source.name) + ')');
+      detail.textContent = lines.join('\n');
+    });
+    orig.appendChild(btn);
+  });
+
+  (model.playback.cards || []).forEach(function (card) {
+    var p = document.createElement('p');
+    p.className = 'seg-keep';
+    p.textContent = 'keep · ' + card.id + ' · ' + (card.head || card.sig || '');
+    play.appendChild(p);
+  });
+  (model.playback.collapsed || []).forEach(function (c) {
+    var p = document.createElement('p');
+    p.className = 'seg-collapse';
+    p.textContent = 'collapse · ' + c.segment_id + ' · ' + (c.summary || '');
+    play.appendChild(p);
+  });
+})();
+</script>
+</body>
+</html>
