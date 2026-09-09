@@ -64,7 +64,7 @@
 
 ## 怎么用 / 怎么跑
 
-`openSession` 工厂已接通。正确接法是 **orchestrator 只调 `skeletonPass` / `labelWindow`；开会话只经工厂。** 洞 A/B 打标仍 NotImplemented。
+`openSession` 工厂已接通。正确接法是 **orchestrator 只调 `skeletonPass` / `labelWindow`；开会话只经工厂。** 洞 A/B 可经 `FakeSessionBackend` 打标；真模型需 env。orchestrator 仍不要接通这两洞。
 
 ### 包一层什么
 
@@ -147,8 +147,8 @@ spike 用假 provider 或便宜档即可；要留下「三项打勾」的记录�
 
 - [x] P0 spike 三项有书面结果（通过 / 失败 + 对策），再合入正式 sessions 封装。
 - [x] `createAgentSession`（及同等 SDK 入口）只出现在 `src/agent/sessions/`。
-- [ ] `skeletonPass` 单测（mock pi）：prompt 含头/验证点，**不含**中间 full 原文。
-- [ ] `labelWindow` 在工具不返回时失败，不捏造 Label。
+- [x] `skeletonPass` 单测（mock pi）：prompt 含头/验证点，**不含**中间 full 原文。
+- [x] `labelWindow` 在工具不返回时失败，不捏造 Label。
 - [ ] usage 带 `AgentRole`；换假 provider 能跑通一次。
 - [ ] review 工厂注入消息无 warrant/skeleton。
 - [ ] 换内核的 diff 可以限制在 `agent/sessions/`（code review 检查项，不是现在的实现项）。
