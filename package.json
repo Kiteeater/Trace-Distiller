@@ -1,0 +1,13 @@
+{
+  "name": "trace-distiller",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Trace Distiller: pipeline plus two agent holes",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@types/node": "^26.5.0",
+    "typescript": "^7.0.2"
+  }
+}
