@@ -7,7 +7,13 @@ import { NotImplementedError } from '../../src/agent/sessions/skeleton_pass.ts'
 import { compressionRatio, distillCostRatio } from '../../src/eval/metrics.ts'
 import { replay } from '../../src/eval/replay.ts'
 import { REVIEW_MAX_ROUNDS } from '../../src/constant/window.ts'
-import { answerQa, blindReview, generateQa, reviewFillInIds } from '../../src/eval/review.ts'
+import {
+  answerQa,
+  blindReview,
+  generateQa,
+  reviewAgainstPlan,
+  reviewFillInIds,
+} from '../../src/eval/review.ts'
 
 const evalDir = join(dirname(fileURLToPath(import.meta.url)), '../../src/eval')
 
@@ -74,6 +80,31 @@ describe('blind review protocol helpers', () => {
       },
     )
     assert.deepEqual(fill, ['s0009'])
+  })
+
+  it('reviewAgainstPlan fills keep ids from plan without calling L4', () => {
+    const result = reviewAgainstPlan(
+      {
+        version: 1,
+        nodes: [
+          { id: 'n1', kind: 'turning_point', segment_ids: ['s0002'], note: '' },
+          { id: 'n2', kind: 'verification_anchor', segment_ids: ['s0009'], note: '' },
+        ],
+      },
+      {
+        trace_id: 't',
+        profile_id: 'default',
+        warrant_ref: 'w',
+        kept: ['s0002'],
+        collapsed: [],
+        dropped: ['s0009'],
+        span_ok: true,
+        span_violations: [],
+      },
+    )
+    assert.equal(result.passed, false)
+    assert.deepEqual(result.missing_skeleton_nodes, ['n2'])
+    assert.deepEqual(result.fill_in_segment_ids, ['s0009'])
   })
 })
 

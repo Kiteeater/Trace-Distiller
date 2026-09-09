@@ -40,6 +40,8 @@
 interface DistillInput {
   raw: RawTrace                 // 已过 Admission Gate
   profile: CutProfile
+  mode: 'no_llm' | 'with_llm'
+  opts?: { sessionBackend?: SessionBackend }
 }
 
 interface DistillResult {
@@ -126,9 +128,9 @@ eval：M1 的盲测回填由 orchestrator 调 `eval` 的 review 函数；日常 
 
 ## 7. 实现完成标准
 
-- [ ] 源码 grep 不到 pi SDK。
-- [ ] `--no-llm`（或测试注入假 sessions）能从 RawTrace 跑到 CutPlan。
-- [ ] 窗解析失败夹具 → 该窗段全部 keep，且 warrant source 可查。
-- [ ] 场景码路由有单测。
-- [ ] review 回填最多两次，第三次不会发生。
-- [ ] 同输入同 profile 两次 `distill`，在 mock 掉 LLM 后 CutPlan 字节级一致。
+- [x] 源码 grep 不到 pi SDK。
+- [x] `--no-llm`（或测试注入假 sessions）能从 RawTrace 跑到 CutPlan。
+- [x] 窗解析失败夹具 → 该窗段全部 keep，且 warrant source 可查。
+- [x] 场景码路由有单测。
+- [x] review 回填最多两次，第三次不会发生。
+- [x] 同输入同 profile 两次 `distill`，在 mock 掉 LLM 后 CutPlan 字节级一致。

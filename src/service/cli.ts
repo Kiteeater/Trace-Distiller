@@ -14,7 +14,7 @@ import {
 import { insertCutPlan, insertWarrant } from '../data/data_warrant.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../domain/cut_decision.ts'
 import { isSpanFailure } from '../domain/span_violation.ts'
-import { distill, type DistillMode, type DistillResult } from '../pipeline/orchestrator.ts'
+import { distill, resolveDistillMode, type DistillResult } from '../pipeline/orchestrator.ts'
 import { renderHtml, type ReportModel } from '../report/html.ts'
 import type { CutProfile } from '../types/cut_profile.ts'
 import {
@@ -44,7 +44,7 @@ export interface CliArgs {
 const HELP = `Usage:
   node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--no-llm]
 
-Default mode is no_llm (holes A/B are not implemented). --no-llm is the documented conservative path.
+--no-llm forces the conservative no-hole path. Without --no-llm, with_llm runs when a session backend is injected or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B is set; otherwise no_llm.
 
 Exit codes:
   0  success
@@ -142,7 +142,7 @@ export async function runCli(args: CliArgs): Promise<number> {
   try {
     const raw = loadRaw(args.input_path)
     const profile = loadProfile(args.profile_path)
-    const mode: DistillMode = 'no_llm'
+    const mode = resolveDistillMode({ no_llm: args.no_llm === true })
     const result = await distill({ raw, profile, mode })
     const outDir = args.out_dir ?? join('data', 'distilled')
     writeCuts(outDir, result)
@@ -163,7 +163,9 @@ export async function runCli(args: CliArgs): Promise<number> {
       writeFileSync(args.report_path, renderHtml(toReportModel(result, coverage, metrics)), 'utf8')
     }
 
-    const job_id = registerJobFromResult(result)
+    const job_id = registerJobFromResult(result, {
+      holes: mode === 'with_llm' ? 'done' : 'skipped',
+    })
     logInfo('distill registered live job', { job_id, trace_id: raw.meta.trace_id })
 
     process.stdout.write(

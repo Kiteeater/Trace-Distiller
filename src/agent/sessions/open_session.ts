@@ -88,6 +88,17 @@ export function setSessionBackend(backend: SessionBackend | undefined): void {
   injectedBackend = backend
 }
 
+export function hasInjectedSessionBackend(): boolean {
+  return injectedBackend !== undefined
+}
+
+/** 洞 A 或洞 B 模型档已设时，CLI 才走 with_llm（无假后端时）。 */
+export function holeModelsConfigured(env: NodeJS.Dict<string> = process.env): boolean {
+  const a = env[MODEL_ENV_BY_ROLE.hole_a_skeleton]
+  const b = env[MODEL_ENV_BY_ROLE.hole_b_label]
+  return (typeof a === 'string' && a.length > 0) || (typeof b === 'string' && b.length > 0)
+}
+
 export function resolveSessionModel(role: AgentRole, model?: string, env: NodeJS.Dict<string> = process.env): string {
   if (model !== undefined && model.length > 0) return model
   const key = MODEL_ENV_BY_ROLE[role]
