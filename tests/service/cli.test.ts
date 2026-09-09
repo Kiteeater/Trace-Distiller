@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { openDb, getTraceMeta, listSegments } from '../../src/data/data_segment.ts'
+import { getMetrics } from '../../src/data/data_metric.ts'
 import { ruleCoverage } from '../../src/data/data_label.ts'
 import { FakeSessionBackend, setSessionBackend } from '../../src/agent/sessions/open_session.ts'
 import { SKELETON_PASS_JSON_KIND } from '../../src/agent/sessions/skeleton_pass.ts'
@@ -107,6 +108,10 @@ describe('cli', () => {
       const cov = ruleCoverage(db, trainingJson.trace_id)
       assert.ok(cov.total > 0)
       assert.ok(cov.ruled > 0)
+      const stored = getMetrics(db, trainingJson.trace_id)
+      assert.ok(stored)
+      assert.ok(stored.compression_ratio > 0)
+      assert.ok(stored.rule_coverage > 0)
     } finally {
       db.close()
     }
@@ -174,6 +179,93 @@ describe('cli', () => {
     const jobs = list_jobs()
     assert.equal(jobs.length, 1)
     assert.equal(get_cut_progress(jobs[0]!.job_id).holes, 'skipped')
+  })
+
+  it('eval and report reconstruct metrics and html from sqlite after no_llm distill', async () => {
+    const outDir = tmp()
+    const sqlite = join(outDir, 'distiller.sqlite')
+    const distillCode = await runCli({
+      command: 'distill',
+      input_path: join(fixtures, 'no_llm_conservative.jsonl'),
+      out_dir: outDir,
+      sqlite_path: sqlite,
+      no_llm: true,
+    })
+    assert.equal(distillCode, EXIT_OK)
+
+    const db = openDb(sqlite)
+    let traceId = ''
+    try {
+      const names = readdirSync(outDir)
+      const training = names.find((n) => n.endsWith('-training.json'))
+      assert.ok(training)
+      traceId = (JSON.parse(readFileSync(join(outDir, training), 'utf8')) as { trace_id: string })
+        .trace_id
+      const stored = getMetrics(db, traceId)
+      assert.ok(stored)
+      assert.ok(stored.compression_ratio > 0)
+    } finally {
+      db.close()
+    }
+
+    const chunks: string[] = []
+    const origWrite = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    try {
+      const evalCode = await runCli({
+        command: 'eval',
+        input_path: traceId,
+        sqlite_path: sqlite,
+      })
+      assert.equal(evalCode, EXIT_OK)
+    } finally {
+      process.stdout.write = origWrite
+    }
+    const evalJson = JSON.parse(chunks.join('')) as {
+      compression_ratio: number
+      rule_coverage: number
+      fail_closed_count: number
+      replay: null
+      qa: null
+      note: string
+    }
+    assert.ok(evalJson.compression_ratio > 0)
+    assert.ok(evalJson.rule_coverage > 0)
+    assert.equal(evalJson.replay, null)
+    assert.equal(evalJson.qa, null)
+    assert.match(evalJson.note, /L4/)
+
+    const reportPath = join(outDir, 'from-sqlite.html')
+    const reportCode = await runCli({
+      command: 'report',
+      input_path: traceId,
+      sqlite_path: sqlite,
+      out_path: reportPath,
+    })
+    assert.equal(reportCode, EXIT_OK)
+    const html = readFileSync(reportPath, 'utf8')
+    assert.match(html, /data-compression-ratio=/)
+    assert.match(html, new RegExp(String(evalJson.compression_ratio)))
+  })
+
+  it('parseArgv reads eval/report flags', () => {
+    const evalArgs = parseArgv(['eval', 'trace-1', '--sqlite', 'db.sqlite'])
+    assert.equal(evalArgs.command, 'eval')
+    assert.equal(evalArgs.input_path, 'trace-1')
+    assert.equal(evalArgs.sqlite_path, 'db.sqlite')
+    const reportArgs = parseArgv([
+      'report',
+      'trace-1',
+      '--sqlite',
+      'db.sqlite',
+      '--out',
+      'out.html',
+    ])
+    assert.equal(reportArgs.command, 'report')
+    assert.equal(reportArgs.out_path, 'out.html')
   })
 
   it('without --no-llm and injected FakeSessionBackend runs with_llm', async () => {

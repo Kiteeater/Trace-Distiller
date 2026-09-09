@@ -120,19 +120,25 @@ export async function blindReview(_input: ReviewInput): Promise<ReviewResult> {
   )
 }
 
+/**
+ * 从原始 Trace 出 QA 题。空壳：需要真模型 L4，不假装生成题目。
+ */
 export async function generateQa(_raw: RawTrace, _view: AgentView): Promise<QaItem[]> {
   openQaSession()
   throw new NotImplementedError(
-    'generateQa needs agent/sessions openQaSession (pi spike); do not invent QA items',
+    'generateQa needs real L4 model (TRACE_DISTILLER_MODEL_L4) via openQaSession; do not invent QA items',
   )
 }
 
+/**
+ * 只根据剪后 Cut 答题。空壳：需要真模型 L4，不假装打分。
+ */
 export async function answerQa(
   _cut: TrainingCut | PlaybackCut,
   _items: QaItem[],
 ): Promise<QaScore> {
   openQaSession()
   throw new NotImplementedError(
-    'answerQa needs agent/sessions openQaSession (pi spike); do not invent QA scores',
+    'answerQa needs real L4 model (TRACE_DISTILLER_MODEL_L4) via openQaSession; do not invent QA scores',
   )
 }

@@ -132,9 +132,10 @@ eval → types, enums, constant, domain, data
 
 ## 7. 实现完成标准
 
-- [ ] 压缩率、成本比纯函数有单测，不依赖网络。
-- [ ] blindReview 在 mock 会话下：传入 warrant 会被工厂拒绝或测试断言未注入。
-- [ ] 回填 id 只来自骨架节点对应段，不来自模型「我觉得还该留」。
-- [ ] metrics 写入 data，report 能读到同一数字。
-- [ ] grep 无 pi SDK。
-- [ ] 未关闭的 P0 口径不得假装「压缩率已达标」。
+- [x] 压缩率、成本比纯函数有单测，不依赖网络。`computeDistillMetrics` 汇总规则覆盖 / LLM 段占比 / Fail-Closed。
+- [ ] blindReview 在 mock 会话下：传入 warrant 会被工厂拒绝或测试断言未注入。（L4 会话未接通）
+- [x] 回填 id 只来自骨架节点对应段，不来自模型「我觉得还该留」。
+- [x] metrics 写入 data，report / `eval` 子命令能读到同一数字。
+- [x] grep 无 pi SDK。
+- [x] 未关闭的 P0 口径不得假装「压缩率已达标」。（数字会算，不宣称落入 10%–30%）
+- [ ] replay / QA 需真模型 L4，保持 NotImplemented。

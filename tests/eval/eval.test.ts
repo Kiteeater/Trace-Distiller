@@ -4,7 +4,11 @@ import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { NotImplementedError } from '../../src/agent/sessions/skeleton_pass.ts'
-import { compressionRatio, distillCostRatio } from '../../src/eval/metrics.ts'
+import {
+  compressionRatio,
+  computeDistillMetrics,
+  distillCostRatio,
+} from '../../src/eval/metrics.ts'
 import { replay } from '../../src/eval/replay.ts'
 import { REVIEW_MAX_ROUNDS } from '../../src/constant/window.ts'
 import {
@@ -44,6 +48,34 @@ describe('eval ratios', () => {
       distillCostRatio({ hole_a_plus_b_tokens: holes + l4, tokens_removed: 100 }),
       0.4,
     )
+  })
+
+  it('computeDistillMetrics aggregates compression, rule coverage, llm fraction, fail_closed', () => {
+    const metrics = computeDistillMetrics({
+      raw: { meta: { total_tokens: 100 } },
+      training: { turns: [{ tokens: 20 }, { tokens: 10 }] },
+      view: { segments: [1, 2, 3, 4] },
+      decisions: [
+        { source: { kind: 'rule', name: 'repeat_read' } },
+        { source: { kind: 'rule', name: 'repeat_read' } },
+        { source: { kind: 'llm', name: 'implement' } },
+      ],
+      warrant: {
+        entries: [
+          { source: { name: 'repeat_read' } },
+          { source: { name: 'fail_closed_keep' } },
+        ],
+      },
+      hole_a_plus_b_tokens: 7,
+    })
+    assert.equal(metrics.compression_ratio, 0.3)
+    assert.equal(metrics.distill_cost_ratio, 7 / 70)
+    assert.equal(metrics.total_segments, 4)
+    assert.equal(metrics.ruled_count, 2)
+    assert.equal(metrics.llm_count, 1)
+    assert.equal(metrics.rule_coverage, 0.5)
+    assert.equal(metrics.llm_segment_fraction, 0.25)
+    assert.equal(metrics.fail_closed_count, 1)
   })
 })
 

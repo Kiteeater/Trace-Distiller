@@ -1,8 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
-import { AdmissionError, type RawTrace, type TraceId } from '../types/raw_trace.ts'
-import type { SegmentCard } from '../types/segment.ts'
+import type { FocusLevel } from '../enums/focus.ts'
+import { isScenario, type Scenario } from '../enums/scenario.ts'
+import type { IntentHypothesis } from '../types/agent_view.ts'
+import { AdmissionError, type RawTrace, type TraceId, type TraceSource } from '../types/raw_trace.ts'
+import { SEGMENT_OUTCOMES, type SegmentCard, type SegmentOutcome } from '../types/segment.ts'
 
 /** node:sqlite 连接。pipeline / agent 不得持有此类型。 */
 export type Db = DatabaseSync
@@ -22,7 +25,10 @@ CREATE TABLE IF NOT EXISTS traces (
   ground_truth_ref TEXT NOT NULL,
   total_tokens INTEGER NOT NULL,
   raw_path TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  intent_text TEXT NOT NULL DEFAULT '',
+  intent_version INTEGER NOT NULL DEFAULT 0,
+  intent_scenario TEXT
 );
 
 CREATE TABLE IF NOT EXISTS segments (
@@ -36,6 +42,8 @@ CREATE TABLE IF NOT EXISTS segments (
   focus TEXT NOT NULL,
   head TEXT NOT NULL,
   raw_refs_json TEXT NOT NULL,
+  reads_json TEXT NOT NULL DEFAULT '[]',
+  writes_json TEXT NOT NULL DEFAULT '[]',
   PRIMARY KEY (trace_id, segment_id)
 );
 
@@ -78,11 +86,14 @@ CREATE TABLE IF NOT EXISTS metrics (
   replay REAL,
   qa REAL,
   coherence REAL,
-  composite REAL
+  composite REAL,
+  rule_coverage REAL,
+  llm_segment_fraction REAL,
+  fail_closed_count INTEGER
 );
 `
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 /** 打开/迁移。路径由 service 传入；`:memory:` 不建目录。 */
 export function openDb(sqlitePath: string): Db {
@@ -94,8 +105,27 @@ export function openDb(sqlitePath: string): Db {
   }
   const db = new DatabaseSync(sqlitePath)
   db.exec(SCHEMA_SQL)
+  migrate(db)
   db.prepare('INSERT OR IGNORE INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION)
   return db
+}
+
+function migrate(db: Db): void {
+  addColumnIfMissing(db, 'traces', 'intent_text', "TEXT NOT NULL DEFAULT ''")
+  addColumnIfMissing(db, 'traces', 'intent_version', 'INTEGER NOT NULL DEFAULT 0')
+  addColumnIfMissing(db, 'traces', 'intent_scenario', 'TEXT')
+  addColumnIfMissing(db, 'segments', 'reads_json', "TEXT NOT NULL DEFAULT '[]'")
+  addColumnIfMissing(db, 'segments', 'writes_json', "TEXT NOT NULL DEFAULT '[]'")
+  addColumnIfMissing(db, 'metrics', 'rule_coverage', 'REAL')
+  addColumnIfMissing(db, 'metrics', 'llm_segment_fraction', 'REAL')
+  addColumnIfMissing(db, 'metrics', 'fail_closed_count', 'INTEGER')
+}
+
+function addColumnIfMissing(db: Db, table: string, column: string, decl: string): void {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all()
+  const names = rows.map((row) => asString(row.name))
+  if (names.includes(column)) return
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`)
 }
 
 export function runInTransaction(db: Db, fn: () => void): void {
@@ -124,12 +154,19 @@ export function upsertTraceMeta(db: Db, raw: RawTrace): void {
   ).run(raw.meta.trace_id, raw.meta.source, ref, raw.meta.total_tokens)
 }
 
+export function upsertIntent(db: Db, trace_id: TraceId, intent: IntentHypothesis): void {
+  db.prepare(
+    `UPDATE traces SET intent_text = ?, intent_version = ?, intent_scenario = ? WHERE trace_id = ?`,
+  ).run(intent.text, intent.version, intent.scenario ?? null, trace_id)
+}
+
 export function replaceSegments(db: Db, trace_id: TraceId, cards: SegmentCard[]): void {
   db.prepare('DELETE FROM segments WHERE trace_id = ?').run(trace_id)
   const insert = db.prepare(
     `INSERT INTO segments (
-       trace_id, segment_id, tool, sig, outcome, rep_of, tokens, focus, head, raw_refs_json
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       trace_id, segment_id, tool, sig, outcome, rep_of, tokens, focus, head,
+       raw_refs_json, reads_json, writes_json
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   for (const card of cards) {
     insert.run(
@@ -143,15 +180,18 @@ export function replaceSegments(db: Db, trace_id: TraceId, cards: SegmentCard[])
       card.focus,
       card.head,
       JSON.stringify(card.raw_refs),
+      JSON.stringify(card.reads),
+      JSON.stringify(card.writes),
     )
   }
 }
 
 export interface TraceMetaRow {
   trace_id: string
-  source: string
+  source: TraceSource
   ground_truth_ref: string
   total_tokens: number
+  intent: IntentHypothesis
 }
 
 export interface SegmentRow {
@@ -165,24 +205,40 @@ export interface SegmentRow {
   focus: string
   head: string
   raw_refs: string[]
+  reads: string[]
+  writes: string[]
 }
 
 export function getTraceMeta(db: Db, trace_id: TraceId): TraceMetaRow | undefined {
   const row = db.prepare(
-    'SELECT trace_id, source, ground_truth_ref, total_tokens FROM traces WHERE trace_id = ?',
+    `SELECT trace_id, source, ground_truth_ref, total_tokens,
+            intent_text, intent_version, intent_scenario
+     FROM traces WHERE trace_id = ?`,
   ).get(trace_id)
   if (row === undefined) return undefined
+  const scenarioRaw = row.intent_scenario === null || row.intent_scenario === undefined
+    ? undefined
+    : asString(row.intent_scenario)
+  const scenario: Scenario | undefined =
+    scenarioRaw !== undefined && isScenario(scenarioRaw) ? scenarioRaw : undefined
+  const intent: IntentHypothesis = {
+    version: asNumber(row.intent_version),
+    text: asString(row.intent_text),
+  }
+  if (scenario !== undefined) intent.scenario = scenario
   return {
     trace_id: asString(row.trace_id),
-    source: asString(row.source),
+    source: asString(row.source) as TraceSource,
     ground_truth_ref: asString(row.ground_truth_ref),
     total_tokens: asNumber(row.total_tokens),
+    intent,
   }
 }
 
 export function listSegments(db: Db, trace_id: TraceId): SegmentRow[] {
   const rows = db.prepare(
-    `SELECT trace_id, segment_id, tool, sig, outcome, rep_of, tokens, focus, head, raw_refs_json
+    `SELECT trace_id, segment_id, tool, sig, outcome, rep_of, tokens, focus, head,
+            raw_refs_json, reads_json, writes_json
      FROM segments WHERE trace_id = ? ORDER BY rowid`,
   ).all(trace_id)
   return rows.map((row) => ({
@@ -196,7 +252,28 @@ export function listSegments(db: Db, trace_id: TraceId): SegmentRow[] {
     focus: asString(row.focus),
     head: asString(row.head),
     raw_refs: parseStringArray(row.raw_refs_json),
+    reads: parseStringArray(row.reads_json),
+    writes: parseStringArray(row.writes_json),
   }))
+}
+
+export function segmentRowToCard(row: SegmentRow): SegmentCard {
+  const outcome = SEGMENT_OUTCOMES.includes(row.outcome as SegmentOutcome)
+    ? (row.outcome as SegmentOutcome)
+    : 'unknown'
+  return {
+    id: row.segment_id,
+    tool: row.tool,
+    sig: row.sig,
+    outcome,
+    rep_of: row.rep_of,
+    reads: row.reads,
+    writes: row.writes,
+    tokens: row.tokens,
+    focus: row.focus as FocusLevel,
+    head: row.head,
+    raw_refs: row.raw_refs,
+  }
 }
 
 export function asString(value: SQLOutputValue | undefined): string {

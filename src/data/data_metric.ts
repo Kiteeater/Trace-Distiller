@@ -1,7 +1,7 @@
 import type { TraceId } from '../types/raw_trace.ts'
 import { asNumber, asString, type Db } from './data_segment.ts'
 
-/** OPEN schema：评测六项未跑 eval 时为 NULL。 */
+/** OPEN schema：评测六项未跑 eval 时为 NULL。蒸馏汇总数字在 distill 时写入。 */
 export interface MetricsRow {
   trace_id: TraceId
   compression_ratio: number
@@ -11,14 +11,18 @@ export interface MetricsRow {
   qa: number | null
   coherence: number | null
   composite: number | null
+  rule_coverage: number
+  llm_segment_fraction: number
+  fail_closed_count: number
 }
 
 export function insertMetrics(db: Db, row: MetricsRow): void {
   db.prepare(
     `INSERT INTO metrics (
        trace_id, compression_ratio, distill_cost_ratio,
-       key_step_recall, replay, qa, coherence, composite
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       key_step_recall, replay, qa, coherence, composite,
+       rule_coverage, llm_segment_fraction, fail_closed_count
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(trace_id) DO UPDATE SET
        compression_ratio = excluded.compression_ratio,
        distill_cost_ratio = excluded.distill_cost_ratio,
@@ -26,7 +30,10 @@ export function insertMetrics(db: Db, row: MetricsRow): void {
        replay = excluded.replay,
        qa = excluded.qa,
        coherence = excluded.coherence,
-       composite = excluded.composite`,
+       composite = excluded.composite,
+       rule_coverage = excluded.rule_coverage,
+       llm_segment_fraction = excluded.llm_segment_fraction,
+       fail_closed_count = excluded.fail_closed_count`,
   ).run(
     row.trace_id,
     row.compression_ratio,
@@ -36,13 +43,17 @@ export function insertMetrics(db: Db, row: MetricsRow): void {
     row.qa,
     row.coherence,
     row.composite,
+    row.rule_coverage,
+    row.llm_segment_fraction,
+    row.fail_closed_count,
   )
 }
 
 export function getMetrics(db: Db, trace_id: TraceId): MetricsRow | undefined {
   const row = db.prepare(
     `SELECT trace_id, compression_ratio, distill_cost_ratio,
-            key_step_recall, replay, qa, coherence, composite
+            key_step_recall, replay, qa, coherence, composite,
+            rule_coverage, llm_segment_fraction, fail_closed_count
      FROM metrics WHERE trace_id = ?`,
   ).get(trace_id)
   if (row === undefined) return undefined
@@ -55,6 +66,9 @@ export function getMetrics(db: Db, trace_id: TraceId): MetricsRow | undefined {
     qa: nullableNumber(row.qa),
     coherence: nullableNumber(row.coherence),
     composite: nullableNumber(row.composite),
+    rule_coverage: asNumber(row.rule_coverage),
+    llm_segment_fraction: asNumber(row.llm_segment_fraction),
+    fail_closed_count: asNumber(row.fail_closed_count),
   }
 }
 
