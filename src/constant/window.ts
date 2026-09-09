@@ -5,6 +5,12 @@
 export const LABEL_WINDOW_SIZE = undefined as unknown as number
 
 /**
+ * OPEN: 卡片 head 原文首行截断字符数未拍板。docs/modules/pipeline-segmenter.md。
+ * 命名占位；未拍板前不得当实现阈值。
+ */
+export const SEGMENT_HEAD_MAX_CHARS = undefined as unknown as number
+
+/**
  * OPEN: 相邻 keep 允许跨过的最大段数未拍板。docs/modules/constant.md §6、ADR-0004。
  */
 export const SPAN_MAX_GAP_SEGMENTS = undefined as unknown as number
