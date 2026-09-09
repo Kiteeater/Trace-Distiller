@@ -1,13 +1,72 @@
 import type { CutAction } from '../enums/cut_action.ts'
 import type { Label } from '../enums/label.ts'
+import type { CutProfile } from '../types/cut_profile.ts'
 import type { WarrantSource } from '../types/cut_warrant.ts'
+import type { SegmentCard } from '../types/segment.ts'
+import type { LabelDecision } from './label_decision.ts'
+
+export const FAIL_CLOSED_KEEP_RULE = 'fail_closed_keep'
 
 export interface CutDecision {
   segment_id: string
   action: CutAction
-  from_label: Label
+  /** 未决 / Fail-Closed 没有标签，不写此字段。 */
+  from_label?: Label
   profile_id: string
   source: WarrantSource
   confidence: number
   dead_end_summary?: string
+}
+
+/**
+ * Label + CutProfile → 裁剪动作。keep 名单优先（宁多勿漏）。
+ * 未出现在三份名单里的标签同样 keep。
+ * collapse 时用卡片 head 截断填 dead_end_summary。
+ */
+export function decideCut(
+  labeled: LabelDecision,
+  profile: CutProfile,
+  card?: SegmentCard,
+): CutDecision {
+  const action = actionForLabel(labeled.label, profile)
+  const decision: CutDecision = {
+    segment_id: labeled.segment_id,
+    action,
+    from_label: labeled.label,
+    profile_id: profile.id,
+    source: labeled.source,
+    confidence: labeled.confidence,
+  }
+  if (action === 'collapse') {
+    decision.dead_end_summary = deadEndSummary(card?.head ?? '', profile.dead_end.summary_max_chars)
+  }
+  return decision
+}
+
+/** 窗失败 / --no-llm 未决：一律 keep，source 可查。永不 drop/collapse。 */
+export function failClosedKeep(segment_id: string, profile_id: string): CutDecision {
+  return {
+    segment_id,
+    action: 'keep',
+    profile_id,
+    source: { kind: 'rule', name: FAIL_CLOSED_KEEP_RULE },
+    confidence: 1,
+  }
+}
+
+function actionForLabel(label: Label, profile: CutProfile): CutAction {
+  if (profile.keep_labels.includes(label)) return 'keep'
+  if (profile.collapse_labels.includes(label)) return 'collapse'
+  if (profile.drop_labels.includes(label)) return 'drop'
+  return 'keep'
+}
+
+/** OPEN: summary_max_chars 未拍板时不截。空 head 给占位，避免 assembler 拒 collapse。 */
+export function deadEndSummary(head: string, maxChars: number): string {
+  const text = head.length > 0 ? head : 'dead_end'
+  if (typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 0) {
+    const sliced = text.slice(0, maxChars)
+    return sliced.length > 0 ? sliced : text
+  }
+  return text
 }

@@ -6,7 +6,7 @@
   "description": "Distill successful agent traces into training and playback cuts.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/adapters/claude_code.test.ts tests/pipeline/segmenter.test.ts tests/pipeline/rules.test.ts tests/pipeline/assembler.test.ts"
+    "test": "node --test tests/adapters/claude_code.test.ts tests/domain/cut_decision.test.ts tests/pipeline/segmenter.test.ts tests/pipeline/rules.test.ts tests/pipeline/assembler.test.ts tests/pipeline/orchestrator.test.ts"
   },
   "dependencies": {
     "@types/node": "^26.5.0",
