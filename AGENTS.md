@@ -13,7 +13,7 @@
 - 类型检查：`bun run typecheck` 或 `tsc --noEmit`
 - **不要**提交 `package-lock.json` / `yarn.lock` / `pnpm-lock.yaml`
 
-入口：`node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report out.html] [--no-llm]`。默认无洞通路。
+入口：`node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report out.html] [--no-llm]`。默认无洞通路。pi 工厂 spike：`bun run pi-spike`。
 
 ## 分层纪律
 
@@ -45,8 +45,8 @@
 
 ## 仍未接通（禁止假装完成）
 
-- 洞 A `skeletonPass`、洞 B `labelWindow`、衔接 `checkContinuityPair`：签名已导出，内部抛 `NotImplementedError`，待 pi spike。禁止假造 LLM 结果。orchestrator 不要接通这两洞。
-- pi SDK / `createAgentSession`：全仓库不得真正 import；仅 `src/agent/sessions/` 可留 `// TODO createAgentSession` 注释。eval 干净会话必须走 sessions 工厂（同样 NotImplemented）。模型档走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`。失败重试 1 次（`PI_FAILURE_RETRY`）再 Fail-Closed。本仓库仍不真正 import pi。
+- 洞 A `skeletonPass`、洞 B `labelWindow`、衔接 `checkContinuityPair`：签名已导出，内部抛 `NotImplementedError`。`openSession` 工厂已接通；正式打标下一 PR。禁止假造 LLM 结果。orchestrator 不要接通这两洞。
+- pi SDK / `createAgentSession`：只允许出现在 `src/agent/sessions/`（现为 `open_session.ts`）。eval 干净会话必须走该目录的工厂。模型档走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`。失败重试 1 次（`PI_FAILURE_RETRY`）再 Fail-Closed。生产默认 `PiSessionBackend`；测试注入 `FakeSessionBackend`。
 - live 禁止 HTTP listen。M1 已定进程内 `registerJob`；Unix socket 以后再说。
 
 ## TypeScript

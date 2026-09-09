@@ -16,15 +16,17 @@ export interface TokenUsage {
   output_tokens: number
 }
 
-export interface SessionFactoryOpts {
-  role: AgentRole
-  model?: string
-}
+export type {
+  PiSessionHandle,
+  SessionFactoryOpts,
+} from './open_session.ts'
 
-/** 句柄占位。pi spike 之前不得假装已有会话。 */
-export interface PiSessionHandle {
-  readonly role: AgentRole
-}
+export {
+  openQaSession,
+  openReplaySession,
+  openReviewSession,
+  openSession,
+} from './open_session.ts'
 
 export interface SkeletonPassInput {
   trace_id: TraceId
@@ -43,35 +45,12 @@ export interface SkeletonPassOutput {
 }
 
 /**
- * 洞 A。待 pi spike；禁止假造 LLM 意图 / 骨架。
- * TODO createAgentSession — 仅本目录在 spike 后可 import pi。
+ * 洞 A。工厂已接通；本函数仍待完整打标，禁止假造 LLM 意图 / 骨架。
+ * 会话只经 open_session.ts 的 createAgentSession。
  * 模型：TRACE_DISTILLER_MODEL_HOLE_A；失败重试 PI_FAILURE_RETRY 次再 Fail-Closed。
  */
 export async function skeletonPass(_input: SkeletonPassInput): Promise<SkeletonPassOutput> {
   throw new NotImplementedError(
     'skeletonPass awaits pi spike; do not invent LLM intent/skeleton results',
   )
-}
-
-/**
- * L4 与两洞共用的会话工厂。不算第三洞。eval 必须走这里，禁止自己 createAgentSession。
- * TODO createAgentSession — 仅本目录在 spike 后可 import pi。
- * 模型：TRACE_DISTILLER_MODEL_HOLE_A / _HOLE_B / _L4；失败重试 PI_FAILURE_RETRY 次再 Fail-Closed。
- */
-export function openSession(_opts: SessionFactoryOpts): PiSessionHandle {
-  throw new NotImplementedError(
-    'openSession awaits pi spike; do not invent an LLM session or fake results',
-  )
-}
-
-export function openReviewSession(): PiSessionHandle {
-  return openSession({ role: 'l4_review' })
-}
-
-export function openReplaySession(): PiSessionHandle {
-  return openSession({ role: 'l4_replay' })
-}
-
-export function openQaSession(): PiSessionHandle {
-  return openSession({ role: 'l4_qa' })
 }

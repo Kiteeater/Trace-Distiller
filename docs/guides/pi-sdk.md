@@ -2,9 +2,9 @@
 
 | 字段 | 内容 |
 |------|------|
-| 版本 | v0.2 |
-| 日期 | 2026-09-09 |
-| 状态 | **已收口**：pi 只当 sessions 洞内核；模型档走 env；失败重试 1 次再 Fail-Closed；本仓库仍不 import pi |
+| 版本 | v0.3 |
+| 日期 | 2026-09-10 |
+| 状态 | **已收口**：pi 只当 sessions 洞内核；`openSession` 工厂已接通；P0 三项已通过（假后端保证；真 key 可选跑）；洞 A/B 打标未接 |
 | 权威来源 | [ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)、[architecture.md](../architecture.md)「内核 / 三条活口」、[agent-sessions.md](../modules/agent-sessions.md) |
 
 ## 目的
@@ -24,7 +24,7 @@
 **不重开 [ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)。** Distiller 是流水线 + 两个洞；不要把 distill 编排交给 pi agent loop，不要做成「一个 Distiller Agent 在 pi 里跑完全程」。
 
 1. **pi = sessions 洞内核，不是 agent runtime。** 两洞需要程序化嵌入的 LLM 会话；pi 原生 TS，支持多 provider。编排器是自写薄 CLI，不用 LangChain / CrewAI，也不用 pi 的 agent loop 当 orchestrator。
-2. **`createAgentSession` 只允许在 `src/agent/sessions/`。** 文件是 `skeleton_pass.ts` / `label_window.ts` / `write_warrant.ts`（见 [file-architecture.md](./file-architecture.md)）。`extension.ts` 可以依赖 pi 的 **tool 类型**，但不许开会话。`eval/` 要干净会话，必须走 sessions 工厂。`service/live.ts` 不 import pi。可用 lint/grep 做门禁。
+2. **`createAgentSession` 只允许在 `src/agent/sessions/`。** 现由 `open_session.ts` 真正 import；`skeleton_pass.ts` / `label_window.ts` 走工厂；`write_warrant.ts` 仍是纯代码（见 [file-architecture.md](./file-architecture.md)）。`extension.ts` 可以依赖 pi 的 **tool 类型**，但不许开会话。`eval/` 要干净会话，必须走 sessions 工厂。`service/live.ts` 不 import pi。可用 lint/grep 做门禁。
 3. **薄包，不是框架。** 对外稳定的是 `skeletonPass` / `labelWindow`（以及 `writeWarrant`）和 L4 用的 `openSession` 工厂。见 [agent-harness.md](./agent-harness.md)。不要长出 `PiAgentRuntime`、中间件栈、图编排、pi-coding 式工具环。
 4. **可扩展面（不必换目录）：**
    - **provider / 模型**：两洞走 pi provider 抽象；档位走 env / 入参，不写死在 skill。
@@ -60,11 +60,11 @@
 | 洞 B（打标 / 衔接） | `TRACE_DISTILLER_MODEL_HOLE_B` |
 | L4（QA / 重放 / review） | `TRACE_DISTILLER_MODEL_L4` |
 
-失败：同一会话 **重试 1 次**（`PI_FAILURE_RETRY`），仍失败则编排器 **Fail-Closed Keep**。`createAgentSession` 仍只允许出现在 `src/agent/sessions/`。**本仓库不真正 import pi。**
+失败：同一会话 **重试 1 次**（`PI_FAILURE_RETRY`），仍失败则编排器 **Fail-Closed Keep**。`createAgentSession` 仍只允许出现在 `src/agent/sessions/`。生产默认 `SessionManager.inMemory()` + `noTools: 'all'`（禁止默认 codingTools）。测试注入 `FakeSessionBackend`。
 
 ## 怎么用 / 怎么跑
 
-实现未开始。正确接法是 **先 spike，再薄包，再让 orchestrator 当普通函数调。**
+`openSession` 工厂已接通。正确接法是 **orchestrator 只调 `skeletonPass` / `labelWindow`；开会话只经工厂。** 洞 A/B 打标仍 NotImplemented。
 
 ### 包一层什么
 
@@ -92,13 +92,13 @@ openReviewSession / openReplaySession / openQaSession
 
 ### P0 spike 清单（先于正式封装）
 
-TODO 原文：验证下面三件可用——「内核可换」活口依赖它。**这三项仍待 spike，本轮不假装已过。**
+TODO 原文：验证下面三件可用——「内核可换」活口依赖它。**三项已通过（假后端保证；真 key 可选跑）。** 记录在 `tests/agent/pi_spike.test.ts`。
 
 | # | 假设 | 怎样算通过 | 失败意味着什么 |
 |---|------|------------|----------------|
-| 1 | 结构化输出 | 一次会话稳定交出符合 schema 的 JSON / 工具参数，而不是自由文本 | Fail-Closed 会极频繁，洞 B 不可用；考虑强制 function call 或换内核 |
-| 2 | 自定义消息序列 | 能把骨架（和 skill）注入每窗，且不把 RawTrace 全量塞进 prompt | 注意力设计落空；0009 的卡片流没有载体 |
-| 3 | provider 降档切换 | 同一封装能换模型档位（洞 A 强档 / 洞 B 日常 / QA 降档）而不改调用方 | 「模型可换」活口是空话；档位只能写死 |
+| 1 | 结构化输出 | 一次会话稳定交出符合 schema 的 JSON / 工具参数，而不是自由文本 | **通过（假后端）**：`FakeSessionBackend.prompt` 交出 `spike_label` JSON + 假 `label_segment` tool_call。真 key 可选再跑 Pi 后端。 |
+| 2 | 自定义消息序列 | 能把骨架（和 skill）注入每窗，且不把 RawTrace 全量塞进 prompt | **通过（假后端）**：`composeSessionPrompt` 注入 skill + skeleton；夹具中段 `CHANGELOG.md` / `git status` / 物理尾 turn 不进 prompt。骨架挂在前置文本（非全量 RawTrace）。 |
+| 3 | provider 降档切换 | 同一封装能换模型档位（洞 A 强档 / 洞 B 日常 / QA 降档）而不改调用方 | **通过**：同一 `openSession({ role })`；`TRACE_DISTILLER_MODEL_HOLE_A/B/L4` 或 `opts.model` 换字符串，调用方不变。 |
 
 附加（不做完也可以开写 mock，但接真模型前要有结论）：
 
@@ -135,8 +135,8 @@ spike 用假 provider 或便宜档即可；要留下「三项打勾」的记录�
 
 ## 开放问题
 
-1. **P0 spike 尚未做。** 上表三项是真 OPEN，不是文档能关的。
-2. 骨架注入挂在 system 还是前置消息：取决于 spike。
+1. **P0 spike 三项已通过（假后端保证；真 key 可选跑）。** 洞 A/B 正式打标仍 OPEN。
+2. 骨架注入本轮挂在前置文本（`skill_text` / `skeleton_text`），不是全量 RawTrace。system vs 独立消息可在打标 PR 再收。
 3. pi Skills vs 自读 `skills/*.md`：策略文件已定，加载机制未定。
 4. 一窗一会话已拍板；成本未测，但不改成复用。
 5. `read_segment` 注册成 pi tool 还是 sessions 侧 RPC：handler 纯函数已落地，挂载点等 spike。
@@ -145,8 +145,8 @@ spike 用假 provider 或便宜档即可；要留下「三项打勾」的记录�
 
 ## 完成标准
 
-- [ ] P0 spike 三项有书面结果（通过 / 失败 + 对策），再合入正式 sessions 封装。
-- [ ] `createAgentSession`（及同等 SDK 入口）只出现在 `src/agent/sessions/`。
+- [x] P0 spike 三项有书面结果（通过 / 失败 + 对策），再合入正式 sessions 封装。
+- [x] `createAgentSession`（及同等 SDK 入口）只出现在 `src/agent/sessions/`。
 - [ ] `skeletonPass` 单测（mock pi）：prompt 含头/验证点，**不含**中间 full 原文。
 - [ ] `labelWindow` 在工具不返回时失败，不捏造 Label。
 - [ ] usage 带 `AgentRole`；换假 provider 能跑通一次。
