@@ -44,6 +44,7 @@
 - [ ] token 计量口径：压缩率分子分母怎么算（工具输出全文算不算、卡片算不算）——口径不定，10%–30% 验收没法算；现用 `TraceMeta.total_tokens` 与 training turns tokens
 - [ ] 成本基线：跑一次全量 LLM 打标当对照组，量出真实「1/N token」数字（demo 首页成本曲线的数据源）
 - [x] SQLite 记打标结果 + 规则层覆盖率（「LLM 只看了 X% 的段」进报告首页；`eval` 子命令读同一数字）
+- [x] M1 benchmark 分档报分壳：`src/eval/benchmark.ts` + `bench --dir`；乘法分；一项 fail 总分 0；三档不平均；无金标 skipped（不强求满数据集）
 - [x] `report/`：自包含 HTML 报告骨架（左原始 / 右精华 / 点开删除理由 / 成本数字）；`report` 子命令可从库重建
 - [ ] 讲解视频剧本：5 步叙事（500 步的墙 → 规则先干粗活 → 可解释删除 → 盲测 → 压缩率 + 成本两个数字收尾）
 

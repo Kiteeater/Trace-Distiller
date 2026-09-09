@@ -4,9 +4,9 @@
 
 | 字段 | 内容 |
 |------|------|
-| 版本 | v0.1（草案） |
-| 日期 | 2026-08-27 |
-| 状态 | 待评审 |
+| 版本 | v0.2 |
+| 日期 | 2026-09-10 |
+| 状态 | **已收口**（公式与及格线）；M1 分档报分壳已落地 |
 
 ---
 
@@ -135,17 +135,30 @@ Score = 压缩率得分 × 关键步召回率 × 重放成功率
 
 ---
 
-## 文件约定（后续实现时）
+## 怎么跑（M1 分档壳）
+
+评分实现：`src/eval/benchmark.ts`（门槛、乘法分、分档表）。CLI 只扫盘、蒸馏、打印 JSON。
+
+```text
+node script/run-distill.ts bench --dir benchmark/datasets
+```
+
+- 扫 `short/` `long/` `multi_dead_end/` 下的 `*.jsonl`，默认 `no_llm` 蒸馏。
+- 金标：先读 `data/raw/<trace_id>.key-decisions.json`，没有再读样本旁的 `<stem>.key-decisions.json`。没有金标 → 关键步召回 `skipped`，M1 **不算硬挂**。
+- 六项不全及格（有 fail）→ 该样本 `composite` 为 **0**。缺项 skipped 且无 fail → `composite` 为 `null`。
+- stdout 一行 JSON：**三档分表**。禁止把短/长/多死胡同合成一个平均分。
+- M1 不强求满数据集。仓库只带 `datasets/short/add-fix.jsonl`（来自 `examples/`）+ 可选金标。
 
 ```text
 benchmark/
 ├── README.md          ← 本设计文档
-├── datasets/          ← 分赛道样本与金标（真实数据默认不提交）
-├── suites/            ← 各指标评测脚本 / 配置
+├── datasets/
+│   ├── short/         ← M1 合成小样
+│   ├── long/          ← 可空
+│   └── multi_dead_end/
+├── suites/            ← 各指标评测脚本 / 配置（尚未）
 └── reports/           ← 跑分结果（均值±标准差）
 ```
-
-目录可在开始写评测代码时再补；当前以本设计为准。
 
 ---
 

@@ -25,7 +25,7 @@
 ```ts
 /** src/service/cli.ts */
 interface CliArgs {
-  command: 'distill' | 'eval' | 'report' | 'live-dump'
+  command: 'distill' | 'eval' | 'report' | 'live-dump' | 'bench'
   input_path: string
   profile_path?: string
   sqlite_path?: string
@@ -33,6 +33,7 @@ interface CliArgs {
   report_path?: string
   live_dump_dir?: string
   live_socket_path?: string
+  datasets_dir?: string
   no_llm?: boolean
   qa?: boolean
   replay?: boolean

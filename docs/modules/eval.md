@@ -139,3 +139,4 @@ eval → types, enums, constant, domain, data
 - [x] grep 无 pi SDK。
 - [x] 未关闭的 P0 口径不得假装「压缩率已达标」。（数字会算，不宣称落入 10%–30%）
 - [x] replay / QA / review 接口经 sessions（假后端可测；真模型 `TRACE_DISTILLER_MODEL_L4`）。真实重放成功率需仓库+模型，CI 不假装。
+- [x] 分档报分壳：`src/eval/benchmark.ts`；六项门槛；乘法分；一项 fail → 0；无金标 skipped；三档禁止合并平均。
