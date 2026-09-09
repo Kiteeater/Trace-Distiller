@@ -19,9 +19,12 @@ venv/
 dist/
 *.egg-info/
 
-# Node (if added later)
+# Node
 node_modules/
 npm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Local trace data (keep directory markers only)
 data/raw/**
