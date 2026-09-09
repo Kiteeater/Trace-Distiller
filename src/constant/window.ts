@@ -16,9 +16,11 @@ export const SEGMENT_HEAD_MAX_CHARS = undefined as unknown as number
 export const SPAN_MAX_GAP_SEGMENTS = undefined as unknown as number
 
 /**
- * OPEN: 相似重试 token Jaccard 阈值未拍板。docs/modules/constant.md §6。
+ * OPEN: 相似重试 token Jaccard 阈值未拍板。docs/modules/constant.md §6、pipeline-rules.md §6。
+ * 未拍板前的保守默认 0.8：只把高重叠文本聚成重试，避免把有效探索并进死胡同。
+ * 禁止在 pipeline 里另写魔数；改阈值只改这一处。
  */
-export const SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD = undefined as unknown as number
+export const SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD = 0.8
 
 /** 解析失败 / 超 token → 该窗全部 keep（ADR-0008）。MVP 不允许改成失败当死胡同。 */
 export const FAIL_CLOSED_KEEP = true
