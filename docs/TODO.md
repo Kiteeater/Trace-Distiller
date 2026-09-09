@@ -25,7 +25,7 @@
 - [ ] package.json + tsconfig + eslint 建起来（目录树按 architecture.md v0.3）
 - [ ] pi SDK spike：验证结构化输出、自定义消息序列（骨架注入）、provider 降档切换三件事可用——「内核可换」活口依赖它，最贵的假设最先验
 - [ ] SQLite schema：段表 / 打标表 / 凭证表 / 指标表（成本数字和「LLM 只看 X%」全从这查；草图见 [modules/data.md](./modules/data.md)）
-- [ ] `read_segment` 确定性拉取工具（洞 B 从卡片升级到 full 的注意力闭环，非判断力工具；[modules/agent-extension.md](./modules/agent-extension.md)）
+- [x] `read_segment` 确定性拉取工具（handler 纯函数已落地；不接 pi。[modules/agent-extension.md](./modules/agent-extension.md)）
 - [ ] 验证点定位：从 trace 中找 ground truth 验证点附近的 turn 作为意图锚点（头尾是启发式，验证点是硬锚点）
 
 ## M1 — 流水线（milestones 抄录 + 细化）
@@ -40,7 +40,7 @@
 - [ ] ③ CutWarrant 生成（引用式凭证）
 - [ ] ④ 确定性裁剪 assembler（span 约束在此强制；[modules/pipeline-assembler.md](./modules/pipeline-assembler.md)）
 - [ ] ⑤ 盲测 review + 回填循环（最多两轮；review 拿意图 + 剪后 trace，故意不给凭证；[modules/eval.md](./modules/eval.md)）
-- [ ] 盲测判分协议：review 必须答结构化问题（关键转折点选择 + 从剪后 trace 指认证据段 id），代码才能确定性比对骨架——自由文本没法判分
+- [x] 盲测判分协议：review 输入只有 intent + playback；结构化答卷对照骨架；缺节点由代码回填 keep；最多 `REVIEW_MAX_ROUNDS=2`。LLM 会话仍待 pi spike。
 - [ ] token 计量口径：压缩率分子分母怎么算（工具输出全文算不算、卡片算不算）——口径不定，10%–30% 验收没法算
 - [ ] 成本基线：跑一次全量 LLM 打标当对照组，量出真实「1/N token」数字（demo 首页成本曲线的数据源）
 - [ ] SQLite 记打标结果 + 规则层覆盖率（「LLM 只看了 X% 的段」进报告首页）

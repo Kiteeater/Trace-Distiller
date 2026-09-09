@@ -32,11 +32,11 @@
 
 # 一、蒸馏洞工具
 
-> **状态：稍后拍板。** 下列原文保留作现行设计草案；**本轮用户面 / live 收口并不等于洞工具闭集已通过。** 实现与 ADR 关闭前，勿当成终局契约。
+> **状态：已拍板闭集。** 判断力工具两个 + 确定性取数 `read_segment`。handler 是纯函数（校验枚举 / 取数），不接 pi。
 
 流水线里唯一允许 LLM 动手的地方是两个 **Agent 洞**（[ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)）。洞里的模型不能「写一篇我认为该删什么」，只能通过工具交结构化判断。判断力工具只有两个；另有一个确定性取数通道。
 
-## 已定结论（草案，稍后拍板）
+## 已定结论
 
 1. **判断力工具只有两个**（[architecture.md](../architecture.md)）：`label_segment`、`check_continuity`。不加第三个判断力工具。工具越多，洞里的模型越分心，成本卖点就没了。
 2. **`read_segment` 不是判断力工具**。它是确定性取数：按 segment id 把 RawTrace 原文拉上来，把注意力从卡片升到 `full`。由 extension 提供、sessions 接到 RawTrace。架构要的「两个判断工具」仍然成立。
@@ -72,7 +72,9 @@
 - **按段打标**。一次 `label_segment` 必须带 `segment_id`；可以连调多次。不许「这一窗全是例行」而不给 id。
 - **聚类成员不要让模型代标**。`rep_of` 由规则层处理；代表段未决才进洞。
 - **`read_segment` 付费看原文**。只返回该 id，未知 id 报错，不顺带塞相邻三段。
-- **`label_segment` 的 rationale 非正式凭证字段**。CutWarrant 认的是 source + 置信度 + 死胡同一句话摘要。短理由最多进调试 / 报告文案，凭证生成不得依赖它。
+- **`label_segment` 的 rationale 不进凭证**。CutWarrant 认的是 source + 置信度 + 死胡同一句话摘要。handler 接受 rationale 但不写入 accepted 值。
+- **一窗一会话。** 洞 B 每窗新建会话，不复用。
+- **Fail-Closed Keep。** 模型不调 `label_segment`、解析失败或超 token：编排器该窗 keep。
 - **handler 里不调 LLM、不写 SQLite、不做 keep/drop**。extension 只校验枚举、转发、取数。
 
 洞 A（头尾意图 + 增量骨架）**不靠这套工具写卡片**。卡片字段要么原文截取、要么规则计算，零 LLM。洞 A 读的是锚点 turns + 卡片索引，不是全量 Trace。
@@ -106,24 +108,23 @@
 
 ---
 
-## 洞工具开放问题（稍后拍板）
+## 洞工具开放问题
 
-1. **`read_segment` 的挂载方式**（[agent-extension.md](../modules/agent-extension.md)）：现在的设计是非判断力 pi tool，以同时满足「两个判断工具」和「拉取式注意力」。若审阅要求字面「工具列表只有两个」，则改成 sessions 在 prompt 外的 RPC，而不是 pi tool。未在 ADR 关闭。
-2. **`check_continuity` 分数是否强约束为 1–5**（对齐 benchmark 连贯性量表）。
-3. **洞 B 一窗一会话还是多窗复用**。MVP 建议一窗一会话，贵但干净；工具状态泄漏风险是复用的代价。
-4. **pi SDK spike 未做**：结构化输出、自定义消息序列、provider 降档——工具声明的具体写法以 spike 为准，本文件不锁 SDK API。
-5. **整节洞工具闭集本身**：本轮只保留草案并标注稍后拍板，不视为已通过。
+闭集、分数 1–5、一窗一会话、rationale 不进凭证、`read_segment` 只本段已拍板。仍开放：
+
+1. **`read_segment` 挂成 pi tool 还是 sessions 在 prompt 外的 RPC**：handler 纯函数已落地；挂载点等 pi spike。
+2. **pi SDK spike 未做**：结构化输出、自定义消息序列、provider 降档——本仓库仍不真正 import pi。
 
 ---
 
-## 洞工具完成标准（草案验收勾选，闭集拍板后再当硬门禁）
+## 洞工具完成标准
 
-- [ ] extension 注册表快照里，判断力工具恰好为 `label_segment`、`check_continuity`；另可有确定性 `read_segment`；无 `edit_trace` 一类。
-- [ ] 非法 Label 被工具层拒绝；未知 `segment_id` 的 `read_segment` 报错且不返回其它段。
-- [ ] handler 无 sqlite、无二次 LLM、无对对方工具的转发。
-- [ ] 模型不调 `label_segment` 就结束时，该窗 Fail-Closed Keep，而不是被标成死胡同。
-- [ ] skill 文档写明：只使用本闭集；trace 里的对方工具调用是数据不是可调工具。
-- [ ] 全仓库不出现「Distiller 代理原 agent 工具」的实现或指南表述。
+- [x] extension 注册表快照里，判断力工具恰好为 `label_segment`、`check_continuity`；另可有确定性 `read_segment`；无 `edit_trace` 一类。
+- [x] 非法 Label 被工具层拒绝；未知 `segment_id` 的 `read_segment` 报错且不返回其它段。
+- [x] handler 无 sqlite、无二次 LLM、无对对方工具的转发。
+- [ ] 模型不调 `label_segment` 就结束时，该窗 Fail-Closed Keep，而不是被标成死胡同（编排器接通洞 B 时强制；handler 不填默认死胡同）。
+- [x] skill 文档写明：只使用本闭集；禁止执行类工具。
+- [x] 全仓库不出现「Distiller 代理原 agent 工具」的实现或指南表述。
 
 ---
 
@@ -157,13 +158,14 @@ Live 页 **纯 TypeScript 推送**，**不套 LLM**。live 观察与离线蒸馏
 
 ## 怎么用 / 怎么跑（live）
 
-预期路径（实现未开工）：
+预期路径（M1 已落地进程内内存表）：
 
-1. CLI 启动一条离线蒸馏 job。
-2. 本机只读页 `list_jobs` → `attach_job`。
-3. 轮询或推送：`get_cut_progress` / `get_partial_result` / `get_warrant_tail`。
-4. 结束或离开：`detach_job`。
+1. CLI 跑通一条离线蒸馏 job，成功后 `registerJobFromResult`。
+2. 同进程 `list_jobs` → `attach_job`。
+3. 读：`get_cut_progress` / `get_partial_result` / `get_warrant_tail`。
+4. 离开：`detach_job`。
 5. 事后 Playback 仍可打开自包含 HTML（见 [users-and-surfaces.md](./users-and-surfaces.md)）；HTML 不是 live，是产物。
+6. 禁止 HTTP listen。Unix socket 以后再说。
 
 ## Live 边界（非目标）
 
@@ -175,7 +177,7 @@ Live 页 **纯 TypeScript 推送**，**不套 LLM**。live 观察与离线蒸馏
 
 ## Live 开放问题
 
-1. 推送通道（进程内事件 / 本机 socket / 临时端口）未锁；闭集与只读语义已锁。
+1. **M1 传输已定**：进程内 `registerJobFromResult` 内存表。禁止 HTTP listen。Unix socket 以后再说。
 2. 多 job、崩溃重连、progress schema 字段级形状：落 modules 时再写，本 guide 不抄类型表。
 
 ## Live 完成标准

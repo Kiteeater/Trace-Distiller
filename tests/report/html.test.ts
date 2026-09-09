@@ -16,7 +16,7 @@ describe('renderHtml', () => {
         ground_truth_ref: 'turn:gt',
         total_tokens: 1000,
       },
-      intent: { version: 0, text: 'fix add', scenario: 'unknown' },
+      intent: { version: 0, text: 'fix add', scenario: 'implement' },
       original_step_count: 12,
       kept_step_count: 4,
       segments: [

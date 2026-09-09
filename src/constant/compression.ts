@@ -9,15 +9,11 @@ export const LLM_LABEL_FRACTION_HINT = 0.3
 
 export const DEFAULT_PROFILE_ID = 'default'
 
-/**
- * OPEN: 代表性死胡同最多留几条未拍板。docs/modules/constant.md §6。
- */
-export const DEAD_END_MAX_REPRESENTATIVE = undefined as unknown as number
+/** 代表性死胡同最多留几条。已拍板：3。 */
+export const DEAD_END_MAX_REPRESENTATIVE = 3
 
-/**
- * OPEN: 死胡同一句话摘要最大字符数未拍板。docs/modules/constant.md §6。
- */
-export const DEAD_END_SUMMARY_MAX_CHARS = undefined as unknown as number
+/** 死胡同一句话摘要最大字符数。已拍板：80。 */
+export const DEAD_END_SUMMARY_MAX_CHARS = 80
 
 export const DEFAULT_CUT_PROFILE: CutProfile = {
   id: DEFAULT_PROFILE_ID,

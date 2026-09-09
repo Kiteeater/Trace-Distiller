@@ -74,7 +74,7 @@ segmenter → types, enums, utils（token 估算）
 ## 5. 关键规则 / 算法
 
 - **Action Unit = 思考 + 工具 + 返回**。这是切段的产品定义，不是按 token 窗口切。
-- **卡片字段零 LLM**（ADR-0009）。`head` 截取规则建议：原文第一行，超过 N 字符截断（N 属 constant，未拍板）。
+- **卡片字段零 LLM**（ADR-0009）。`head` 截取规则：原文第一行，超过 `SEGMENT_HEAD_MAX_CHARS`（已拍板 120）截断。
 - **focus 默认 card**：降为 `line` 是 rules 的事（噪音段）；升为 `full` 是洞 B 调 `read_segment` 的事。
 - 切多少段是确定性函数，必须可复现，否则 benchmark 数字漂。
 

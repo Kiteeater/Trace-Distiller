@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { parse } from '../../src/adapters/claude_code.ts'
+import { SEGMENT_HEAD_MAX_CHARS } from '../../src/constant/window.ts'
 import { segment } from '../../src/pipeline/segmenter.ts'
 import type { RawTrace, RawTurn, RawTurnRole } from '../../src/types/raw_trace.ts'
 import { estimateTokens } from '../../src/utils/tokens.ts'
@@ -132,7 +133,7 @@ describe('segmenter', () => {
     assert.equal(thinking.includes(solo.head), true)
   })
 
-  it('uses the original first line as head, not a summary, and does not apply the OPEN char cap', () => {
+  it('uses the original first line as head, not a summary, and caps at SEGMENT_HEAD_MAX_CHARS', () => {
     const first = 'Read the file and inspect the failing assertion in add.ts exactly as written.'
     const body = `${first}\nSecond line must not become the head.`
     const raw = rawOf([
@@ -152,7 +153,8 @@ describe('segmenter', () => {
         makeTurn('c2', 'tool_call', '{"path":"z.ts"}', { name: 'Read', args: { path: 'z.ts' } }),
       ]),
     )
-    assert.equal(longView.segments[0]?.head, long)
+    assert.equal(longView.segments[0]?.head, 'W'.repeat(SEGMENT_HEAD_MAX_CHARS))
+    assert.equal(longView.segments[0]?.head.length, SEGMENT_HEAD_MAX_CHARS)
   })
 
   it('builds homogeneous sigs for same-path reads and bash templates after stripping digits/tmp', () => {

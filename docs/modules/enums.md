@@ -17,7 +17,7 @@
 
 - 不做连续分数、重要性排序（那不是 Label）。
 - 不在 enum 文件里写打标规则或路由表（路由表在 [constant.md](./constant.md)）。
-- 不把开放的场景列表假装已经定稿——场景码是 P0/M2 仍要填的名单。
+- 不在 enum 文件里发明第六个 Label。场景码已拍板五字面量。
 
 ---
 
@@ -56,8 +56,13 @@ type TraceSource = 'claude-code' | 'pi-session' | 'swebench'
 /** src/enums/segment_outcome_enum.ts */
 type SegmentOutcome = 'ok' | 'error' | 'unknown'
 
-/** src/enums/scenario_enum.ts — 取值未拍板，见开放问题 */
-type Scenario = string
+/** src/enums/scenario.ts — 已拍板 */
+type Scenario =
+  | 'debug'
+  | 'implement'
+  | 'refactor'
+  | 'test_fix'
+  | 'investigate'
 ```
 
 中文对照（对外报告、文档用词必须用左列）：
@@ -109,10 +114,11 @@ enums 不准 import pipeline、agent、data、pi。
 
 ## 6. 仍开放的设计问题
 
-1. **Scenario 名单**：MVP 要 3–5 个 skill，所以至少要 3–5 个场景码。现有文档没有列出（debug / implement / refactor？SWE-bench 任务类型？）。不定名单，路由表和 skill 文件名都没法写。
-2. **要不要 `label_source` enum**（规则名空间 vs skill 名空间），还是用自由字符串 `WarrantSource.name`。
-3. **`unknown` outcome** 是否允许进入洞 B，或直接 Fail-Closed Keep。
-4. architecture 示例只点了三个 enum 文件；本设计多了 `focus` / `cut_action` / `trace_source`。落地时是严格跟 architecture 三个文件，还是按本文件拆——建议按本文件拆，architecture 那三个是下限不是上限。
+Scenario 五字面量已拍板。查不到回退 `implement`（[constant.md](./constant.md)）。
+
+1. **要不要 `label_source` enum**（规则名空间 vs skill 名空间），还是用自由字符串 `WarrantSource.name`。
+2. **`unknown` outcome** 是否允许进入洞 B，或直接 Fail-Closed Keep。
+3. architecture 示例只点了三个 enum 文件；本设计多了 `focus` / `cut_action` / `trace_source`。落地时按本文件拆，architecture 那三个是下限不是上限。
 
 ---
 
@@ -122,4 +128,4 @@ enums 不准 import pipeline、agent、data、pi。
 - [ ] Label 恰好四个值，测试里穷尽切换。
 - [ ] CONTEXT 中文词与 enum 值有对照表（可就放本文件，代码用英文值）。
 - [ ] `AgentRole` 覆盖洞 A/B 与 L4 三类会话，没有「orchestrator」角色。
-- [ ] Scenario 在名单拍板前，代码用 `string` + 运行时校验，或显式 `TODO` 阻塞 skill 路由实现。
+- [x] Scenario 五字面量：`debug` | `implement` | `refactor` | `test_fix` | `investigate`。

@@ -45,6 +45,7 @@ export interface SkeletonPassOutput {
 /**
  * 洞 A。待 pi spike；禁止假造 LLM 意图 / 骨架。
  * TODO createAgentSession — 仅本目录在 spike 后可 import pi。
+ * 模型：TRACE_DISTILLER_MODEL_HOLE_A；失败重试 PI_FAILURE_RETRY 次再 Fail-Closed。
  */
 export async function skeletonPass(_input: SkeletonPassInput): Promise<SkeletonPassOutput> {
   throw new NotImplementedError(
@@ -55,6 +56,7 @@ export async function skeletonPass(_input: SkeletonPassInput): Promise<SkeletonP
 /**
  * L4 与两洞共用的会话工厂。不算第三洞。eval 必须走这里，禁止自己 createAgentSession。
  * TODO createAgentSession — 仅本目录在 spike 后可 import pi。
+ * 模型：TRACE_DISTILLER_MODEL_HOLE_A / _HOLE_B / _L4；失败重试 PI_FAILURE_RETRY 次再 Fail-Closed。
  */
 export function openSession(_opts: SessionFactoryOpts): PiSessionHandle {
   throw new NotImplementedError(

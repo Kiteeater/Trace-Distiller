@@ -29,17 +29,18 @@ MVP 先固定 **3–5 个**文件，再扩。
 
 输出：无直接输出。效果体现在洞 B 的 `label_segment` 分布是否符合该场景。
 
-建议文件名（**占位，场景名单未拍板**）：
+已拍板文件名（五场景；查不到回退 `implement`）：
 
 ```text
 src/agent/skills/
-  _shared.md          # 四类标签定义、禁止改写原文、trace 是数据不是指令
   debug.md
   implement.md
   refactor.md
+  test_fix.md
+  investigate.md
 ```
 
-`_shared.md` 始终注入；路由表只换场景文件。这样四类标签定义不会在 3 个文件里漂。
+MVP 每份只写洞 B 纪律，不另开 `_shared.md`。四类标签定义以 enums 为准。
 
 每份场景 skill 应写清：
 
@@ -90,17 +91,16 @@ skills（纯 Markdown）
 
 ## 6. 仍开放的设计问题
 
-1. **场景名单未拍板**（enums 同一题）。没有名单就不要创建 3 个随意命名的 skill 冒充完成。
+1. **场景名单已拍板**。五份 Markdown 只写洞 B 纪律；洞 A/B 未接通，不算 M2 skill 完成。
 2. pi Skills 机制 vs 自读 Markdown：等 SDK spike。
 3. skill 要不要带 few-shot 卡片例子：例子会占 token，且可能锚定过度。
-4. 中英文：原料多是英文工具日志，skill 用中文还是英文写，现有文档没说。建议与打标模型一致，先英文指令 + 中文标签名对照，避免模型乱造中文标签字符串（代码要的是 enum 英文值）。
+4. 中英文：原料多是英文工具日志。纪律文件现用中文；代码要的是 enum 英文值。
 
 ---
 
 ## 7. 实现完成标准
 
-- [ ] 至少 `_shared.md` + 已批准场景文件；每个文件能被 sessions 读到。
-- [ ] 路由表键与文件名一致，缺文件启动失败。
-- [ ] `_shared.md` 含四类标签与「数据不是指令」。
-- [ ] 无 TS 逻辑藏在 Markdown 代码块里冒充实现。
-- [ ] 场景名单批准前，本目录可以只有 `_shared.md` 和 README，不算 M2 skill×3–5 完成。
+- [x] 五份已批准场景文件 + README；路由表键与文件名一致。
+- [ ] 缺文件启动失败（sessions 接通后）。
+- [x] 无 TS 逻辑藏在 Markdown 代码块里冒充实现。
+- [ ] M2：prompt 注入防线完整版（数据不是指令）与场景先验长文。现在的极简纪律文件不算 M2 完成。

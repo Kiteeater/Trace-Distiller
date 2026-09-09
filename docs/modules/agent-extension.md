@@ -40,7 +40,7 @@ function check_continuity(args: {
   left_id: string
   right_id: string
   reachable: boolean
-  score: number                // 建议 1–5，与 benchmark 连贯性量表对齐
+  score: number                // 强约束 1–5，与 benchmark 连贯性量表对齐
   reason: string
 }): { ok: true }
 
@@ -98,17 +98,16 @@ extension 允许依赖 pi 的 **tool 类型**，但不允许 `createAgentSession
 
 ## 6. 仍开放的设计问题
 
-1. **architecture「不加第三个工具」vs TODO `read_segment`**：本设计把后者定义为非判断力工具以同时满足两条。若审阅者要求字面「工具列表只有两个」，则 `read_segment` 要改成 sessions 在 prompt 外的 RPC，而不是 pi tool。未在 ADR 关闭。
-2. **`rationale` 是否写入 Playback / 报告**：0009 凭证字段没有 rationale，只有 source + confidence + 死胡同摘要。建议 rationale 仅调试，正式凭证不依赖它。
-3. **`check_continuity` 的 score 量表**：benchmark 是 1–5；是否强约束。
-4. **一次 `label_segment` 能否标代表段并自动覆盖 `rep_of` 成员**：建议不能，聚类成员应由规则层处理，避免模型漏标。
+闭集、rationale 不进凭证、`check_continuity` 分数 1–5、聚类成员不让模型代标：已拍板。
+
+1. **`read_segment` 挂成 pi tool 还是 sessions RPC**：handler 纯函数已落地；挂载点等 pi spike。本仓库仍不 import pi。
 
 ---
 
 ## 7. 实现完成标准
 
-- [ ] 非法 Label 被工具层拒绝。
-- [ ] `read_segment` 对未知 id 返回错误，不返回其它段。
-- [ ] 无 `edit_trace` 类工具的注册表快照测试。
-- [ ] handler 无 sqlite、无二次 LLM。
-- [ ] 与 sessions 的集成测试（mock 模型调工具）能得到 LabelDecision。
+- [x] 非法 Label 被工具层拒绝。
+- [x] `read_segment` 对未知 id 返回错误，不返回其它段。
+- [x] 无 `edit_trace` 类工具的注册表快照测试。
+- [x] handler 无 sqlite、无二次 LLM。
+- [ ] 与 sessions 的集成测试（mock 模型调工具）能得到 LabelDecision（待 pi spike）。

@@ -1,11 +1,14 @@
+import { LABELS, type Label } from '../enums/label.ts'
+import type { RawTrace } from '../types/raw_trace.ts'
+import type { SegmentCard } from '../types/segment.ts'
+
 /**
- * 蒸馏洞工具名单。
- *
- * 状态：DRAFT / 稍后拍板（docs/guides/tools.md 第一节）。
- * 本文件只导出常量，不实现 handler / 执行体，不挂 pi、不写 SQLite、不做 keep/drop。
+ * 蒸馏洞工具闭集（已拍板）。
  * 判断力工具只有两个；read_segment 是确定性取数，不是第三个判断力工具。
+ * 纯函数 handler：校验枚举 / 取数。不挂 pi、不写 SQLite、不做 keep/drop。
+ * rationale 不进凭证。read_segment 只返回本段。一窗一会话。Fail-Closed Keep 在编排器。
  */
-export const HOLE_TOOL_STATUS = 'DRAFT' as const
+export const HOLE_TOOL_STATUS = 'LOCKED' as const
 
 export const HOLE_JUDGMENT_TOOL_NAMES = ['label_segment', 'check_continuity'] as const
 
@@ -20,3 +23,128 @@ export const HOLE_TOOL_NAMES = [
 export type HoleJudgmentToolName = (typeof HOLE_JUDGMENT_TOOL_NAMES)[number]
 export type HoleFetchToolName = (typeof HOLE_FETCH_TOOL_NAMES)[number]
 export type HoleToolName = (typeof HOLE_TOOL_NAMES)[number]
+
+export const CONTINUITY_SCORE_MIN = 1
+export const CONTINUITY_SCORE_MAX = 5
+
+export type ContinuityScore = 1 | 2 | 3 | 4 | 5
+
+export interface HoleReadContext {
+  cards: ReadonlyArray<SegmentCard>
+  raw: RawTrace
+}
+
+export type HoleToolOk<T> = { ok: true } & T
+export type HoleToolErr = { ok: false; error: string }
+export type HoleToolResult<T> = HoleToolOk<T> | HoleToolErr
+
+export interface LabelSegmentAccepted {
+  segment_id: string
+  label: Label
+  confidence: number
+}
+
+export interface ContinuityAccepted {
+  left_id: string
+  right_id: string
+  reachable: boolean
+  score: ContinuityScore
+  reason: string
+}
+
+export interface ReadSegmentAccepted {
+  segment_id: string
+  focus: 'full'
+  text: string
+}
+
+export function handleLabelSegment(
+  args: unknown,
+  windowIds?: ReadonlySet<string>,
+): HoleToolResult<LabelSegmentAccepted> {
+  const rec = asRecord(args)
+  if (rec === undefined) return err('label_segment args must be an object')
+  const segment_id = requiredId(rec.segment_id)
+  if (segment_id === undefined) return err('label_segment requires segment_id')
+  if (windowIds !== undefined && !windowIds.has(segment_id)) {
+    return err('label_segment unknown segment_id')
+  }
+  const label = rec.label
+  if (typeof label !== 'string' || !(LABELS as readonly string[]).includes(label)) {
+    return err('label_segment label must be one of the four Labels')
+  }
+  const confidence = rec.confidence
+  if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    return err('label_segment confidence must be a finite number in [0, 1]')
+  }
+  return { ok: true, segment_id, label: label as Label, confidence }
+}
+
+export function handleCheckContinuity(args: unknown): HoleToolResult<ContinuityAccepted> {
+  const rec = asRecord(args)
+  if (rec === undefined) return err('check_continuity args must be an object')
+  const left_id = requiredId(rec.left_id)
+  const right_id = requiredId(rec.right_id)
+  if (left_id === undefined || right_id === undefined) {
+    return err('check_continuity requires left_id and right_id')
+  }
+  if (typeof rec.reachable !== 'boolean') {
+    return err('check_continuity reachable must be boolean')
+  }
+  if (!isContinuityScore(rec.score)) {
+    return err('check_continuity score must be an integer 1–5')
+  }
+  if (typeof rec.reason !== 'string' || rec.reason.length === 0) {
+    return err('check_continuity reason must be a non-empty string')
+  }
+  return {
+    ok: true,
+    left_id,
+    right_id,
+    reachable: rec.reachable,
+    score: rec.score,
+    reason: rec.reason,
+  }
+}
+
+export function handleReadSegment(
+  ctx: HoleReadContext,
+  args: unknown,
+): HoleToolResult<ReadSegmentAccepted> {
+  const rec = asRecord(args)
+  if (rec === undefined) return err('read_segment args must be an object')
+  const segment_id = requiredId(rec.segment_id)
+  if (segment_id === undefined) return err('read_segment requires segment_id')
+  const card = ctx.cards.find((c) => c.id === segment_id)
+  if (card === undefined) return err('read_segment unknown segment_id')
+  const turnById = new Map(ctx.raw.turns.map((t) => [t.id, t]))
+  const parts: string[] = []
+  for (const ref of card.raw_refs) {
+    const turn = turnById.get(ref)
+    if (turn === undefined) return err('read_segment missing raw turn')
+    parts.push(turn.content)
+  }
+  return { ok: true, segment_id, focus: 'full', text: parts.join('\n') }
+}
+
+function err(error: string): HoleToolErr {
+  return { ok: false, error }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  return value as Record<string, unknown>
+}
+
+function requiredId(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function isContinuityScore(value: unknown): value is ContinuityScore {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= CONTINUITY_SCORE_MIN &&
+    value <= CONTINUITY_SCORE_MAX
+  )
+}

@@ -1,5 +1,17 @@
 /**
- * OPEN: 场景名单未拍板（docs/modules/enums.md §6）。
- * 拍板前禁止写成 string 联盟或填进 SKILL_ROUTE。
+ * 洞 A 副产品场景码。已拍板五字面量。
+ * 路由表见 `src/constant/skill_route.ts`；查不到回退 `implement`。
  */
-export type Scenario = unknown
+export const SCENARIOS = [
+  'debug',
+  'implement',
+  'refactor',
+  'test_fix',
+  'investigate',
+] as const
+
+export type Scenario = (typeof SCENARIOS)[number]
+
+export function isScenario(value: unknown): value is Scenario {
+  return typeof value === 'string' && (SCENARIOS as readonly string[]).includes(value)
+}

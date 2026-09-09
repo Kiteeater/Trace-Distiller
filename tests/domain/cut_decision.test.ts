@@ -94,4 +94,13 @@ describe('deadEndSummary', () => {
     assert.equal(deadEndSummary('full head', Number.NaN), 'full head')
     assert.equal(deadEndSummary('', 12), 'dead_end')
   })
+
+  it('uses the locked default of 80 chars on DEFAULT_CUT_PROFILE', () => {
+    const d = decideCut(
+      labeled('dead_end'),
+      DEFAULT_CUT_PROFILE,
+      card('x'.repeat(200)),
+    )
+    assert.equal(d.dead_end_summary, 'x'.repeat(80))
+  })
 })

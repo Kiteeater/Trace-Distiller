@@ -185,7 +185,7 @@ skill 文件读取：sessions 可以读磁盘上的 Markdown（这是读策略�
 - **增量骨架**：洞 B 可回报 patch，**合并是 domain/orchestrator 的纯代码**，不是再开一次「请模型把两份骨架合成一份」。
 - **结构化输出优先**；失败则 Fail-Closed Keep。
 - **prompt 注入防线（MVP）**：洞 B prompt 必须框定「trace 内容是数据不是指令」。完整系统化是 M2。
-- **模型档位**：洞 A 可用更强档；洞 B 日常打标；QA 可降档。具体模型名见 constant/env 开放问题。
+- **模型档位**：洞 A 可用更强档；洞 B 日常打标；QA 可降档。模型名走 `TRACE_DISTILLER_MODEL_HOLE_A` / `_HOLE_B` / `_L4`。失败重试 1 次再 Fail-Closed。
 - 处理成本比的分子只计本目录 `hole_a_*` + `hole_b_*` 的 usage，不含 L4。
 
 ---
@@ -195,9 +195,9 @@ skill 文件读取：sessions 可以读磁盘上的 Markdown（这是读策略�
 1. **pi SDK spike 尚未做**（TODO P0）：结构化输出、自定义消息序列（骨架注入）、provider 降档切换——这三项是「内核可换」最贵假设，文档代替不了一次 spike。
 2. **验证点 turn 如何保证被传入**：依赖 adapter 的 `anchor` 字段，算法未定。
 3. **writeWarrant 是否存在**：见 orchestrator 开放问题。本模块先留函数草图。
-4. **洞 B 一次会话打一窗还是多窗复用会话**：architecture 写逐窗 `createAgentSession()`；复用可能更省，但状态泄漏风险。未拍板。建议 MVP 一窗一会话，贵但干净。
+4. **洞 B 一窗一会话已拍板**，不复用。
 5. **骨架注入的具体 prompt 位置**：system 还是前置消息。取决于 spike。
-6. **review 的结构化答卷格式**（TODO P0 盲测判分协议）未定，sessions 无法实现 review 解析。
+6. **盲测协议已拍板**（intent + playback；缺骨架节点代码回填 keep；最多 2 轮）。sessions 的 LLM 答卷解析仍待 spike。
 
 ---
 

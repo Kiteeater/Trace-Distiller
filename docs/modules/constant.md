@@ -14,7 +14,7 @@
 **非目标**
 
 - 不是 CutProfile。CutProfile 是用户/运行时自定义面；constant 是仓库默认值。
-- 不放环境相关配置（API key、模型名走环境变量 / service 入参，见开放问题）。
+- 不放环境相关配置（API key、模型名走环境变量 / service 入参）。
 - 不放 SQLite 路径、报告 CSS。
 
 ---
@@ -27,14 +27,26 @@
 /** 压缩率：剪后 token / 原 token。PRD MVP 目标。 */
 const COMPRESSION_RATIO_TARGET = { min: 0.10, max: 0.30 }
 
-/** 洞 B 每窗段数。具体数字未拍板，落地前必须定。 */
-const LABEL_WINDOW_SIZE: number  // OPEN
+/** 洞 B 每窗段数。已拍板。 */
+const LABEL_WINDOW_SIZE = 8
+
+/** 卡片 head 原文首行截断。已拍板。 */
+const SEGMENT_HEAD_MAX_CHARS = 120
+
+/** 相邻 keep 允许跨过的最大段数。已拍板。 */
+const SPAN_MAX_GAP_SEGMENTS = 3
+
+/** 相似重试 token Jaccard。已拍板。 */
+const SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD = 0.8
 
 /** 解析失败 / 超 token → 该窗全部 keep（ADR-0008 Fail-Closed Keep） */
 const FAIL_CLOSED_KEEP = true
 
-/** 盲测 review 最多回填轮数（ADR-0009） */
+/** 盲测 review 最多回填轮数（ADR-0009）。已拍板。 */
 const REVIEW_MAX_ROUNDS = 2
+
+/** pi 会话失败额外重试次数，仍失败则 Fail-Closed。已拍板。 */
+const PI_FAILURE_RETRY = 1
 
 /** 洞 A 头尾意图的预算提示：约 2k token，一次调用（ADR-0009） */
 const SKELETON_PASS_TOKEN_HINT = 2000
@@ -42,17 +54,20 @@ const SKELETON_PASS_TOKEN_HINT = 2000
 /** 规则层清完后，预期仍要进洞 B 的段比例（成本粗账，不是硬门禁） */
 const LLM_LABEL_FRACTION_HINT = 0.30
 
-/** 场景 → skill 文件。键必须是 scenario enum。名单未拍板。 */
-const SKILL_ROUTE: Record<string, string> = {
-  // 例（占位，不是已批准场景）：
-  // debug: 'skills/debug.md',
+/** 场景 → skill 文件。键是已拍板 Scenario。查不到回退 implement。 */
+const SKILL_ROUTE: Record<Scenario, string> = {
+  debug: 'agent/skills/debug.md',
+  implement: 'agent/skills/implement.md',
+  refactor: 'agent/skills/refactor.md',
+  test_fix: 'agent/skills/test_fix.md',
+  investigate: 'agent/skills/investigate.md',
 }
 
 /** 默认 CutProfile id，CLI 不传 --profile 时用 */
 const DEFAULT_PROFILE_ID = 'default'
 ```
 
-CutProfile 的仓库默认值（与 [types.md](./types.md) 对齐，数字未全部拍板的标 OPEN）：
+CutProfile 的仓库默认值（与 [types.md](./types.md) 对齐）：
 
 ```ts
 const DEFAULT_CUT_PROFILE = {
@@ -62,15 +77,19 @@ const DEFAULT_CUT_PROFILE = {
   drop_labels: ['routine'],
   compression_ratio: COMPRESSION_RATIO_TARGET,
   span: {
-    max_gap_segments: /* OPEN */,
+    max_gap_segments: SPAN_MAX_GAP_SEGMENTS, // 3
     fill_with_representative_dead_end: true,
   },
   dead_end: {
-    max_representative: /* OPEN */,
-    summary_max_chars: /* OPEN */,
+    max_representative: 3,
+    summary_max_chars: 80,
   },
 }
 ```
+
+`resolveSkillRoute(scenario)`：五字面量命中则返回对应路径；其它值（含缺省）回退 `implement`，`fallback: true`。禁止静默空 prompt。
+
+模型名**不进** constant。洞 A / 洞 B / L4 走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`（见 [pi-sdk.md](../guides/pi-sdk.md)）。
 
 ---
 
@@ -111,19 +130,17 @@ constant **不依赖** pipeline 实现、不依赖 pi、不依赖 data。
 
 ## 6. 仍开放的设计问题
 
-1. **`LABEL_WINDOW_SIZE`**：现有文档没给数字。太大浪费 context，太小骨架注入占比过高。
-2. **span `max_gap_segments`**：ADR-0004 只说「够得着」，没有可执行阈值。是段数、token 数，还是要靠洞 B `check_continuity` 分数？三者如何分工未写死。
-3. **死胡同 `max_representative`**：PRD 说「少量」，没有 N。
-4. **模型档位常量要不要进 constant**：architecture 说骨架可用更强档、QA 可降档。模型名是部署配置还是仓库常量？
-5. **场景路由表的键**：取决于 scenario 名单（见 [enums.md](./enums.md)）。
-6. **Jaccard 相似重试阈值**：TODO 要求 token Jaccard 聚类，阈值未给。
+上列数字与 Scenario 路由已拍板。仍开放：
+
+1. **tokenizer / 是否对齐 provider**：压缩率口径是 RawTrace 原文 token，计数库选型未锁。
+2. **CutProfile 运行时文件格式**：JSON 还是 TS 模块（service 开放问题）。
 
 ---
 
 ## 7. 实现完成标准
 
-- [ ] orchestrator / assembler / eval 中无散落魔数（测试夹具除外）。
-- [ ] `SKILL_ROUTE` 查不到场景码 = 硬失败或回退到默认 skill，行为有单测；禁止静默空 prompt。
-- [ ] `FAIL_CLOSED_KEEP` 为 true；若有人改 false，必须先改 ADR。
-- [ ] 默认 CutProfile 与 PRD 的保留策略一致：关键决策 + 有效探索保留，死胡同压缩，例行删除。
-- [ ] 开放数字在代码落地前补进本文件或另开 ADR，不在 PR 里随手填。
+- [x] orchestrator / assembler / eval 中无散落魔数（测试夹具除外）；默认值在本目录。
+- [x] `SKILL_ROUTE` 查不到场景码回退 `implement`，有单测；禁止静默空 prompt。
+- [x] `FAIL_CLOSED_KEEP` 为 true；若有人改 false，必须先改 ADR。
+- [x] 默认 CutProfile 与 PRD 的保留策略一致：关键决策 + 有效探索保留，死胡同压缩，例行删除。
+- [x] 窗口 / span / Jaccard / head / 死胡同数字已写入本文件，不再标 OPEN。

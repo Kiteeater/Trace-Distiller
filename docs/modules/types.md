@@ -95,7 +95,7 @@ interface SegmentCard {
 interface IntentHypothesis {
   version: number          // v0 = 洞 A 头尾推断；v1+ = 窗回报合并
   text: string
-  scenario: string         // 对应 enums/scenario，走 constant 路由表
+  scenario?: Scenario      // debug|implement|refactor|test_fix|investigate；缺省 / 非法码走 SKILL_ROUTE 回退 implement
 }
 
 interface SkeletonNode {
