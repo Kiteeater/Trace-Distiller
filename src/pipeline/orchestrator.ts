@@ -1,11 +1,10 @@
-import { decideCut, failClosedKeep } from '../domain/cut_decision.ts'
-import { isResolvedByRules, type LabelDecision } from '../domain/label_decision.ts'
+import { writeWarrant } from '../agent/sessions/write_warrant.ts'
+import type { LabelDecision } from '../domain/label_decision.ts'
 import type { AgentView } from '../types/agent_view.ts'
 import type { CutPlan, PlaybackCut, TrainingCut } from '../types/cut_plan.ts'
 import type { CutProfile } from '../types/cut_profile.ts'
-import type { CutWarrant, CutWarrantEntry } from '../types/cut_warrant.ts'
+import type { CutWarrant } from '../types/cut_warrant.ts'
 import type { RawTrace } from '../types/raw_trace.ts'
-import type { SegmentCard } from '../types/segment.ts'
 import { assemble } from './assembler.ts'
 import { applyRules } from './rules.ts'
 import { segment } from './segmenter.ts'
@@ -63,18 +62,18 @@ export async function distill(input: DistillInput): Promise<DistillResult> {
      *   窗解析失败 / 超 token → 该窗 failClosedKeep。
      *   接口占位： labelWindow({ segments, skeleton, skill }) → Promise<LabelDecision[]>
      *
-     * TODO(writeWarrant LLM)：若以后走洞 A 二次调用，放 sessions/write_warrant.ts；
-     *   no_llm 路径继续用本文件的纯代码凭证。
+     * writeWarrant 已改纯代码（sessions/write_warrant.ts）。不要在此接通
+     * skeletonPass / labelWindow，也不要 import pi。
      */
     throw new NotImplementedError(
       `distill mode '${mode}' is not implemented; hole A/B sessions are out of scope`,
     )
   }
 
-  const warrant = writeConservativeWarrant({
-    trace_id: raw.meta.trace_id,
-    segments: ruled.view.segments,
-    decisions: ruled.decisions,
+  const warrant = writeWarrant({
+    skeleton: ruled.view.skeleton,
+    labels: ruled.decisions,
+    view: ruled.view,
     profile,
   })
   const assembled = assemble({ raw, view: ruled.view, warrant, profile })
@@ -92,36 +91,3 @@ export async function distill(input: DistillInput): Promise<DistillResult> {
   }
 }
 
-/**
- * 已决议段按 profile 映射 keep/collapse/drop；未决段 Fail-Closed Keep。
- * 不调 pi / sessions。
- */
-function writeConservativeWarrant(args: {
-  trace_id: string
-  segments: SegmentCard[]
-  decisions: LabelDecision[]
-  profile: CutProfile
-}): CutWarrant {
-  const byId = new Map(args.decisions.map((d) => [d.segment_id, d]))
-  const entries: CutWarrantEntry[] = args.segments.map((seg) => {
-    const labeled = byId.get(seg.id)
-    if (labeled === undefined || !isResolvedByRules(labeled)) {
-      return toEntry(failClosedKeep(seg.id, args.profile.id))
-    }
-    return toEntry(decideCut(labeled, args.profile, seg))
-  })
-  return { trace_id: args.trace_id, entries }
-}
-
-function toEntry(decision: ReturnType<typeof decideCut>): CutWarrantEntry {
-  const entry: CutWarrantEntry = {
-    segment_id: decision.segment_id,
-    action: decision.action,
-    source: decision.source,
-    confidence: decision.confidence,
-  }
-  if (decision.dead_end_summary !== undefined) {
-    entry.dead_end_summary = decision.dead_end_summary
-  }
-  return entry
-}

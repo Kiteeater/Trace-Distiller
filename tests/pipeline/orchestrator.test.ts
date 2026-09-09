@@ -19,15 +19,18 @@ function load(name: string): string {
 }
 
 describe('orchestrator no_llm', () => {
-  it('does not import pi or agent sessions', () => {
-    const imports = readFileSync(pipelineSrc, 'utf8')
+  it('does not import pi or hole sessions; warrant comes from write_warrant', () => {
+    const src = readFileSync(pipelineSrc, 'utf8')
+    const imports = src
       .split('\n')
       .filter((line) => /^\s*import\s/.test(line))
       .join('\n')
     assert.doesNotMatch(imports, /@mariozechner\/pi/)
     assert.doesNotMatch(imports, /createAgentSession/)
-    assert.doesNotMatch(imports, /agent\/sessions/)
     assert.doesNotMatch(imports, /from ['"]pi['"]/)
+    assert.doesNotMatch(imports, /skeleton_pass/)
+    assert.doesNotMatch(imports, /label_window/)
+    assert.match(imports, /agent\/sessions\/write_warrant/)
   })
 
   it('runs adapter fixture to plan + training/playback; resolved drop/collapse, unresolved keep', async () => {
