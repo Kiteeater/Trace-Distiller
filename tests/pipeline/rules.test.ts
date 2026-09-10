@@ -99,7 +99,7 @@ describe('rules', () => {
     assert.equal(out.unresolved_ids.includes(second.id), false)
   })
 
-  it('clusters similar error retries by sig + token Jaccard; members line, representative dead_end without followup', () => {
+  it('clusters similar error retries by sig + token Jaccard; members and representative dead_end', () => {
     const errA =
       'FAILED tests/test_add.py::test_add AssertionError expected 3 got 1 in test_add leftover\n<exit_code>1</exit_code>'
     const errB =
@@ -194,6 +194,48 @@ describe('rules', () => {
 
     const coverage = out.decisions.length / out.view.segments.length
     assert.equal(coverage < 1, true)
+  })
+
+  it('marks similar_retry representative dead_end even when a later write follows the cluster', () => {
+    const errA =
+      'FAILED tests/test_add.py::test_add AssertionError expected 3 got 1 in test_add leftover\n<exit_code>1</exit_code>'
+    const errB =
+      'FAILED tests/test_add.py::test_add AssertionError expected 3 got 1 in test_add\n<exit_code>1</exit_code>'
+    const cmd = { name: 'Bash', args: { command: 'pytest tests/test_add.py' } }
+    const out = run([
+      makeTurn('u', 'user', 'fix add'),
+      makeTurn('c1', 'tool_call', '{"command":"pytest tests/test_add.py"}', cmd),
+      makeTurn('r1', 'tool_result', errA),
+      makeTurn('c2', 'tool_call', '{"command":"pytest tests/test_add.py"}', cmd),
+      makeTurn('r2', 'tool_result', errB),
+      makeTurn('c3', 'tool_call', '{"path":"add.ts"}', {
+        name: 'Edit',
+        args: { path: 'add.ts', old_string: 'a - b', new_string: 'a + b' },
+      }),
+      makeTurn('r3', 'tool_result', 'ok'),
+    ])
+    assertPartition(out)
+
+    const bash = out.view.segments.filter((s) => s.tool === 'Bash')
+    const edit = out.view.segments.find((s) => s.tool === 'Edit')
+    assert.equal(bash.length, 2)
+    assert.ok(edit)
+    const [rep, member] = bash
+    assert.ok(rep)
+    assert.ok(member)
+    assert.equal(member.rep_of, rep.id)
+    assert.equal(rep.rep_of, null)
+
+    const repDec = decisionById(out, rep.id)
+    const memDec = decisionById(out, member.id)
+    assert.ok(repDec)
+    assert.ok(memDec)
+    assert.equal(repDec.rule_name, RULE_SIMILAR_RETRY)
+    assert.equal(repDec.label, 'dead_end')
+    assert.equal(memDec.rule_name, RULE_SIMILAR_RETRY)
+    assert.equal(memDec.label, 'dead_end')
+    assert.equal(out.unresolved_ids.includes(edit.id), true)
+    assert.equal(decisionById(out, edit.id), undefined)
   })
 
   it('leaves a failed call unresolved when a later write appears (do not kill useful exploration)', () => {
