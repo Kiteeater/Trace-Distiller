@@ -35,6 +35,12 @@ const LABEL_WINDOW_SIZE = 8
 /** 卡片 head 原文首行截断。已拍板。 */
 const SEGMENT_HEAD_MAX_CHARS = 120
 
+/** 洞 prompt 卡片索引 head 截断（严于上项）。 */
+const CARD_INDEX_HEAD_MAX_CHARS = 40
+
+/** 洞 A 每条 head/verification turn 正文上限。 */
+const SKELETON_TURN_CONTENT_MAX_CHARS = 200
+
 /** 相邻 keep 允许跨过的最大段数。已拍板。 */
 const SPAN_MAX_GAP_SEGMENTS = 3
 
