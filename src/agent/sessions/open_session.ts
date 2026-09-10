@@ -1,6 +1,7 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PI_FAILURE_RETRY } from '../../constant/window.ts'
+import { resolvePiToolRegistration } from './hole_tools.ts'
 import type { AgentRole } from '../../enums/agent_role.ts'
 import { LABELS, type Label } from '../../enums/label.ts'
 import type { TokenUsage } from './skeleton_pass.ts'
@@ -627,17 +628,19 @@ async function createPiKernelSession(opts: ResolvedSessionOpts): Promise<PiAgent
   await resourceLoader.reload()
 
   const modelRegistry = ModelRegistry.inMemory(authStorage)
+  const toolReg = resolvePiToolRegistration(opts.tools)
   const sessionOpts: Parameters<typeof createAgentSession>[0] = {
     authStorage,
     modelRegistry,
     sessionManager: SessionManager.inMemory(),
     settingsManager,
     resourceLoader,
-    tools: [...opts.tools],
+    tools: toolReg.tools,
     thinkingLevel: 'off',
+    noTools: toolReg.noTools,
   }
-  if (opts.tools.length === 0) {
-    sessionOpts.noTools = 'all'
+  if (toolReg.customTools !== undefined && toolReg.customTools.length > 0) {
+    sessionOpts.customTools = toolReg.customTools
   }
 
   const gateway = applyCustomGateway(modelRegistry, authStorage, opts.model)
