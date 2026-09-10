@@ -16,6 +16,8 @@ export function renderScoreboardMarkdown(input: {
     '',
     'Tracks are scored separately and **never averaged**.',
     '',
+    '> **M1 vs composite:** `m1_score` = 压缩率得分 × 关键步召回（M1 硬门禁）。`composite` 仍要求六项全过（含 cost≤0.3）。短 trace 真 mint 常因处理成本比偏高使 `composite=0`；compress+recall 过时看 `m1_score` 判断 M1 是否成功。',
+    '',
   ]
 
   for (const bin of ['short', 'long', 'multi_dead_end'] as const) {
@@ -31,12 +33,16 @@ export function renderScoreboardMarkdown(input: {
       table.mean_composite === null || table.mean_composite === undefined
         ? '—'
         : table.mean_composite.toFixed(2)
-    lines.push(`n=${table.n} · mean composite=${mean}`)
+    const meanM1 =
+      table.mean_m1_score === null || table.mean_m1_score === undefined
+        ? '—'
+        : table.mean_m1_score.toFixed(2)
+    lines.push(`n=${table.n} · mean composite=${mean} · mean m1=${meanM1}`)
     lines.push('')
     lines.push(
-      '| trace | compress | recall | replay | qa | coherence | cost | composite | gold |',
+      '| trace | compress | recall | replay | qa | coherence | cost | composite | m1 | gold |',
     )
-    lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---|')
+    lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---:|---|')
     for (const s of table.samples) {
       lines.push(row(s))
     }
@@ -64,5 +70,6 @@ function row(s: ScoredSample): string {
     return `${v} (${c.status[0]!})`
   }
   const comp = s.composite === null ? '—' : s.composite.toFixed(2)
-  return `| ${s.trace_id} | ${cell(m.compression_ratio)} | ${cell(m.key_step_recall)} | ${cell(m.replay)} | ${cell(m.qa)} | ${cell(m.coherence)} | ${cell(m.distill_cost_ratio)} | ${comp} | ${s.gold} |`
+  const m1 = s.m1_score === null ? '—' : s.m1_score.toFixed(2)
+  return `| ${s.trace_id} | ${cell(m.compression_ratio)} | ${cell(m.key_step_recall)} | ${cell(m.replay)} | ${cell(m.qa)} | ${cell(m.coherence)} | ${cell(m.distill_cost_ratio)} | ${comp} | ${m1} | ${s.gold} |`
 }

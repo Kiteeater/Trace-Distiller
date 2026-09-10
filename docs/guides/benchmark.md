@@ -90,7 +90,9 @@ node script/run-distill.ts bench --dir benchmark/datasets
 
 ### MVP（M1）只强制压缩率 + 保真
 
-产品口径：[PRD.md](../../PRD.md) §5、[milestones.md](../milestones.md)——**压缩率 + 保真度**。对应本表的 **指标 1 +（指标 4 QA 或盲测 review）**。日常用 QA 或盲测；重放太贵，M1 不强制。
+产品口径：[PRD.md](../../PRD.md) §5、[milestones.md](../milestones.md)——**压缩率 + 保真度**。对应本表的 **指标 1 +（指标 2 关键步召回；日常亦可用指标 4 QA 或盲测 review）**。重放太贵，M1 不强制。处理成本比尽量算——**不是 M1 硬门禁**。
+
+实现：`composite` 仍为六项全过才计分（含 cost）；另有 `m1_score` = 压缩率得分 × 关键步召回，只看 compress+recall，便于过夜 demo 在 cost>0.3 时仍显示 M1 成功。
 
 M1 操作清单：
 

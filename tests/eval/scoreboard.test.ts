@@ -11,6 +11,8 @@ describe('scoreboard markdown', () => {
         n: 1,
         mean_composite: 10,
         stddev_composite: 0,
+        mean_m1_score: 80,
+        stddev_m1_score: 0,
         samples: [
           {
             trace_id: 't1',
@@ -24,16 +26,27 @@ describe('scoreboard markdown', () => {
               distill_cost_ratio: { value: 0.1, status: 'pass' },
             },
             composite: 60,
+            m1_score: 80,
             gold: 'independent',
           },
         ],
       },
-      long: { bin: 'long', n: 0, mean_composite: null, stddev_composite: null, samples: [] },
+      long: {
+        bin: 'long',
+        n: 0,
+        mean_composite: null,
+        stddev_composite: null,
+        mean_m1_score: null,
+        stddev_m1_score: null,
+        samples: [],
+      },
       multi_dead_end: {
         bin: 'multi_dead_end',
         n: 0,
         mean_composite: null,
         stddev_composite: null,
+        mean_m1_score: null,
+        stddev_m1_score: null,
         samples: [],
       },
     }
@@ -41,6 +54,9 @@ describe('scoreboard markdown', () => {
     assert.match(md, /## short/)
     assert.match(md, /t1/)
     assert.match(md, /never averaged/i)
+    assert.match(md, /m1_score/)
+    assert.match(md, /\| m1 \|/)
+    assert.match(md, /mean m1=/)
     assert.doesNotMatch(md, /overall score/i)
   })
 })

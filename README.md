@@ -46,6 +46,8 @@ node script/run-distill.ts bench --no-llm --fake-l4
 
 **composite（复合分）是什么？** 六项门槛全过才算分，否则该样本为 `0`；有 skipped 且无 fail → `null`。算分：`压缩率得分 × 关键步召回 × 重放成功率`（乘法，堵「全删 / 全留」）。三档 `short` / `long` / `multi_dead_end` **分开报，禁止合成平均**。
 
+**m1_score（M1 出门分）**：只强制压缩率 + 关键步召回，`压缩率得分 × 关键步召回`。cost / replay / qa / coherence 失败不拖垮 `m1_score`（仍会拖垮 `composite`）。过夜真 mint 短 trace 常因 cost>0.3 使 composite=0；看 `m1_score` 判断 M1 是否成功。记分板有 `m1` 列。
+
 **mint 环境变量（写在 gitignored `.env`，不要提交密钥）：**
 
 ```bash

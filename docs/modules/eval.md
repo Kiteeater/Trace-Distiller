@@ -69,10 +69,13 @@ function answerQa(cut: TrainingCut | PlaybackCut, items: QaItem[]): Promise<QaSc
 function replay(task: ReplayTask, plan: CutPlan): Promise<{ success: boolean }>
 
 function compositeScore(parts: BenchmarkParts): number
-// 六项未全部及格 → 0；否则 压缩率得分 × 关键步召回 × 重放成功率
+// 六项未全部及格 → 0；否则 压缩率得分 × 关键步召回 × 重放成功率（含 cost 门槛）
+
+function m1Score(parts: Pick<BenchmarkParts, 'compression_ratio' | 'key_step_recall'>): number | null
+// M1：压缩率得分 × 关键步召回；cost/replay/qa/coherence 不参与
 ```
 
-M1 最低：`compressionRatio` +（`blindReview` 或 `answerQa`）落地。重放和复合分可先搭函数空壳。
+M1 最低：`compressionRatio` + 关键步召回（日常亦可用 `blindReview` / `answerQa`）。`m1_score` 已落地；完整 `composite` 仍要求六项。
 
 ---
 

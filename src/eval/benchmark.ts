@@ -4,6 +4,7 @@ import {
   coherencePass,
   compressionScore,
   keyStepRecall,
+  m1Score,
   type BenchmarkParts,
 } from './metrics.ts'
 
@@ -49,8 +50,13 @@ export interface ScoredSample {
     coherence: MetricCell
     distill_cost_ratio: MetricCell
   }
-  /** 任一项 fail → 0；有 skipped 且无 fail → null（M1 不硬挂）；六项全过 → 乘法分。 */
+  /** 任一项 fail → 0；有 skipped 且无 fail → null（M1 不硬挂）；六项全过 → 乘法分。含 cost。 */
   composite: number | null
+  /**
+   * M1 出门分：压缩率得分 × 关键步召回。只看 compress+recall；
+   * cost/replay/qa/coherence 失败不拖垮 m1_score（仍会拖垮 composite）。
+   */
+  m1_score: number | null
   gold: 'independent' | 'skipped'
   notes?: string[]
 }
@@ -60,6 +66,8 @@ export interface BinTable {
   n: number
   mean_composite: number | null
   stddev_composite: number | null
+  mean_m1_score: number | null
+  stddev_m1_score: number | null
   samples: ScoredSample[]
 }
 
@@ -113,12 +121,18 @@ export function parseKeyDecisions(text: string): KeyDecisionsGold {
 /**
  * 六项门槛：缺项 skipped（M1 不硬挂）；任一项 fail → 总分 0。
  * 全过：Score = 压缩率得分 × 召回 × 重放（召回/重放 0–1）。
+ * 完整 composite 含 cost 门槛；勿静默去掉。
  */
 export function scoredComposite(parts: BenchmarkParts): number | null {
   const statuses = metricStatuses(parts)
   if (Object.values(statuses).some((s) => s === 'fail')) return 0
   if (Object.values(statuses).some((s) => s === 'skipped')) return null
   return compressionScore(parts.compression_ratio) * parts.key_step_recall! * parts.replay!
+}
+
+/** M1：仅 compress + key_step_recall。见 metrics.m1Score。 */
+export function scoredM1(parts: BenchmarkParts): number | null {
+  return m1Score(parts)
 }
 
 export function metricStatuses(parts: BenchmarkParts): {
@@ -185,6 +199,7 @@ export function scoreSample(input: ScoreSampleInput): ScoredSample {
       },
     },
     composite: scoredComposite(parts),
+    m1_score: scoredM1(parts),
     gold: gold === null ? 'skipped' : 'independent',
   }
   if (input.notes !== undefined && input.notes.length > 0) {
@@ -212,6 +227,12 @@ export function aggregateBins(samples: readonly ScoredSample[]): BenchmarkReport
     const stats = meanStd(scores)
     table.mean_composite = stats.mean
     table.stddev_composite = stats.stddev
+    const m1Scores = table.samples
+      .map((s) => s.m1_score)
+      .filter((n): n is number => n !== null)
+    const m1Stats = meanStd(m1Scores)
+    table.mean_m1_score = m1Stats.mean
+    table.stddev_m1_score = m1Stats.stddev
   }
   return { bins }
 }
@@ -222,6 +243,8 @@ function emptyBin(bin: BenchmarkBin): BinTable {
     n: 0,
     mean_composite: null,
     stddev_composite: null,
+    mean_m1_score: null,
+    stddev_m1_score: null,
     samples: [],
   }
 }

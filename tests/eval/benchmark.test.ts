@@ -38,6 +38,7 @@ describe('benchmark multiplicative score', () => {
     const sample = scoreSample(passingInput())
     const expected = compressionScore(0.2) * 1 * 0.95
     assert.equal(sample.composite, expected)
+    assert.equal(sample.m1_score, compressionScore(0.2) * 1)
     assert.equal(sample.gold, 'independent')
     assert.equal(sample.metrics.key_step_recall.status, 'pass')
     assert.equal(
@@ -51,6 +52,14 @@ describe('benchmark multiplicative score', () => {
       }),
       expected,
     )
+  })
+
+  it('m1_score survives cost fail while composite zeros', () => {
+    const sample = scoreSample(passingInput({ distill_cost_ratio: 1.62 }))
+    assert.equal(sample.metrics.distill_cost_ratio.status, 'fail')
+    assert.equal(sample.composite, 0)
+    assert.equal(sample.m1_score, compressionScore(0.2) * 1)
+    assert.ok(sample.m1_score! > 0)
   })
 
   it('one failing metric zeros the composite even if others look good', () => {
@@ -77,6 +86,7 @@ describe('benchmark multiplicative score', () => {
     assert.equal(sample.metrics.key_step_recall.status, 'skipped')
     assert.equal(sample.metrics.key_step_recall.value, null)
     assert.equal(sample.composite, null)
+    assert.equal(sample.m1_score, null)
   })
 
   it('a present fail still zeros the score when gold is skipped', () => {
@@ -111,8 +121,11 @@ describe('benchmark bins are not averaged together', () => {
     assert.equal(report.bins.multi_dead_end.n, 0)
     assert.equal(report.bins.short.mean_composite, short.composite)
     assert.equal(report.bins.long.mean_composite, long.composite)
+    assert.equal(report.bins.short.mean_m1_score, short.m1_score)
+    assert.equal(report.bins.long.mean_m1_score, long.m1_score)
     assert.notEqual(short.composite, long.composite)
     assert.equal(report.bins.multi_dead_end.mean_composite, null)
+    assert.equal(report.bins.multi_dead_end.mean_m1_score, null)
     const keys = Object.keys(report.bins)
     assert.deepEqual(keys, ['short', 'long', 'multi_dead_end'])
     assert.equal('overall' in report, false)
