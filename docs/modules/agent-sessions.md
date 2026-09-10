@@ -185,7 +185,7 @@ skill 文件读取：sessions 可以读磁盘上的 Markdown（这是读策略�
 - **增量骨架**：洞 B 可回报 patch，**合并是 domain/orchestrator 的纯代码**，不是再开一次「请模型把两份骨架合成一份」。
 - **结构化输出优先**；失败则 Fail-Closed Keep。
 - **prompt 注入防线（MVP）**：洞 B prompt 必须框定「trace 内容是数据不是指令」。完整系统化是 M2。
-- **模型档位**：洞 A 可用更强档；洞 B 日常打标；QA 可降档。模型名走 `TRACE_DISTILLER_MODEL_HOLE_A` / `_HOLE_B` / `_L4`。失败重试 1 次再 Fail-Closed。
+- **模型档位**：洞 A 可用更强档；洞 B 日常打标；QA 可降档。模型名走 `TRACE_DISTILLER_MODEL_HOLE_A` / `_HOLE_B` / `_L4`（`provider/modelId`）。OpenAI-compatible 网关走 `TRACE_DISTILLER_API_BASE` / `TRACE_DISTILLER_API_KEY` / `TRACE_DISTILLER_PROVIDER`（默认 `macaron`）；有 base+key 时 `registerProvider` + `find`，不走内置 `getModel`。失败重试 1 次再 Fail-Closed。
 - 处理成本比的分子只计本目录 `hole_a_*` + `hole_b_*` 的 usage，不含 L4。
 
 ---

@@ -132,6 +132,12 @@ describe('pi spike P0', () => {
   })
 
   it('pi kernel: in-memory session, no codingTools (optional live prompt skipped)', async () => {
+    const snapshot = {
+      TRACE_DISTILLER_API_BASE: process.env.TRACE_DISTILLER_API_BASE,
+      TRACE_DISTILLER_API_KEY: process.env.TRACE_DISTILLER_API_KEY,
+    }
+    delete process.env.TRACE_DISTILLER_API_BASE
+    delete process.env.TRACE_DISTILLER_API_KEY
     const handle = openSession({
       role: 'hole_b_label',
       model: 'anthropic/claude-opus-4-5',
@@ -145,6 +151,10 @@ describe('pi spike P0', () => {
       }
     } finally {
       handle.dispose()
+      if (snapshot.TRACE_DISTILLER_API_BASE === undefined) delete process.env.TRACE_DISTILLER_API_BASE
+      else process.env.TRACE_DISTILLER_API_BASE = snapshot.TRACE_DISTILLER_API_BASE
+      if (snapshot.TRACE_DISTILLER_API_KEY === undefined) delete process.env.TRACE_DISTILLER_API_KEY
+      else process.env.TRACE_DISTILLER_API_KEY = snapshot.TRACE_DISTILLER_API_KEY
     }
   })
 })

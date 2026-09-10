@@ -76,16 +76,24 @@ node script/run-distill.ts live-dump --sqlite /tmp/distiller.sqlite --out-dir /t
 
 ### 带洞（真模型）
 
-设置洞模型后再跑，不要加 `--no-llm`：
+设置洞模型后再跑，不要加 `--no-llm`。`node script/run-distill.ts` 启动时会加载本机 `.env`（若存在）；不要提交 `.env`。
+
+接 Macaron mint（OpenAI-compatible 网关）：复制 `.env.example` 为 `.env`，填 `TRACE_DISTILLER_API_KEY`。`PiSessionBackend` 在 `API_BASE`+`API_KEY` 都设时 `registerProvider`，不走内置 `getModel`。密钥永不打进日志。
 
 ```bash
-export TRACE_DISTILLER_MODEL_HOLE_A=…   # 洞 A 骨架
-export TRACE_DISTILLER_MODEL_HOLE_B=…   # 洞 B 逐窗打标
-# 可选：TRACE_DISTILLER_MODEL_L4=…     # 盲测/QA/重放；尚未接通
+# .env（gitignored）
+# TRACE_DISTILLER_API_BASE=https://mint-alpha.macaron.im/v1
+# TRACE_DISTILLER_API_KEY=          # 不要把密钥写进仓库
+# TRACE_DISTILLER_PROVIDER=macaron  # 默认 macaron
+export TRACE_DISTILLER_MODEL_HOLE_A=macaron/macaron-v1-coding-venti
+export TRACE_DISTILLER_MODEL_HOLE_B=macaron/macaron-v1-coding-venti
+# 可选：TRACE_DISTILLER_MODEL_L4=macaron/macaron-v1-coding-venti
 node script/run-distill.ts distill examples/add-fix.jsonl --sqlite /tmp/distiller.sqlite --report /tmp/holes.html
 ```
 
-未设上述 env、也没有注入 session 后端时，自动走无洞。
+可选连通检查（无 key 则 skip）：`bun run smoke-mint`。
+
+未设洞模型 env、也没有注入 session 后端时，自动走无洞。
 
 ### 假后端
 

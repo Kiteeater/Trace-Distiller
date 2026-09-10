@@ -55,6 +55,8 @@ describe('cli', () => {
     assert.match(help, /--qa/)
     assert.match(help, /--replay/)
     assert.match(help, /TRACE_DISTILLER_MODEL_L4/)
+    assert.match(help, /TRACE_DISTILLER_API_BASE/)
+    assert.match(help, /Keys are never logged/)
     assert.match(help, /bench/)
     assert.match(help, /never averaged/)
   })
@@ -71,6 +73,7 @@ describe('cli', () => {
       assert.doesNotMatch(text, /\.listen\s*\(/)
       assert.doesNotMatch(text, /createServer/)
     }
+    assert.match(script, /loadLocalEnvFile/)
   })
 
   it('parseArgv reads distill flags', () => {
@@ -185,6 +188,17 @@ describe('cli', () => {
       readdirSync(outDir).filter((n) => n.endsWith('.json')).length,
       0,
     )
+  })
+
+  it('script --help does not print API keys after loading .env', () => {
+    const result = spawnSync(process.execPath, [scriptSrc, '--help'], {
+      encoding: 'utf8',
+      cwd: repoRoot,
+    })
+    assert.equal(result.status, 0, result.stderr)
+    const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`
+    assert.doesNotMatch(combined, /sk-[0-9a-f]{16,}/i)
+    assert.match(combined, /TRACE_DISTILLER_API_BASE/)
   })
 
   it('script entry exits 0 on the synthetic fixture', () => {

@@ -45,12 +45,15 @@ stdin/stdout：日志走 stderr；需要机器读的摘要（trace_id、compress
 **做**
 
 ```ts
-// 设计草图，不是实现
-import { runCli, parseArgv } from '../src/service/cli'
+import { parseArgv, runCli } from '../src/service/cli.ts'
+import { loadLocalEnvFile } from '../src/utils/env.ts'
 
+loadLocalEnvFile()
 const code = await runCli(parseArgv(process.argv.slice(2)))
 process.exit(code)
 ```
+
+启动时若 cwd 有 `.env` 则加载（不覆盖已有 env；密钥不 log）。
 
 **禁止**
 
@@ -64,6 +67,7 @@ process.exit(code)
 
 ```text
 script/run-distill.ts → src/service/cli.ts
+                      → src/utils/env.ts（只加载 .env）
                      ✗ 其它 src 目录
 ```
 

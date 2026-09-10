@@ -17,7 +17,11 @@ import {
 import { checkContinuityPair, labelWindow } from '../../src/agent/sessions/label_window.ts'
 import {
   FakeSessionBackend,
+  applyCustomGateway,
+  buildCustomProviderRegistration,
+  readCustomGatewayEnv,
   setSessionBackend,
+  type CustomProviderRegisterConfig,
   type SessionPromptResult,
 } from '../../src/agent/sessions/open_session.ts'
 import { DEFAULT_CUT_PROFILE } from '../../src/constant/compression.ts'
@@ -505,6 +509,11 @@ describe('hole sessions', () => {
     assert.match(openSrc, /@mariozechner\/pi-coding-agent/)
     assert.match(openSrc, /SessionManager\.inMemory/)
     assert.match(openSrc, /noTools/)
+    assert.match(openSrc, /registerProvider/)
+    assert.match(openSrc, /openai-completions/)
+    assert.match(openSrc, /TRACE_DISTILLER_API_BASE/)
+    assert.match(openSrc, /authHeader:\s*true/)
+    assert.match(openSrc, /applyCustomGateway/)
 
     const warrant = readFileSync(join(sessionsDir, 'write_warrant.ts'), 'utf8')
     assert.doesNotMatch(warrant, /createAgentSession/)
@@ -521,6 +530,124 @@ describe('hole sessions', () => {
         assert.doesNotMatch(imports, /createAgentSession/)
         assert.doesNotMatch(imports, /@mariozechner\/pi/)
         assert.doesNotMatch(imports, /from ['"]pi['"]/)
+      }
+    }
+  })
+
+  it('registerProvider args match openai-completions mint shape without a real key', () => {
+    const registration = buildCustomProviderRegistration({
+      provider: 'macaron',
+      modelId: 'macaron-v1-coding-venti',
+      baseUrl: 'https://mint-alpha.macaron.im/v1',
+      apiKey: 'sk-test-not-a-real-key',
+    })
+    assert.equal(registration.provider, 'macaron')
+    assert.equal(registration.modelId, 'macaron-v1-coding-venti')
+    assert.equal(registration.config.baseUrl, 'https://mint-alpha.macaron.im/v1')
+    assert.equal(registration.config.api, 'openai-completions')
+    assert.equal(registration.config.apiKey, 'sk-test-not-a-real-key')
+    assert.equal(registration.config.authHeader, true)
+    assert.deepEqual(registration.config.compat, {
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+    })
+    assert.equal(registration.config.models.length, 1)
+    const model = registration.config.models[0]
+    assert.ok(model)
+    assert.equal(model.id, 'macaron-v1-coding-venti')
+    assert.equal(model.name, 'macaron-v1-coding-venti')
+    assert.equal(model.reasoning, false)
+    assert.deepEqual(model.input, ['text'])
+    assert.equal(model.contextWindow, 128000)
+    assert.equal(model.maxTokens, 8192)
+    assert.deepEqual(model.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
+    assert.deepEqual(model.compat, registration.config.compat)
+  })
+
+  it('applyCustomGateway registers via fake registry and writes AuthStorage', () => {
+    const calls: Array<{ name: string; config: CustomProviderRegisterConfig }> = []
+    const found = { id: 'macaron-v1-coding-venti', provider: 'macaron' }
+    const registry = {
+      registerProvider(name: string, config: CustomProviderRegisterConfig) {
+        calls.push({ name, config })
+      },
+      find(provider: string, id: string) {
+        if (provider === 'macaron' && id === 'macaron-v1-coding-venti') return found
+        return undefined
+      },
+    }
+    const authCalls: Array<{ provider: string; credential: { type: 'api_key'; key: string } }> = []
+    const result = applyCustomGateway(
+      registry,
+      {
+        set(provider, credential) {
+          authCalls.push({ provider, credential })
+        },
+      },
+      'macaron/macaron-v1-coding-venti',
+      {
+        TRACE_DISTILLER_API_BASE: 'https://mint-alpha.macaron.im/v1',
+        TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+        TRACE_DISTILLER_PROVIDER: 'macaron',
+      },
+    )
+    assert.equal(result.used, true)
+    if (result.used !== true) return
+    assert.equal(result.model, found)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0]?.name, 'macaron')
+    const config = calls[0]?.config as { api?: string; authHeader?: boolean; apiKey?: string }
+    assert.equal(config.api, 'openai-completions')
+    assert.equal(config.authHeader, true)
+    assert.equal(config.apiKey, 'sk-test-not-a-real-key')
+    assert.deepEqual(authCalls, [
+      { provider: 'macaron', credential: { type: 'api_key', key: 'sk-test-not-a-real-key' } },
+    ])
+  })
+
+  it('applyCustomGateway is a no-op without API_BASE+API_KEY', () => {
+    let registered = 0
+    const result = applyCustomGateway(
+      {
+        registerProvider() {
+          registered += 1
+        },
+        find() {
+          return undefined
+        },
+      },
+      {
+        set() {
+          registered += 1
+        },
+      },
+      'macaron/macaron-v1-coding-venti',
+      { TRACE_DISTILLER_PROVIDER: 'macaron' },
+    )
+    assert.deepEqual(result, { used: false })
+    assert.equal(registered, 0)
+    assert.equal(readCustomGatewayEnv({ TRACE_DISTILLER_API_BASE: 'https://example.invalid/v1' }), undefined)
+    assert.equal(readCustomGatewayEnv({ TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key' }), undefined)
+    assert.equal(readCustomGatewayEnv({ TRACE_DISTILLER_API_BASE: '', TRACE_DISTILLER_API_KEY: '' }), undefined)
+  })
+
+  it('TRACE_DISTILLER_PROVIDER defaults to macaron', () => {
+    const env = readCustomGatewayEnv({
+      TRACE_DISTILLER_API_BASE: 'https://mint-alpha.macaron.im/v1',
+      TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+    })
+    assert.equal(env?.provider, 'macaron')
+  })
+
+  it('committed sources do not embed API keys', () => {
+    const secret = /sk-[0-9a-f]{16,}/i
+    const example = readFileSync(join(repoRoot, '.env.example'), 'utf8')
+    assert.match(example, /^TRACE_DISTILLER_API_KEY=\s*$/m)
+    assert.doesNotMatch(example, secret)
+    for (const root of [join(repoRoot, 'src'), join(repoRoot, 'script'), join(repoRoot, 'tests'), join(repoRoot, 'docs')]) {
+      for (const path of walkTs(root)) {
+        const src = readFileSync(path, 'utf8')
+        assert.doesNotMatch(src, secret, path)
       }
     }
   })

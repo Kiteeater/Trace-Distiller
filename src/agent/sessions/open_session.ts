@@ -14,6 +14,57 @@ export const MODEL_ENV_BY_ROLE: Record<AgentRole, string> = {
   l4_review: 'TRACE_DISTILLER_MODEL_L4',
 }
 
+export const GATEWAY_API_BASE_ENV = 'TRACE_DISTILLER_API_BASE'
+export const GATEWAY_API_KEY_ENV = 'TRACE_DISTILLER_API_KEY'
+export const GATEWAY_PROVIDER_ENV = 'TRACE_DISTILLER_PROVIDER'
+export const DEFAULT_GATEWAY_PROVIDER = 'macaron'
+
+export const CUSTOM_PROVIDER_COMPAT = {
+  supportsDeveloperRole: false,
+  supportsReasoningEffort: false,
+} as const
+
+export interface CustomGatewayEnv {
+  baseUrl: string
+  apiKey: string
+  provider: string
+}
+
+export interface CustomProviderRegisterConfig {
+  baseUrl: string
+  api: 'openai-completions'
+  apiKey: string
+  authHeader: true
+  compat: typeof CUSTOM_PROVIDER_COMPAT
+  models: Array<{
+    id: string
+    name: string
+    reasoning: false
+    input: Array<'text' | 'image'>
+    contextWindow: number
+    maxTokens: number
+    cost: { input: number; output: number; cacheRead: number; cacheWrite: number }
+    compat: typeof CUSTOM_PROVIDER_COMPAT
+  }>
+}
+
+export interface CustomProviderRegistration {
+  provider: string
+  modelId: string
+  config: CustomProviderRegisterConfig
+}
+
+export interface GatewayAuthStorage {
+  set(provider: string, credential: { type: 'api_key'; key: string }): void
+}
+
+export interface GatewayModelRegistry<T = unknown> {
+  registerProvider(name: string, config: CustomProviderRegisterConfig): void
+  find(provider: string, id: string): T | undefined
+}
+
+export type ApplyCustomGatewayResult<T> = { used: false } | { used: true; model: T | undefined }
+
 /** 洞会话默认不挂 pi codingTools（read/bash/edit/write）。 */
 export const DEFAULT_HOLE_TOOL_NAMES: readonly string[] = []
 
@@ -120,6 +171,88 @@ export function resolveSessionModel(role: AgentRole, model?: string, env: NodeJS
   const fromEnv = env[key]
   if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv
   return `unspecified:${role}`
+}
+
+export function readCustomGatewayEnv(env: NodeJS.Dict<string> = process.env): CustomGatewayEnv | undefined {
+  const baseUrl = env[GATEWAY_API_BASE_ENV]
+  const apiKey = env[GATEWAY_API_KEY_ENV]
+  if (typeof baseUrl !== 'string' || baseUrl.length === 0) return undefined
+  if (typeof apiKey !== 'string' || apiKey.length === 0) return undefined
+  const providerRaw = env[GATEWAY_PROVIDER_ENV]
+  const provider =
+    typeof providerRaw === 'string' && providerRaw.length > 0 ? providerRaw : DEFAULT_GATEWAY_PROVIDER
+  return { baseUrl, apiKey, provider }
+}
+
+export function parseProviderModel(model: string): { provider: string; id: string } | undefined {
+  const slash = model.indexOf('/')
+  if (slash <= 0) return undefined
+  const provider = model.slice(0, slash)
+  const id = model.slice(slash + 1)
+  if (provider.length === 0 || id.length === 0) return undefined
+  return { provider, id }
+}
+
+export function resolveCustomGatewayModelRef(
+  model: string,
+  gatewayProvider: string,
+): { provider: string; id: string } {
+  const parsed = parseProviderModel(model)
+  if (parsed !== undefined) return parsed
+  return { provider: gatewayProvider, id: model }
+}
+
+export function buildCustomProviderRegistration(input: {
+  provider: string
+  modelId: string
+  baseUrl: string
+  apiKey: string
+}): CustomProviderRegistration {
+  const compat = { ...CUSTOM_PROVIDER_COMPAT }
+  return {
+    provider: input.provider,
+    modelId: input.modelId,
+    config: {
+      baseUrl: input.baseUrl,
+      api: 'openai-completions',
+      apiKey: input.apiKey,
+      authHeader: true,
+      compat,
+      models: [
+        {
+          id: input.modelId,
+          name: input.modelId,
+          reasoning: false,
+          input: ['text'],
+          contextWindow: 128000,
+          maxTokens: 8192,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          compat,
+        },
+      ],
+    },
+  }
+}
+
+/** 设了 API_BASE+API_KEY 时 registerProvider + find，不走内置 getModel。 */
+export function applyCustomGateway<T>(
+  registry: GatewayModelRegistry<T>,
+  authStorage: GatewayAuthStorage,
+  model: string,
+  env: NodeJS.Dict<string> = process.env,
+): ApplyCustomGatewayResult<T> {
+  const gateway = readCustomGatewayEnv(env)
+  if (gateway === undefined) return { used: false }
+  const ref = resolveCustomGatewayModelRef(model, gateway.provider)
+  const registration = buildCustomProviderRegistration({
+    provider: ref.provider,
+    modelId: ref.id,
+    baseUrl: gateway.baseUrl,
+    apiKey: gateway.apiKey,
+  })
+  authStorage.set(ref.provider, { type: 'api_key', key: gateway.apiKey })
+  registry.registerProvider(registration.provider, registration.config)
+  return { used: true, model: registry.find(ref.provider, ref.id) }
 }
 
 export function composeSessionPrompt(input: SessionPromptInput): string {
@@ -469,7 +602,6 @@ interface PiAgentSession {
 
 async function createPiKernelSession(opts: ResolvedSessionOpts): Promise<PiAgentSession> {
   const pi = await import('@mariozechner/pi-coding-agent')
-  const { getModel } = await import('@mariozechner/pi-ai')
   const {
     AuthStorage,
     createAgentSession,
@@ -494,9 +626,10 @@ async function createPiKernelSession(opts: ResolvedSessionOpts): Promise<PiAgent
   })
   await resourceLoader.reload()
 
+  const modelRegistry = ModelRegistry.inMemory(authStorage)
   const sessionOpts: Parameters<typeof createAgentSession>[0] = {
     authStorage,
-    modelRegistry: ModelRegistry.inMemory(authStorage),
+    modelRegistry,
     sessionManager: SessionManager.inMemory(),
     settingsManager,
     resourceLoader,
@@ -506,9 +639,19 @@ async function createPiKernelSession(opts: ResolvedSessionOpts): Promise<PiAgent
   if (opts.tools.length === 0) {
     sessionOpts.noTools = 'all'
   }
-  const resolved = tryResolvePiModel(getModel as (provider: string, id: string) => unknown, opts.model)
-  if (resolved !== undefined) {
-    Object.assign(sessionOpts, { model: resolved })
+
+  const gateway = applyCustomGateway(modelRegistry, authStorage, opts.model)
+  if (gateway.used) {
+    if (gateway.model === undefined) {
+      throw new Error(`custom gateway model not found: ${opts.model}`)
+    }
+    Object.assign(sessionOpts, { model: gateway.model })
+  } else {
+    const { getModel } = await import('@mariozechner/pi-ai')
+    const resolved = tryResolvePiModel(getModel as (provider: string, id: string) => unknown, opts.model)
+    if (resolved !== undefined) {
+      Object.assign(sessionOpts, { model: resolved })
+    }
   }
 
   const { session } = await createAgentSession(sessionOpts)
@@ -516,13 +659,10 @@ async function createPiKernelSession(opts: ResolvedSessionOpts): Promise<PiAgent
 }
 
 function tryResolvePiModel(getModelFn: (provider: string, id: string) => unknown, model: string): unknown {
-  const slash = model.indexOf('/')
-  if (slash <= 0) return undefined
-  const provider = model.slice(0, slash)
-  const id = model.slice(slash + 1)
-  if (provider.length === 0 || id.length === 0) return undefined
+  const parsed = parseProviderModel(model)
+  if (parsed === undefined) return undefined
   try {
-    return getModelFn(provider, id)
+    return getModelFn(parsed.provider, parsed.id)
   } catch {
     return undefined
   }
