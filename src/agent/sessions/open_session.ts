@@ -343,6 +343,15 @@ export class FakeSessionBackend implements SessionBackend {
 }
 
 function defaultFakeRespond(input: SessionPromptInput, opts: ResolvedSessionOpts): SessionPromptResult {
+  if (opts.role === 'hole_b_label' && wantsCheckContinuity(input)) {
+    const pair = fakeContinuityArgs(input.text)
+    return {
+      text: '',
+      json: null,
+      tool_calls: [{ name: 'check_continuity', arguments: pair }],
+      usage: { role: opts.role, input_tokens: Math.max(1, input.text.length), output_tokens: 8 },
+    }
+  }
   const json = defaultFakeJsonForRole(input, opts.role)
   const tool_calls =
     opts.role === 'hole_a_skeleton' || opts.role === 'hole_b_label'
@@ -353,6 +362,30 @@ function defaultFakeRespond(input: SessionPromptInput, opts: ResolvedSessionOpts
     json,
     tool_calls,
     usage: { role: opts.role, input_tokens: Math.max(1, input.text.length), output_tokens: 8 },
+  }
+}
+
+function wantsCheckContinuity(input: SessionPromptInput): boolean {
+  const blob = `${input.system ?? ''}
+${input.text}`
+  return blob.includes('check_continuity')
+}
+
+function fakeContinuityArgs(text: string): {
+  left_id: string
+  right_id: string
+  reachable: boolean
+  score: number
+  reason: string
+} {
+  const left = text.match(/left:\s*\{[\s\S]*?"id"\s*:\s*"([^"]+)"/)
+  const right = text.match(/right:\s*\{[\s\S]*?"id"\s*:\s*"([^"]+)"/)
+  return {
+    left_id: left?.[1] ?? 's0001',
+    right_id: right?.[1] ?? 's0002',
+    reachable: true,
+    score: 5,
+    reason: 'fake continuity',
   }
 }
 

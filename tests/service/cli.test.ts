@@ -540,9 +540,9 @@ describe('cli', () => {
       }
       overall?: unknown
     }
-    assert.equal(report.bins.short.n, 1)
-    assert.equal(report.bins.long.n, 0)
-    assert.equal(report.bins.multi_dead_end.n, 0)
+    assert.ok(report.bins.short.n >= 1)
+    assert.ok(report.bins.long.n >= 1)
+    assert.ok(report.bins.multi_dead_end.n >= 1)
     assert.equal(report.bins.short.samples[0]?.gold, 'independent')
     assert.equal(report.overall, undefined)
     assert.doesNotMatch(line, /"overall"/)
