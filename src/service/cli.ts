@@ -31,7 +31,12 @@ import { computeDistillMetrics, compositeScore, type DistillMetrics } from '../e
 import { scoreKeptPathCoherence } from '../eval/coherence.ts'
 import { L4_METRICS_ONLY_NOTE, runOptionalL4 } from '../eval/run.ts'
 import { renderScoreboardMarkdown } from '../eval/scoreboard.ts'
-import { holeModelsConfigured, l4BackendAvailable } from '../agent/sessions/open_session.ts'
+import {
+  FakeSessionBackend,
+  holeModelsConfigured,
+  l4BackendAvailable,
+  setSessionBackend,
+} from '../agent/sessions/open_session.ts'
 import { distill, resolveDistillMode, type DistillResult } from '../pipeline/orchestrator.ts'
 import { renderHtml, type ReportModel } from '../report/html.ts'
 import { renderLiveHtml } from '../report/live_page.ts'
@@ -63,6 +68,7 @@ export interface CliArgs {
   live_socket_path?: string
   datasets_dir?: string
   no_llm?: boolean
+  fake_l4?: boolean
   qa?: boolean
   replay?: boolean
   help?: boolean
@@ -73,7 +79,7 @@ const HELP = `Usage:
   node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
   node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
-  node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--no-llm]
+  node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--no-llm] [--fake-l4]
 
 --no-llm forces the conservative no-hole path. Without --no-llm, with_llm runs when a session backend is injected or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B is set; otherwise no_llm.
 
@@ -83,7 +89,7 @@ OpenAI-compatible gateway (Macaron mint): copy .env.example to .env. TRACE_DISTI
 
 eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a mapped benchmark/workspaces fixture + model; this command wires cwd when present.
 
-bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample (resolveDistillMode: with_llm when hole model env is set, else no_llm; --no-llm forces no_llm), scores six gates, runs L4 qa/replay + keep-path coherence when L4/hole backends are available, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces. Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null.
+bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample (resolveDistillMode: with_llm when hole model env is set, else no_llm; --no-llm forces no_llm), scores six gates, runs L4 qa/replay + keep-path coherence when L4/hole backends are available, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces; success is gated by workspace verify[] when present. --fake-l4 injects FakeSessionBackend (deterministic heal + verify) so composite can exceed 0 without mint. --no-llm without --fake-l4 skips real L4 to avoid mint hangs. Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null. L4/coherence failures surface as sample notes.
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
@@ -114,6 +120,7 @@ export function parseArgv(argv: string[]): CliArgs {
   let live_socket_path: string | undefined
   let datasets_dir: string | undefined
   let no_llm: boolean | undefined
+  let fake_l4: boolean | undefined
   let qa: boolean | undefined
   let replay: boolean | undefined
 
@@ -175,6 +182,10 @@ export function parseArgv(argv: string[]): CliArgs {
       no_llm = true
       continue
     }
+    if (token === '--fake-l4') {
+      fake_l4 = true
+      continue
+    }
     if (token === '--qa') {
       qa = true
       continue
@@ -205,6 +216,7 @@ export function parseArgv(argv: string[]): CliArgs {
   if (live_socket_path !== undefined) args.live_socket_path = live_socket_path
   if (datasets_dir !== undefined) args.datasets_dir = datasets_dir
   if (no_llm !== undefined) args.no_llm = no_llm
+  if (fake_l4 !== undefined) args.fake_l4 = fake_l4
   if (qa !== undefined) args.qa = qa
   if (replay !== undefined) args.replay = replay
   return args
@@ -415,8 +427,15 @@ async function runBench(args: CliArgs): Promise<number> {
   const profile = loadProfile(args.profile_path)
   const cwd = process.cwd()
   const mode = resolveDistillMode({ no_llm: args.no_llm === true })
-  const runL4Metrics = l4BackendAvailable()
-  const runCoherence = holeModelsConfigured() || runL4Metrics
+  const injectedFake = args.fake_l4 === true
+  if (injectedFake) {
+    setSessionBackend(new FakeSessionBackend())
+  }
+  // --fake-l4 → FakeSessionBackend L4. --no-llm without fake → skip real mint L4 (hang-prone).
+  const runL4 =
+    args.fake_l4 === true ? true : args.no_llm === true ? false : l4BackendAvailable()
+  const runCoherence =
+    args.fake_l4 === true || (args.no_llm !== true && (holeModelsConfigured() || runL4))
   const samples: ScoredSample[] = []
   try {
     for (const bin of BENCHMARK_BINS) {
@@ -430,7 +449,8 @@ async function runBench(args: CliArgs): Promise<number> {
         let qa: number | null = null
         let replay: number | null = null
         let coherence_scores: number[] | null = null
-        if (runL4Metrics) {
+        const sampleNotes: string[] = []
+        if (runL4) {
           const l4 = await runOptionalL4({
             intent: result.view.intent_hypothesis,
             playback: result.playback,
@@ -440,13 +460,20 @@ async function runBench(args: CliArgs): Promise<number> {
           })
           qa = l4.qa
           replay = l4.replay
+          sampleNotes.push(...l4.notes)
+        } else if (args.no_llm === true && args.fake_l4 !== true) {
+          sampleNotes.push(
+            'l4 skipped: --no-llm without --fake-l4 (cleared real mint path to avoid hang)',
+          )
         }
         if (runCoherence) {
-          coherence_scores = await scoreKeptPathCoherence({
+          const coh = await scoreKeptPathCoherence({
             kept_ids: result.plan.kept,
             cards: result.view.segments,
             skeleton: result.view.skeleton,
           })
+          coherence_scores = coh.scores
+          sampleNotes.push(...coh.notes)
         }
 
         samples.push(
@@ -460,6 +487,7 @@ async function runBench(args: CliArgs): Promise<number> {
             replay,
             qa,
             coherence_scores,
+            ...(sampleNotes.length > 0 ? { notes: sampleNotes } : {}),
           }),
         )
       }
@@ -469,7 +497,8 @@ async function runBench(args: CliArgs): Promise<number> {
       dir,
       out_dir: outDir,
       mode,
-      l4: runL4Metrics,
+      l4: runL4,
+      fake_l4: args.fake_l4 === true,
       bins: report.bins,
     }
     mkdirSync(outDir, { recursive: true })
@@ -479,7 +508,7 @@ async function runBench(args: CliArgs): Promise<number> {
       renderScoreboardMarkdown({
         dir,
         mode,
-        l4: runL4Metrics,
+        l4: runL4,
         bins: report.bins,
       }),
       'utf8',
@@ -494,6 +523,8 @@ async function runBench(args: CliArgs): Promise<number> {
     const message = error instanceof Error ? error.message : String(error)
     logError(message)
     return EXIT_OTHER
+  } finally {
+    if (injectedFake) setSessionBackend(undefined)
   }
 }
 

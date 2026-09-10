@@ -29,6 +29,8 @@ export interface ScoreSampleInput {
   replay: number | null
   qa: number | null
   coherence_scores: readonly number[] | null
+  /** L4 / coherence / verify 可观察失败说明（类似 hole_notes） */
+  notes?: readonly string[]
 }
 
 export interface MetricCell {
@@ -50,6 +52,7 @@ export interface ScoredSample {
   /** 任一项 fail → 0；有 skipped 且无 fail → null（M1 不硬挂）；六项全过 → 乘法分。 */
   composite: number | null
   gold: 'independent' | 'skipped'
+  notes?: string[]
 }
 
 export interface BinTable {
@@ -167,7 +170,7 @@ export function scoreSample(input: ScoreSampleInput): ScoredSample {
     input.coherence_scores === null || input.coherence_scores.length === 0
       ? null
       : input.coherence_scores.reduce((sum, n) => sum + n, 0) / input.coherence_scores.length
-  return {
+  const sample: ScoredSample = {
     trace_id: input.trace_id,
     bin: input.bin,
     metrics: {
@@ -184,6 +187,10 @@ export function scoreSample(input: ScoreSampleInput): ScoredSample {
     composite: scoredComposite(parts),
     gold: gold === null ? 'skipped' : 'independent',
   }
+  if (input.notes !== undefined && input.notes.length > 0) {
+    sample.notes = [...input.notes]
+  }
+  return sample
 }
 
 /** 按三档各自聚合。没有跨档平均分 API。 */

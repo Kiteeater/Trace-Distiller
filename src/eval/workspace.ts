@@ -1,4 +1,5 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -101,4 +102,60 @@ export function disposeMaterializedWorkspace(cwd: string): void {
 /** Ensure parent exists (tests / scripts). */
 export function ensureDir(path: string): void {
   mkdirSync(path, { recursive: true })
+}
+
+export interface WorkspaceVerifyResult {
+  ok: boolean
+  note: string
+  exit_code: number | null
+}
+
+/**
+ * Run workspace verify argv with cwd=fixture copy.
+ * Empty argv → ok skipped. Timeout / spawn error → not ok with note.
+ */
+export function runWorkspaceVerify(
+  cwd: string,
+  verify: readonly string[],
+  opts?: { timeout_ms?: number },
+): WorkspaceVerifyResult {
+  if (verify.length === 0) {
+    return { ok: true, note: 'verify skipped: empty argv', exit_code: null }
+  }
+  const [cmd, ...args] = verify
+  if (cmd === undefined || cmd.length === 0) {
+    return { ok: false, note: 'verify failed: empty command', exit_code: null }
+  }
+  const timeout = opts?.timeout_ms ?? 30_000
+  try {
+    const r = spawnSync(cmd, args, {
+      cwd,
+      encoding: 'utf8',
+      timeout,
+      env: process.env,
+    })
+    if (r.error !== undefined) {
+      return {
+        ok: false,
+        note: `verify failed: ${r.error.message}`,
+        exit_code: r.status,
+      }
+    }
+    if (r.status === 0) {
+      return {
+        ok: true,
+        note: `verify ok: ${verify.join(' ')}`,
+        exit_code: 0,
+      }
+    }
+    const errTail = (r.stderr ?? r.stdout ?? '').trim().split('\n').slice(-3).join(' | ')
+    return {
+      ok: false,
+      note: `verify failed (exit ${String(r.status)}): ${verify.join(' ')}${errTail.length > 0 ? ` — ${errTail}` : ''}`,
+      exit_code: r.status,
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { ok: false, note: `verify failed: ${message}`, exit_code: null }
+  }
 }

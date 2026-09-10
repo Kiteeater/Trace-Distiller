@@ -40,6 +40,17 @@ export function renderScoreboardMarkdown(input: {
     for (const s of table.samples) {
       lines.push(row(s))
     }
+    const noted = table.samples.filter((s) => s.notes !== undefined && s.notes.length > 0)
+    if (noted.length > 0) {
+      lines.push('### notes')
+      lines.push('')
+      for (const s of noted) {
+        for (const n of s.notes ?? []) {
+          lines.push(`- \`${s.trace_id}\`: ${n}`)
+        }
+      }
+      lines.push('')
+    }
     lines.push('')
   }
   return lines.join('\n')
