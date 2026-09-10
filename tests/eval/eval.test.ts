@@ -72,6 +72,31 @@ describe('eval ratios', () => {
     )
   })
 
+
+  it('fluff-like short trace passes cost when hole A+B usage is real and light (not estimate)', () => {
+    // sess-short-fluff: original≈4533, compress≈0.015 → removed≈4464.
+    // Overnight mint failed at ≈0.598 because estimateTokens(composed)≈2668.
+    // With real mint usage (pi Usage.input/output) holes can stay ≤0.3×removed.
+    const original = 4533
+    const cut = Math.round(original * 0.015221707478491065)
+    const removed = original - cut
+    const lightHole = 900 // plausible real hole A+B when usage is read
+    const heavyEstimate = 2668
+    assert.ok(distillCostRatio({ hole_a_plus_b_tokens: lightHole, tokens_removed: removed }) <= 0.3)
+    assert.ok(distillCostRatio({ hole_a_plus_b_tokens: heavyEstimate, tokens_removed: removed }) > 0.3)
+    assert.equal(
+      computeDistillMetrics({
+        raw: { meta: { total_tokens: original } },
+        training: { turns: [{ tokens: cut }] },
+        view: { segments: [1] },
+        decisions: [],
+        warrant: { entries: [] },
+        hole_a_plus_b_tokens: lightHole,
+      }).distill_cost_ratio,
+      lightHole / removed,
+    )
+  })
+
   it('computeDistillMetrics aggregates compression, rule coverage, llm fraction, fail_closed', () => {
     const metrics = computeDistillMetrics({
       raw: { meta: { total_tokens: 100 } },

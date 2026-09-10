@@ -787,6 +787,43 @@ function tryResolvePiModel(getModelFn: (provider: string, id: string) => unknown
   }
 }
 
+/**
+ * Read token usage from a pi-ai `Usage` object (or OpenAI/Anthropic aliases).
+ * pi-ai canonical fields are `input` / `output` / `cacheRead` / `cacheWrite` /
+ * `totalTokens`. Missing those used to fall through to estimateTokens and
+ * inflate distill_cost_ratio on real mint.
+ *
+ * Cache read/write is part of tokens processed (pi splits it out of `input`).
+ * `cost.input` is dollars — never treat it as tokens.
+ */
+export function readPiUsage(
+  usageRaw: unknown,
+): { input_tokens: number; output_tokens: number } | undefined {
+  if (typeof usageRaw !== 'object' || usageRaw === null || Array.isArray(usageRaw)) {
+    return undefined
+  }
+  const u = usageRaw as Record<string, unknown>
+  const input = firstFiniteNumber(u.input_tokens, u.inputTokens, u.prompt_tokens, u.input)
+  const output = firstFiniteNumber(u.output_tokens, u.outputTokens, u.completion_tokens, u.output)
+  const cacheRead = firstFiniteNumber(u.cacheRead, u.cache_read_input_tokens, u.cacheReadInputTokens) ?? 0
+  const cacheWrite = firstFiniteNumber(u.cacheWrite, u.cache_creation_input_tokens, u.cacheWriteInputTokens) ?? 0
+  const total = firstFiniteNumber(u.totalTokens, u.total_tokens)
+  if (input === undefined && output === undefined && total === undefined) return undefined
+  const input_tokens = (input ?? 0) + cacheRead + cacheWrite
+  const output_tokens = output ?? 0
+  if (input_tokens + output_tokens === 0 && total !== undefined && total > 0) {
+    return { input_tokens: total, output_tokens: 0 }
+  }
+  return { input_tokens, output_tokens }
+}
+
+function firstFiniteNumber(...vals: unknown[]): number | undefined {
+  for (const v of vals) {
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return v
+  }
+  return undefined
+}
+
 function extractPiResult(
   messages: readonly unknown[],
   role: AgentRole,
@@ -804,17 +841,13 @@ function extractPiResult(
   for (const raw of messages) {
     if (typeof raw !== 'object' || raw === null) continue
     const msg = raw as Record<string, unknown>
-    const usageRaw = msg.usage
-    if (typeof usageRaw === 'object' && usageRaw !== null) {
-      const u = usageRaw as Record<string, unknown>
-      const inp = u.input_tokens ?? u.inputTokens ?? u.prompt_tokens
-      const out = u.output_tokens ?? u.outputTokens ?? u.completion_tokens
-      if (typeof inp === 'number' && Number.isFinite(inp)) {
-        input_tokens += inp
-        sawUsage = true
-      }
-      if (typeof out === 'number' && Number.isFinite(out)) {
-        output_tokens += out
+    // Per-turn usage lives on assistant messages (pi-ai AssistantMessage.usage).
+    // Summing turns is correct: each completion is billed separately, not cumulative.
+    if (msg.role === 'assistant') {
+      const parsed = readPiUsage(msg.usage)
+      if (parsed !== undefined) {
+        input_tokens += parsed.input_tokens
+        output_tokens += parsed.output_tokens
         sawUsage = true
       }
     }
@@ -845,6 +878,14 @@ function extractPiResult(
     out.usage = { role, input_tokens, output_tokens }
   }
   return out
+}
+
+/** Test/observable: usage extracted from pi session messages (assistant turns only). */
+export function usageFromPiMessages(
+  messages: readonly unknown[],
+  role: AgentRole,
+): TokenUsage | undefined {
+  return extractPiResult(messages, role).usage
 }
 
 function wrapRetry(handle: PiSessionHandle, timeoutMs: number = resolveSessionTimeoutMs()): PiSessionHandle {

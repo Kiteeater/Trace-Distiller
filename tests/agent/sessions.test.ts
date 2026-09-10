@@ -21,6 +21,8 @@ import {
   applyCustomGateway,
   buildCustomProviderRegistration,
   readCustomGatewayEnv,
+  readPiUsage,
+  usageFromPiMessages,
   setSessionBackend,
   type CustomProviderRegisterConfig,
   type SessionPromptResult,
@@ -741,5 +743,65 @@ describe('session call hard timeout', () => {
     // withPiRetry adds one retry → ~100ms + slack, still far from forever
     assert.ok(elapsed < 2000, `expected quick fail, took ${elapsed}ms`)
     session.dispose()
+  })
+})
+
+describe('pi usage extraction (mint cost)', () => {
+  it('readPiUsage prefers pi-ai input/output and folds cache into input', () => {
+    assert.deepEqual(
+      readPiUsage({
+        input: 100,
+        output: 20,
+        cacheRead: 40,
+        cacheWrite: 10,
+        totalTokens: 170,
+        cost: { input: 0.01, output: 0.02, cacheRead: 0, cacheWrite: 0, total: 0.03 },
+      }),
+      { input_tokens: 150, output_tokens: 20 },
+    )
+    assert.deepEqual(
+      readPiUsage({ input_tokens: 7, output_tokens: 3 }),
+      { input_tokens: 7, output_tokens: 3 },
+    )
+    assert.equal(readPiUsage({ cost: { input: 9, output: 9 } }), undefined)
+    assert.equal(readPiUsage(null), undefined)
+  })
+
+  it('usageFromPiMessages sums assistant turns and ignores estimate-shaped holes', () => {
+    const usage = usageFromPiMessages(
+      [
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: '{"ok":true}' }],
+          usage: { input: 50, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 60 },
+        },
+        {
+          role: 'assistant',
+          content: [{ type: 'toolCall', name: 'label_segment', arguments: { segment_id: 's1' } }],
+          usage: { input: 30, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 35 },
+        },
+      ],
+      'hole_b_label',
+    )
+    assert.deepEqual(usage, { role: 'hole_b_label', input_tokens: 80, output_tokens: 15 })
+  })
+
+  it('missing pi fields would have forced estimate; with fields, real usage stays small', () => {
+    // Regression: old extractor only looked for input_tokens / prompt_tokens, so mint
+    // usage.input was ignored and estimateTokens(composed) inflated distill_cost_ratio.
+    const real = usageFromPiMessages(
+      [
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'pong' }],
+          usage: { input: 120, output: 8, cacheRead: 0, cacheWrite: 0, totalTokens: 128 },
+        },
+      ],
+      'hole_a_skeleton',
+    )
+    assert.equal(real?.input_tokens, 120)
+    assert.equal(real?.output_tokens, 8)
+    assert.ok((real!.input_tokens + real!.output_tokens) < 500)
   })
 })
