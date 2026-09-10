@@ -14,6 +14,8 @@ import {
   PI_FAILURE_RETRY,
   REVIEW_MAX_ROUNDS,
   SEGMENT_HEAD_MAX_CHARS,
+  SESSION_CALL_TIMEOUT_MS,
+  SESSION_TIMEOUT_ENV,
   SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD,
   SPAN_MAX_GAP_SEGMENTS,
 } from '../../src/constant/window.ts'
@@ -29,6 +31,8 @@ describe('locked defaults', () => {
     assert.equal(DEAD_END_SUMMARY_MAX_CHARS, 80)
     assert.equal(REVIEW_MAX_ROUNDS, 2)
     assert.equal(PI_FAILURE_RETRY, 1)
+    assert.equal(SESSION_CALL_TIMEOUT_MS, 120_000)
+    assert.equal(SESSION_TIMEOUT_ENV, 'TRACE_DISTILLER_SESSION_TIMEOUT_MS')
     assert.equal(FAIL_CLOSED_KEEP, true)
     assert.equal(DEFAULT_CUT_PROFILE.span.max_gap_segments, 3)
     assert.equal(DEFAULT_CUT_PROFILE.dead_end.max_representative, 3)

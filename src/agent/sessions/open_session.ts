@@ -2,7 +2,12 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { estimateTokens } from '../../utils/tokens.ts'
-import { PI_FAILURE_RETRY } from '../../constant/window.ts'
+import { resolveTimeoutMs, withTimeout } from '../../utils/timeout.ts'
+import {
+  PI_FAILURE_RETRY,
+  SESSION_CALL_TIMEOUT_MS,
+  SESSION_TIMEOUT_ENV,
+} from '../../constant/window.ts'
 import { L4_REPLAY_CODING_TOOLS, resolvePiToolRegistration } from './hole_tools.ts'
 import type { AgentRole } from '../../enums/agent_role.ts'
 import { LABELS, type Label } from '../../enums/label.ts'
@@ -165,6 +170,11 @@ export function l4ModelConfigured(env: NodeJS.Dict<string> = process.env): boole
 /** 假后端已注入，或真模型档已设。CLI eval --qa/--replay 无此后端则跳过。 */
 export function l4BackendAvailable(env: NodeJS.Dict<string> = process.env): boolean {
   return hasInjectedSessionBackend() || l4ModelConfigured(env)
+}
+
+/** 单次会话调用硬超时。env TRACE_DISTILLER_SESSION_TIMEOUT_MS 可覆盖。 */
+export function resolveSessionTimeoutMs(env: NodeJS.Dict<string> = process.env): number {
+  return resolveTimeoutMs(env[SESSION_TIMEOUT_ENV], SESSION_CALL_TIMEOUT_MS)
 }
 
 export const L4_QA_JSON_KIND = 'l4_qa_v0' as const
@@ -823,14 +833,16 @@ function extractPiResult(
   return out
 }
 
-function wrapRetry(handle: PiSessionHandle): PiSessionHandle {
+function wrapRetry(handle: PiSessionHandle, timeoutMs: number = resolveSessionTimeoutMs()): PiSessionHandle {
+  const timed = <T>(label: string, op: () => Promise<T>): Promise<T> =>
+    withTimeout(withPiRetry(op), timeoutMs, label)
   return {
     role: handle.role,
     model: handle.model,
     tools: handle.tools,
-    prompt: (input) => withPiRetry(() => handle.prompt(input)),
-    attach: () => withPiRetry(() => handle.attach()),
-    activeToolNames: () => withPiRetry(() => handle.activeToolNames()),
+    prompt: (input) => timed(`session.prompt(${handle.role})`, () => handle.prompt(input)),
+    attach: () => timed(`session.attach(${handle.role})`, () => handle.attach()),
+    activeToolNames: () => timed(`session.activeToolNames(${handle.role})`, () => handle.activeToolNames()),
     dispose: () => handle.dispose(),
   }
 }
@@ -839,6 +851,7 @@ function wrapRetry(handle: PiSessionHandle): PiSessionHandle {
  * L4 与两洞共用的会话工厂。不算第三洞。eval 必须走这里，禁止自己 createAgentSession。
  * 生产默认 PiSessionBackend（createAgentSession + SessionManager.inMemory，无 codingTools）。
  * 测试注入 FakeSessionBackend。失败重试 PI_FAILURE_RETRY 次再向上抛。
+ * 每次 prompt/attach 有 SESSION_CALL_TIMEOUT_MS 硬超时（可 env 覆盖），避免 mint 无限挂起。
  */
 export function openSession(opts: SessionFactoryOpts): PiSessionHandle {
   const resolved: ResolvedSessionOpts = {

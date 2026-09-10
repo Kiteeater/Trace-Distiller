@@ -25,7 +25,7 @@ function tmp(): string {
   return mkdtempSync(join(tmpdir(), 'distiller-cli-'))
 }
 
-describe('cli', () => {
+describe('cli', { concurrency: 1 }, () => {
   afterEach(() => {
     setSessionBackend(undefined)
     resetLiveState()
@@ -60,6 +60,8 @@ describe('cli', () => {
     assert.match(help, /bench/)
     assert.match(help, /never averaged/)
     assert.match(help, /--fake-l4/)
+    assert.match(help, /--with-l4/)
+    assert.match(help, /Default is --no-llm/)
   })
 
   it('does not import pi, createAgentSession, or listen', () => {
@@ -223,15 +225,31 @@ describe('cli', () => {
 
   it('without --no-llm and without backend/env falls back to no_llm', async () => {
     const outDir = tmp()
-    const code = await runCli({
-      command: 'distill',
-      input_path: join(fixtures, 'no_llm_conservative.jsonl'),
-      out_dir: outDir,
-    })
-    assert.equal(code, EXIT_OK)
-    const jobs = list_jobs()
-    assert.equal(jobs.length, 1)
-    assert.equal(get_cut_progress(jobs[0]!.job_id).holes, 'skipped')
+    const prevL4 = process.env.TRACE_DISTILLER_MODEL_L4
+    const prevHoleA = process.env.TRACE_DISTILLER_MODEL_HOLE_A
+    const prevHoleB = process.env.TRACE_DISTILLER_MODEL_HOLE_B
+    delete process.env.TRACE_DISTILLER_MODEL_L4
+    delete process.env.TRACE_DISTILLER_MODEL_HOLE_A
+    delete process.env.TRACE_DISTILLER_MODEL_HOLE_B
+    setSessionBackend(undefined)
+    try {
+      const code = await runCli({
+        command: 'distill',
+        input_path: join(fixtures, 'no_llm_conservative.jsonl'),
+        out_dir: outDir,
+      })
+      assert.equal(code, EXIT_OK)
+      const jobs = list_jobs()
+      assert.equal(jobs.length, 1)
+      assert.equal(get_cut_progress(jobs[0]!.job_id).holes, 'skipped')
+    } finally {
+      if (prevL4 === undefined) delete process.env.TRACE_DISTILLER_MODEL_L4
+      else process.env.TRACE_DISTILLER_MODEL_L4 = prevL4
+      if (prevHoleA === undefined) delete process.env.TRACE_DISTILLER_MODEL_HOLE_A
+      else process.env.TRACE_DISTILLER_MODEL_HOLE_A = prevHoleA
+      if (prevHoleB === undefined) delete process.env.TRACE_DISTILLER_MODEL_HOLE_B
+      else process.env.TRACE_DISTILLER_MODEL_HOLE_B = prevHoleB
+    }
   })
 
   it('eval and report reconstruct metrics and html from sqlite after no_llm distill', async () => {
@@ -277,7 +295,14 @@ describe('cli', () => {
     } finally {
       process.stdout.write = origWrite
     }
-    const evalJson = JSON.parse(chunks.join('')) as {
+    const evalLine = chunks
+      .join('')
+      .split('\n')
+      .map((row) => row.trim())
+      .filter((row) => row.startsWith('{'))
+      .at(-1)
+    assert.ok(evalLine, `expected eval JSON, got ${JSON.stringify(chunks)}`)
+    const evalJson = JSON.parse(evalLine) as {
       compression_ratio: number
       rule_coverage: number
       fail_closed_count: number
@@ -292,6 +317,13 @@ describe('cli', () => {
     assert.match(evalJson.note, /L4/)
 
     const skipChunks: string[] = []
+    const prevL4 = process.env.TRACE_DISTILLER_MODEL_L4
+    const prevHoleA = process.env.TRACE_DISTILLER_MODEL_HOLE_A
+    const prevHoleB = process.env.TRACE_DISTILLER_MODEL_HOLE_B
+    delete process.env.TRACE_DISTILLER_MODEL_L4
+    delete process.env.TRACE_DISTILLER_MODEL_HOLE_A
+    delete process.env.TRACE_DISTILLER_MODEL_HOLE_B
+    setSessionBackend(undefined)
     process.stdout.write = ((chunk: string | Uint8Array) => {
       skipChunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
       return true
@@ -307,8 +339,21 @@ describe('cli', () => {
       assert.equal(skipCode, EXIT_OK)
     } finally {
       process.stdout.write = origWrite
+      if (prevL4 === undefined) delete process.env.TRACE_DISTILLER_MODEL_L4
+      else process.env.TRACE_DISTILLER_MODEL_L4 = prevL4
+      if (prevHoleA === undefined) delete process.env.TRACE_DISTILLER_MODEL_HOLE_A
+      else process.env.TRACE_DISTILLER_MODEL_HOLE_A = prevHoleA
+      if (prevHoleB === undefined) delete process.env.TRACE_DISTILLER_MODEL_HOLE_B
+      else process.env.TRACE_DISTILLER_MODEL_HOLE_B = prevHoleB
     }
-    const skipJson = JSON.parse(skipChunks.join('')) as { qa: number | null; replay: number | null; note: string }
+    const skipLine = skipChunks
+      .join('')
+      .split('\n')
+      .map((row) => row.trim())
+      .filter((row) => row.startsWith('{'))
+      .at(-1)
+    assert.ok(skipLine, `expected eval skip JSON, got ${JSON.stringify(skipChunks)}`)
+    const skipJson = JSON.parse(skipLine) as { qa: number | null; replay: number | null; note: string }
     assert.equal(skipJson.qa, null)
     assert.equal(skipJson.replay, null)
     assert.match(skipJson.note, /skipped/)
@@ -605,5 +650,60 @@ describe('cli', () => {
     const md = readFileSync(join(outDir, 'scoreboard.md'), 'utf8')
     assert.match(md, /short-fluff/)
     assert.match(md, /### notes/)
+  })
+
+  it('parseArgv reads --with-l4', () => {
+    const args = parseArgv(['bench', '--with-l4', '--dir', 'benchmark/datasets'])
+    assert.equal(args.command, 'bench')
+    assert.equal(args.with_l4, true)
+  })
+
+  it('bench defaults to no_llm even when mint env is set (no hang)', async () => {
+    const prevA = process.env.TRACE_DISTILLER_MODEL_HOLE_A
+    const prevL4 = process.env.TRACE_DISTILLER_MODEL_L4
+    process.env.TRACE_DISTILLER_MODEL_HOLE_A = 'macaron/macaron-v1-coding-venti'
+    process.env.TRACE_DISTILLER_MODEL_L4 = 'macaron/macaron-v1-coding-venti'
+    const chunks: string[] = []
+    const origWrite = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    const started = Date.now()
+    try {
+      const code = await runCli({
+        command: 'bench',
+        input_path: '',
+        datasets_dir: join(repoRoot, 'benchmark/datasets'),
+        // deliberately omit no_llm / with_l4 / fake_l4
+      })
+      assert.equal(code, EXIT_OK)
+    } finally {
+      process.stdout.write = origWrite
+      if (prevA === undefined) delete process.env.TRACE_DISTILLER_MODEL_HOLE_A
+      else process.env.TRACE_DISTILLER_MODEL_HOLE_A = prevA
+      if (prevL4 === undefined) delete process.env.TRACE_DISTILLER_MODEL_L4
+      else process.env.TRACE_DISTILLER_MODEL_L4 = prevL4
+    }
+    const elapsed = Date.now() - started
+    assert.ok(elapsed < 60_000, `bench must not hang on mint env; took ${elapsed}ms`)
+    const line = chunks
+      .join('')
+      .split('\n')
+      .map((row) => row.trim())
+      .filter((row) => row.startsWith('{'))
+      .at(-1)
+    assert.ok(line, `expected bench JSON, got ${JSON.stringify(chunks)}`)
+    const report = JSON.parse(line) as {
+      mode: string
+      l4: boolean
+      with_l4?: boolean
+      bins: { short: { samples: Array<{ notes?: string[] }> } }
+    }
+    assert.equal(report.mode, 'no_llm')
+    assert.equal(report.l4, false)
+    assert.equal(report.with_l4, false)
+    const noteBlob = (report.bins.short.samples[0]?.notes ?? []).join(' ')
+    assert.match(noteBlob, /l4 skipped: pass --with-l4/)
   })
 })

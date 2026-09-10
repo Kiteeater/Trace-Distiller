@@ -34,3 +34,12 @@ export const SKELETON_PASS_TOKEN_HINT = 2000
 
 /** pi 会话失败后额外重试次数；仍失败则 Fail-Closed Keep。已拍板：1。 */
 export const PI_FAILURE_RETRY = 1
+
+/**
+ * 单次 pi 会话调用（prompt/attach）硬超时毫秒数。
+ * bench / distill 有 mint env 时禁止无限挂起；可用 TRACE_DISTILLER_SESSION_TIMEOUT_MS 覆盖。
+ */
+export const SESSION_CALL_TIMEOUT_MS = 120_000
+
+/** 覆盖 SESSION_CALL_TIMEOUT_MS 的 env 名。 */
+export const SESSION_TIMEOUT_ENV = 'TRACE_DISTILLER_SESSION_TIMEOUT_MS'
