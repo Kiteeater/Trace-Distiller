@@ -12,10 +12,24 @@
         "tests/test_add.py"
       ],
       "task_hint": "Fix add.ts so 1+1 equals 2"
+    },
+    "mul-fix": {
+      "dir": "mul-fix",
+      "required_files": [
+        "mul.ts",
+        "tests/test_mul.py"
+      ],
+      "verify": [
+        "python3",
+        "tests/test_mul.py"
+      ],
+      "task_hint": "Fix mul.ts so 3*3 equals 9"
     }
   },
   "trace_map": {
     "claude-code:sess-no-llm": "add-fix",
-    "claude-code:sess-short-fluff": "add-fix"
+    "claude-code:sess-short-fluff": "add-fix",
+    "claude-code:sess-long-debug": "add-fix",
+    "claude-code:sess-multi-dead": "add-fix"
   }
 }
