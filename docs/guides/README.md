@@ -32,6 +32,7 @@
 | 文档 | 一句话 | 从哪路来 | 状态 |
 |------|--------|----------|------|
 | [users-and-surfaces.md](./users-and-surfaces.md) | 两类读者；训练 CLI；复盘 CLI + 只读 live（盯 Distiller 裁剪，不是对方 agent）+ 事后 HTML | 用户面 | 已收口（058e32e） |
+| [maturity.md](./maturity.md) | 绿/黄/红：离线蒸馏、fake-l4+m1、mint 重放 vs SFT/真 GT（红=M2） | 状态 | **过夜可用** |
 | [tools.md](./tools.md) | **蒸馏洞三个工具稍后拍板** + Live 复盘工具闭集（已拍） | 用户面 | 洞工具草案；live 已收口 |
 | [ingest-and-preprocess.md](./ingest-and-preprocess.md) | 过门之后：切段 → 规则 → 未决才进洞；GT / 锚点 / sig / token / 切段默认已收 | 用户面 | 已收口（058e32e） |
 | [agent-gateway.md](./agent-gateway.md) | 「Agent Gateway」= 离线 Trace 接入门面，不是在线网关，也不是 live 页 | 评测 / 接入 | 已收口（058e32e） |

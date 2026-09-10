@@ -11,6 +11,7 @@
 - 装依赖：`bun install`（唯一锁文件 `bun.lock`）
 - 跑产物：`node`（不要用 bun 当运行时跑产物）
 - 类型检查：`bun run typecheck` 或 `tsc --noEmit`
+- 快捷：`bun run distill:example`、`bun run bench:fake` / `bun run bench:m1`（= `bench --no-llm --fake-l4`）；成熟度见 [docs/guides/maturity.md](./docs/guides/maturity.md)
 - **不要**提交 `package-lock.json` / `yarn.lock` / `pnpm-lock.yaml`
 
 入口：
