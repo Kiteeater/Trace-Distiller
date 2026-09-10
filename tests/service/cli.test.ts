@@ -625,18 +625,19 @@ describe('cli', { concurrency: 1 }, () => {
       .filter((row) => row.startsWith('{'))
       .at(-1)
     assert.ok(line, `expected bench JSON, got ${JSON.stringify(chunks)}`)
+    type Sample = {
+      trace_id: string
+      composite: number | null
+      metrics: { replay: { value: number | null; status: string } }
+      notes?: string[]
+    }
     const report = JSON.parse(line) as {
       fake_l4?: boolean
       l4?: boolean
       bins: {
-        short: {
-          samples: Array<{
-            trace_id: string
-            composite: number | null
-            metrics: { replay: { value: number | null; status: string } }
-            notes?: string[]
-          }>
-        }
+        short: { samples: Sample[]; mean_composite: number | null }
+        long: { samples: Sample[]; mean_composite: number | null }
+        multi_dead_end: { samples: Sample[]; mean_composite: number | null }
       }
     }
     assert.equal(report.fake_l4, true)
@@ -647,8 +648,22 @@ describe('cli', { concurrency: 1 }, () => {
     assert.equal(fluff!.metrics.replay.value, 1)
     assert.ok(fluff!.composite !== null && fluff!.composite > 0, `composite=${String(fluff!.composite)}`)
     assert.ok((fluff!.notes ?? []).some((n) => /verify ok|heal/.test(n)))
+    for (const bin of ['long', 'multi_dead_end'] as const) {
+      const sample = report.bins[bin].samples[0]
+      assert.ok(sample, `missing ${bin} sample`)
+      assert.equal(sample!.metrics.replay.status, 'pass', bin)
+      assert.equal(sample!.metrics.replay.value, 1, bin)
+      assert.ok(
+        sample!.composite !== null && sample!.composite > 0,
+        `${bin} composite=${String(sample!.composite)} notes=${(sample!.notes ?? []).join('; ')}`,
+      )
+    }
+    assert.ok((report.bins.long.mean_composite ?? 0) > 0)
+    assert.ok((report.bins.multi_dead_end.mean_composite ?? 0) > 0)
     const md = readFileSync(join(outDir, 'scoreboard.md'), 'utf8')
     assert.match(md, /short-fluff/)
+    assert.match(md, /long-debug/)
+    assert.match(md, /multi-dead/)
     assert.match(md, /### notes/)
   })
 

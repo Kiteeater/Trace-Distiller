@@ -45,16 +45,36 @@ function card(id: string, tool: string, head: string) {
 }
 
 describe("real replay workspace wiring", () => {
-  it("resolves add-fix fixture for short fluff / add-fix traces", () => {
+  it("resolves add-fix fixture for short / long / multi_dead_end traces", () => {
+    for (const trace_id of [
+      FLUFF_TRACE,
+      "claude-code:sess-no-llm",
+      "claude-code:sess-long-debug",
+      "claude-code:sess-multi-dead",
+    ]) {
+      const resolved = resolveReplayWorkspace({ trace_id, repo_root: repoRoot })
+      assert.ok(resolved, trace_id)
+      assert.equal(resolved!.key, "add-fix", trace_id)
+      assert.ok(workspaceReady(resolved!.abs_dir, resolved!.entry.required_files), trace_id)
+    }
     const resolved = resolveReplayWorkspace({ trace_id: FLUFF_TRACE, repo_root: repoRoot })
-    assert.ok(resolved)
-    assert.equal(resolved!.key, "add-fix")
-    assert.ok(workspaceReady(resolved!.abs_dir, resolved!.entry.required_files))
     const work = materializeReplayWorkspace(resolved!.abs_dir)
     try {
       assert.ok(workspaceReady(work, resolved!.entry.required_files))
       const broken = runWorkspaceVerify(work, resolved!.entry.verify ?? [])
       assert.equal(broken.ok, false, "fixture starts broken")
+    } finally {
+      disposeMaterializedWorkspace(work)
+    }
+  })
+
+  it("mul-fix workspace is ready and starts broken", () => {
+    const abs = join(repoRoot, "benchmark/workspaces/mul-fix")
+    assert.ok(workspaceReady(abs, ["mul.ts", "tests/test_mul.py"]))
+    const work = materializeReplayWorkspace(abs)
+    try {
+      const broken = runWorkspaceVerify(work, ["python3", "tests/test_mul.py"])
+      assert.equal(broken.ok, false, "mul-fix starts broken")
     } finally {
       disposeMaterializedWorkspace(work)
     }

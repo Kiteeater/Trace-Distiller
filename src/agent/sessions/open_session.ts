@@ -475,16 +475,30 @@ export function defaultFakeReplayJson(input?: SessionPromptInput): {
 
 
 /**
- * Deterministic CI heal for known fixtures (add-fix: a - b → a + b).
+ * Deterministic CI heal for known fixtures:
+ * - add-fix: a - b → a + b in add.ts
+ * - mul-fix: a + b → a * b in mul.ts
  * Real mint must edit via coding tools; this only makes FakeSessionBackend + verify gate pass.
  */
 export function applyFakeReplayHeal(cwd: string): boolean {
-  const target = join(cwd, 'add.ts')
-  if (!existsSync(target)) return false
-  const before = readFileSync(target, 'utf8')
-  if (!before.includes('a - b')) return false
-  writeFileSync(target, before.replaceAll('a - b', 'a + b'), 'utf8')
-  return true
+  let healed = false
+  const addTarget = join(cwd, 'add.ts')
+  if (existsSync(addTarget)) {
+    const before = readFileSync(addTarget, 'utf8')
+    if (before.includes('a - b')) {
+      writeFileSync(addTarget, before.replaceAll('a - b', 'a + b'), 'utf8')
+      healed = true
+    }
+  }
+  const mulTarget = join(cwd, 'mul.ts')
+  if (existsSync(mulTarget)) {
+    const before = readFileSync(mulTarget, 'utf8')
+    if (before.includes('a + b')) {
+      writeFileSync(mulTarget, before.replaceAll('a + b', 'a * b'), 'utf8')
+      healed = true
+    }
+  }
+  return healed
 }
 
 export function defaultFakeReviewJson(input: SessionPromptInput): {
