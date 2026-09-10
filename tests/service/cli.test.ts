@@ -59,6 +59,7 @@ describe('cli', () => {
     assert.match(help, /Keys are never logged/)
     assert.match(help, /bench/)
     assert.match(help, /never averaged/)
+    assert.match(help, /--fake-l4/)
   })
 
   it('does not import pi, createAgentSession, or listen', () => {
@@ -371,9 +372,11 @@ describe('cli', () => {
     assert.equal(liveArgs.command, 'live-dump')
     assert.equal(liveArgs.sqlite_path, 'db.sqlite')
     assert.equal(liveArgs.out_dir, 'live')
-    const benchArgs = parseArgv(['bench', '--dir', 'benchmark/datasets'])
+    const benchArgs = parseArgv(['bench', '--dir', 'benchmark/datasets', '--fake-l4', '--no-llm'])
     assert.equal(benchArgs.command, 'bench')
     assert.equal(benchArgs.datasets_dir, 'benchmark/datasets')
+    assert.equal(benchArgs.fake_l4, true)
+    assert.equal(benchArgs.no_llm, true)
   })
 
   it('without --no-llm and injected FakeSessionBackend runs with_llm', async () => {
@@ -520,6 +523,7 @@ describe('cli', () => {
         command: 'bench',
         input_path: '',
         datasets_dir: join(repoRoot, 'benchmark/datasets'),
+        no_llm: true,
       })
       assert.equal(code, EXIT_OK)
     } finally {
@@ -546,5 +550,60 @@ describe('cli', () => {
     assert.equal(report.bins.short.samples[0]?.gold, 'independent')
     assert.equal(report.overall, undefined)
     assert.doesNotMatch(line, /"overall"/)
+  })
+
+  it('bench --no-llm --fake-l4 yields fluff composite > 0 without mint', async () => {
+    const outDir = tmp()
+    const chunks: string[] = []
+    const origWrite = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    try {
+      const code = await runCli({
+        command: 'bench',
+        input_path: '',
+        datasets_dir: join(repoRoot, 'benchmark/datasets'),
+        out_dir: outDir,
+        no_llm: true,
+        fake_l4: true,
+      })
+      assert.equal(code, EXIT_OK)
+    } finally {
+      process.stdout.write = origWrite
+    }
+    const line = chunks
+      .join('')
+      .split('\n')
+      .map((row) => row.trim())
+      .filter((row) => row.startsWith('{'))
+      .at(-1)
+    assert.ok(line, `expected bench JSON, got ${JSON.stringify(chunks)}`)
+    const report = JSON.parse(line) as {
+      fake_l4?: boolean
+      l4?: boolean
+      bins: {
+        short: {
+          samples: Array<{
+            trace_id: string
+            composite: number | null
+            metrics: { replay: { value: number | null; status: string } }
+            notes?: string[]
+          }>
+        }
+      }
+    }
+    assert.equal(report.fake_l4, true)
+    assert.equal(report.l4, true)
+    const fluff = report.bins.short.samples.find((s) => s.trace_id.includes('short-fluff'))
+    assert.ok(fluff, 'missing fluff sample')
+    assert.equal(fluff!.metrics.replay.status, 'pass')
+    assert.equal(fluff!.metrics.replay.value, 1)
+    assert.ok(fluff!.composite !== null && fluff!.composite > 0, `composite=${String(fluff!.composite)}`)
+    assert.ok((fluff!.notes ?? []).some((n) => /verify ok|heal/.test(n)))
+    const md = readFileSync(join(outDir, 'scoreboard.md'), 'utf8')
+    assert.match(md, /short-fluff/)
+    assert.match(md, /### notes/)
   })
 })

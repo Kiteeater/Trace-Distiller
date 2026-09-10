@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { estimateTokens } from '../../utils/tokens.ts'
@@ -447,10 +447,13 @@ export function defaultFakeReplayJson(input?: SessionPromptInput): {
         note: `fake backend; workspace cwd missing: ${cwd}`,
       }
     }
+    const healed = applyFakeReplayHeal(cwd)
     return {
       kind: L4_REPLAY_JSON_KIND,
       success: true,
-      note: 'fake backend; workspace cwd present (no real edit)',
+      note: healed
+        ? 'fake backend; applied deterministic workspace heal (CI only; not mint fidelity)'
+        : 'fake backend; workspace cwd present (no heal needed)',
     }
   }
   return {
@@ -458,6 +461,20 @@ export function defaultFakeReplayJson(input?: SessionPromptInput): {
     success: true,
     note: 'fake backend; real replay success needs repo+model',
   }
+}
+
+
+/**
+ * Deterministic CI heal for known fixtures (add-fix: a - b → a + b).
+ * Real mint must edit via coding tools; this only makes FakeSessionBackend + verify gate pass.
+ */
+export function applyFakeReplayHeal(cwd: string): boolean {
+  const target = join(cwd, 'add.ts')
+  if (!existsSync(target)) return false
+  const before = readFileSync(target, 'utf8')
+  if (!before.includes('a - b')) return false
+  writeFileSync(target, before.replaceAll('a - b', 'a + b'), 'utf8')
+  return true
 }
 
 export function defaultFakeReviewJson(input: SessionPromptInput): {

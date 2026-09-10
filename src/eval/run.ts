@@ -1,4 +1,4 @@
-import { l4BackendAvailable } from '../agent/sessions/open_session.ts'
+import { l4BackendAvailable, hasInjectedSessionBackend } from '../agent/sessions/open_session.ts'
 import { runQa, type QaItem } from '../agent/sessions/l4_qa.ts'
 import { runReplay } from '../agent/sessions/l4_replay.ts'
 import type { IntentHypothesis } from '../types/agent_view.ts'
@@ -8,6 +8,7 @@ import {
   disposeMaterializedWorkspace,
   materializeReplayWorkspace,
   resolveReplayWorkspace,
+  runWorkspaceVerify,
   workspaceReady,
 } from './workspace.ts'
 
@@ -41,6 +42,8 @@ export interface OptionalL4Result {
 /**
  * CLI eval 的 L4 开关。无后端则跳过并注明，不假装跑过。
  * Replay：若 manifest 映射到真实小仓，则物化临时 cwd 再跑 runReplay。
+ * QA / replay 解析失败记 0 + note（可观察，不拖垮整榜）。
+ * 有 verify[] 时成功后硬跑闸门；失败则 replay=0。
  */
 export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4Result> {
   const notes: string[] = []
@@ -52,12 +55,20 @@ export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4R
     if (!available) {
       notes.push(`qa ${L4_SKIP_NOTE}`)
     } else {
-      const out = await runQa({
-        intent: input.intent,
-        playback: input.playback,
-        ...(input.questions !== undefined ? { questions: input.questions } : {}),
-      })
-      qa = qaRatio(out.score)
+      try {
+        const out = await runQa({
+          intent: input.intent,
+          playback: input.playback,
+          ...(input.questions !== undefined ? { questions: input.questions } : {}),
+        })
+        qa = qaRatio(out.score)
+        if (qa < 1) {
+          notes.push(`qa partial: correct=${out.score.correct}/${out.score.answered}`)
+        }
+      } catch (err) {
+        qa = 0
+        notes.push(`qa failed: ${errMessage(err)}`)
+      }
     }
   }
 
@@ -80,19 +91,45 @@ export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4R
         const work = materializeReplayWorkspace(resolved.abs_dir)
         try {
           const taskText = input.intent.text || resolved.entry.task_hint || ''
-          const out = await runReplay({
-            task: {
-              trace_id: input.playback.trace_id,
-              text: taskText,
+          let modelSuccess = false
+          try {
+            const out = await runReplay({
+              task: {
+                trace_id: input.playback.trace_id,
+                text: taskText,
+                cwd: work,
+              },
+              playback: input.playback,
               cwd: work,
-            },
-            playback: input.playback,
-            cwd: work,
-          })
-          replayScore = out.success ? 1 : 0
-          if (out.note !== undefined) notes.push(`replay ${out.note}`)
-          if (resolved.entry.verify !== undefined) {
-            notes.push(`replay verify (real mint): ${resolved.entry.verify.join(' ')}`)
+            })
+            modelSuccess = out.success
+            if (out.note !== undefined) notes.push(`replay ${out.note}`)
+          } catch (err) {
+            modelSuccess = false
+            notes.push(`replay failed: ${errMessage(err)}`)
+          }
+
+          const verifyArgv = resolved.entry.verify
+          if (verifyArgv !== undefined && verifyArgv.length > 0) {
+            const verified = runWorkspaceVerify(work, verifyArgv)
+            notes.push(`replay ${verified.note}`)
+            if (!modelSuccess) {
+              replayScore = 0
+            } else if (!verified.ok) {
+              replayScore = 0
+              notes.push(
+                hasInjectedSessionBackend()
+                  ? 'replay verify gate failed after fake claim (composite replay=0)'
+                  : 'replay verify gate failed after model claim (real mint must pass tests)',
+              )
+            } else {
+              replayScore = 1
+            }
+          } else {
+            replayScore = modelSuccess ? 1 : 0
+            notes.push(
+              'replay verify skipped: no verify[] in workspace manifest (document real mint verify locally)',
+            )
           }
         } finally {
           disposeMaterializedWorkspace(work)
@@ -102,4 +139,8 @@ export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4R
   }
 
   return { qa, replay: replayScore, notes }
+}
+
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
