@@ -140,14 +140,20 @@ Score = 压缩率得分 × 关键步召回率 × 重放成功率
 评分实现：`src/eval/benchmark.ts`（门槛、乘法分、分档表）。CLI 只扫盘、蒸馏、打印 JSON。
 
 ```text
-node script/run-distill.ts bench --dir benchmark/datasets
+# 推荐：无 mint 挂起风险，假 L4 打出 composite>0
+node script/run-distill.ts bench --no-llm --fake-l4
+
+# 真 mint（opt-in；会话硬超时 SESSION_CALL_TIMEOUT_MS）
+node script/run-distill.ts bench --with-l4
 ```
 
-- 扫 `short/` `long/` `multi_dead_end/` 下的 `*.jsonl`，默认 `no_llm` 蒸馏。
+- 扫 `short/` `long/` `multi_dead_end/` 下的 `*.jsonl`。**默认 `no_llm`**（即使 `.env` 有 mint 也不自动连网），避免过夜挂起。
+- `--fake-l4`：注入 `FakeSessionBackend`（确定性 heal + verify），三档均可出现 `replay=1` / `composite>0`。
+- `--with-l4`：才启用真 mint L4 / with_llm。
+- **composite**：六项全过才算分，否则 `0`；有 skipped 且无 fail → `null`。公式 = 压缩率得分 × 关键步召回 × 重放（乘法）。三档**禁止合成平均**。
 - 金标：先读 `data/raw/<trace_id>.key-decisions.json`，没有再读样本旁的 `<stem>.key-decisions.json`。没有金标 → 关键步召回 `skipped`，M1 **不算硬挂**。
-- 六项不全及格（有 fail）→ 该样本 `composite` 为 **0**。缺项 skipped 且无 fail → `composite` 为 `null`。
-- stdout 一行 JSON：**三档分表**。禁止把短/长/多死胡同合成一个平均分。
-- M1 不强求满数据集。仓库只带 `datasets/short/add-fix.jsonl`（来自 `examples/`）+ 可选金标。
+- stdout 一行 JSON + `benchmark/out/scoreboard.md`。
+- 现有样本：`short/`（add-fix + fluff-heavy）、`long/long-debug`、`multi_dead_end/many-retries`；workspaces 见 `manifest.json`。
 
 ```text
 benchmark/
@@ -174,12 +180,13 @@ benchmark/
 ```text
 benchmark/workspaces/
   manifest.json          # trace_id → workspace key
-  add-fix/              # 短样共用的真实小仓（坏掉的 add.ts + 验证脚本）
+  add-fix/              # short/long/multi 共用小仓（坏掉的 add.ts + verify）
+  mul-fix/              # 第二小仓（坏掉的 mul.ts；尚未挂 track 样本）
 ```
 
-- `runOptionalL4` / `bench` 会解析 manifest，**物化临时副本** 作为 replay cwd，并给 `l4_replay` 挂 coding tools。
-- 假后端：cwd 存在即可 `success:true`（单测证明 composite>0 通路）。
-- **真 mint**：需 `TRACE_DISTILLER_MODEL_L4` + gateway；模型须在副本里改文件并跑 manifest `verify` 后再回 JSON。详见 `benchmark/workspaces/add-fix/README.md`。
+- `runOptionalL4` / `bench` 解析 manifest，**物化临时副本** 作 replay cwd；成功与否经 `verify[]` 闸门。
+- `--fake-l4`：确定性 heal（`add.ts` / `mul.ts`）+ verify，证明 composite 通路。
+- **真 mint**：`TRACE_DISTILLER_MODEL_L4` + gateway + `bench --with-l4`；模型须在副本里改文件并通过 verify。详见各 workspace README。
 
 ## 相关文档
 

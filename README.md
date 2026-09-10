@@ -2,7 +2,7 @@
 
 > Agent 一次任务可能留下几百步记录。本工具只处理「最终做对了」的那条，把它剪短：训练能用，人也能看懂。
 
-**当前状态**：TypeScript 流水线 + 两个 agent 洞。无洞（`--no-llm`）与假后端带洞两条通路可跑；自包含 HTML 报告；SQLite 记段 / 打标 / 凭证 / 指标；只读 live dump 页（`file://`，进程内 job 表）。可选本机 Unix domain socket（`--live-socket`，默认关闭）。真模型 L4 重放/QA **尚未接通**。
+**当前状态**：TypeScript 流水线 + 两个 agent 洞。无洞（`--no-llm`）与假后端带洞两条通路可跑；自包含 HTML 报告；SQLite 记段 / 打标 / 凭证 / 指标；只读 live dump 页（`file://`，进程内 job 表）。可选本机 Unix domain socket（`--live-socket`，默认关闭）。L4 接口已接通：`--fake-l4` 可本地打出 composite>0；真 mint 用 `--with-l4`（会话有硬超时）。
 
 编排是纯 TypeScript 流水线，不是 runtime agent。LLM 只出现在洞 A（骨架）和洞 B（逐窗打标）。分层见 [docs/architecture.md](./docs/architecture.md)。
 
@@ -22,6 +22,48 @@ bun run test
 
 ---
 
+## 一夜可跑通的路径（推荐）
+
+按顺序跑，不碰密钥正文：
+
+```bash
+bun install
+bun run typecheck
+bun run test
+
+# 1) 无洞蒸馏示例
+node script/run-distill.ts distill examples/add-fix.jsonl \
+  --no-llm \
+  --sqlite /tmp/distiller.sqlite \
+  --report /tmp/add-fix.report.html \
+  --live-dump /tmp/distiller-live
+# 打开 /tmp/distiller-live/live.html
+
+# 2) 分档记分板（默认 no_llm，有 mint .env 也不会挂）
+node script/run-distill.ts bench --no-llm --fake-l4
+# → stdout JSON + benchmark/out/scoreboard.md
+```
+
+**composite（复合分）是什么？** 六项门槛全过才算分，否则该样本为 `0`；有 skipped 且无 fail → `null`。算分：`压缩率得分 × 关键步召回 × 重放成功率`（乘法，堵「全删 / 全留」）。三档 `short` / `long` / `multi_dead_end` **分开报，禁止合成平均**。
+
+**mint 环境变量（写在 gitignored `.env`，不要提交密钥）：**
+
+```bash
+cp .env.example .env
+# TRACE_DISTILLER_API_BASE=https://mint-alpha.macaron.im/v1
+# TRACE_DISTILLER_API_KEY=          # 仅本机
+# TRACE_DISTILLER_PROVIDER=macaron
+# TRACE_DISTILLER_MODEL_HOLE_A=macaron/macaron-v1-coding-venti
+# TRACE_DISTILLER_MODEL_HOLE_B=macaron/macaron-v1-coding-venti
+# TRACE_DISTILLER_MODEL_L4=macaron/macaron-v1-coding-venti
+# 可选：TRACE_DISTILLER_SESSION_TIMEOUT_MS=120000
+```
+
+真 mint L4（opt-in，防挂）：`bench --with-l4`。日常 CI / 过夜用 `bench --no-llm --fake-l4`。
+
+
+---
+
 ## 怎么跑
 
 入口：
@@ -31,7 +73,7 @@ node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite pa
 node script/run-distill.ts eval <trace_id> --sqlite path
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
-node script/run-distill.ts bench [--dir benchmark/datasets]
+node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm] [--fake-l4] [--with-l4]
 ```
 
 `package.json` 里也可以：`bun run distill -- distill …`（仍是 node 跑 `script/run-distill.ts`）。
@@ -56,9 +98,9 @@ node script/run-distill.ts eval <trace_id> --sqlite /tmp/distiller.sqlite
 node script/run-distill.ts report <trace_id> --sqlite /tmp/distiller.sqlite --out /tmp/from-db.html
 ```
 
-`eval` 读压缩率、规则覆盖、LLM 段占比、Fail-Closed 数。`replay` / QA **不会跑**：需要真模型 L4（`TRACE_DISTILLER_MODEL_L4`），不要把空壳当成已接通。
+`eval` 读压缩率、规则覆盖、LLM 段占比、Fail-Closed 数。加 `--qa` / `--replay` 且设了 `TRACE_DISTILLER_MODEL_L4`（或注入假后端）才跑 L4；会话有硬超时。
 
-`bench` 扫 `benchmark/datasets/{short,long,multi_dead_end}`，stdout 打 JSON 分档表。三档禁止合并平均。无金标则召回 skipped（M1 不硬挂）。M1 不强求满数据集。
+`bench` 默认 `no_llm`（即使有 mint env 也不挂）。`--fake-l4` 走假后端打分；`--with-l4` 才启用真 mint。扫 `benchmark/datasets/{short,long,multi_dead_end}`，stdout 打 JSON 分档表。三档禁止合并平均。无金标则召回 skipped（M1 不硬挂）。
 
 ### 只读 live 页（Distiller 裁剪，不是对方 agent）
 
