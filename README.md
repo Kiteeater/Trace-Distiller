@@ -31,7 +31,7 @@ bun install
 bun run typecheck
 bun run test
 
-# 1) 无洞蒸馏示例
+# 1) 无洞蒸馏示例（或：bun run distill:example）
 node script/run-distill.ts distill examples/add-fix.jsonl \
   --no-llm \
   --sqlite /tmp/distiller.sqlite \
@@ -41,6 +41,7 @@ node script/run-distill.ts distill examples/add-fix.jsonl \
 
 # 2) 分档记分板（默认 no_llm，有 mint .env 也不会挂）
 node script/run-distill.ts bench --no-llm --fake-l4
+# 或：bun run bench:fake  /  bun run bench:m1
 # → stdout JSON + benchmark/out/scoreboard.md
 ```
 
@@ -78,7 +79,7 @@ node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
 node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm] [--fake-l4] [--with-l4]
 ```
 
-`package.json` 里也可以：`bun run distill -- distill …`（仍是 node 跑 `script/run-distill.ts`）。
+`package.json` 快捷脚本：`bun run distill -- distill …`、`bun run distill:example`、`bun run bench:fake` / `bun run bench:m1`（仍是 node 跑 `script/run-distill.ts`）。
 
 ### 无洞（演示默认）
 
@@ -161,6 +162,7 @@ Agent 干成一件事，过程里往往有大量试错、重复读文件、确�
 ## 文档
 
 - [CONTEXT.md](./CONTEXT.md) — 产品用词
+- [docs/guides/maturity.md](./docs/guides/maturity.md) — 绿/黄/红成熟度（什么能过夜跑、什么是 M2）
 - [docs/architecture.md](./docs/architecture.md) — 流水线 + 两个 agent 洞
 - [docs/modules/](./docs/modules/) — 模块契约
 - [AGENTS.md](./AGENTS.md) — 工程规则（给写代码的人）
