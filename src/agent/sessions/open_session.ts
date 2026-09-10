@@ -1,5 +1,6 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { estimateTokens } from '../../utils/tokens.ts'
 import { PI_FAILURE_RETRY } from '../../constant/window.ts'
 import { resolvePiToolRegistration } from './hole_tools.ts'
 import type { AgentRole } from '../../enums/agent_role.ts'
@@ -596,7 +597,7 @@ class PiSessionHandleImpl implements PiSessionHandle {
     const session = await this.ensureSession()
     const composed = composeSessionPrompt(input)
     await session.prompt(composed)
-    const extracted = extractPiResult(session.messages)
+    const extracted = extractPiResult(session.messages, this.role)
     let json: unknown | null = extracted.json
     if (json === null && extracted.text.trim().length > 0) {
       try {
@@ -605,11 +606,22 @@ class PiSessionHandleImpl implements PiSessionHandle {
         json = null
       }
     }
+    let usage = extracted.usage
+    if (usage === undefined || usage.input_tokens + usage.output_tokens === 0) {
+      usage = {
+        role: this.role,
+        input_tokens: estimateTokens(composed),
+        output_tokens: Math.max(
+          estimateTokens(extracted.text),
+          extracted.tool_calls.length * 16,
+        ),
+      }
+    }
     return {
       text: extracted.text,
       json,
       tool_calls: extracted.tool_calls,
-      usage: extracted.usage ?? { role: this.role, input_tokens: 0, output_tokens: 0 },
+      usage,
     }
   }
 
@@ -704,7 +716,10 @@ function tryResolvePiModel(getModelFn: (provider: string, id: string) => unknown
   }
 }
 
-function extractPiResult(messages: readonly unknown[]): {
+function extractPiResult(
+  messages: readonly unknown[],
+  role: AgentRole,
+): {
   text: string
   json: unknown | null
   tool_calls: SessionToolCall[]
@@ -712,9 +727,26 @@ function extractPiResult(messages: readonly unknown[]): {
 } {
   const texts: string[] = []
   const tool_calls: SessionToolCall[] = []
+  let input_tokens = 0
+  let output_tokens = 0
+  let sawUsage = false
   for (const raw of messages) {
     if (typeof raw !== 'object' || raw === null) continue
     const msg = raw as Record<string, unknown>
+    const usageRaw = msg.usage
+    if (typeof usageRaw === 'object' && usageRaw !== null) {
+      const u = usageRaw as Record<string, unknown>
+      const inp = u.input_tokens ?? u.inputTokens ?? u.prompt_tokens
+      const out = u.output_tokens ?? u.outputTokens ?? u.completion_tokens
+      if (typeof inp === 'number' && Number.isFinite(inp)) {
+        input_tokens += inp
+        sawUsage = true
+      }
+      if (typeof out === 'number' && Number.isFinite(out)) {
+        output_tokens += out
+        sawUsage = true
+      }
+    }
     if (msg.role !== 'assistant') continue
     const content = msg.content
     if (typeof content === 'string') {
@@ -732,7 +764,16 @@ function extractPiResult(messages: readonly unknown[]): {
       }
     }
   }
-  return { text: texts.join('\n'), json: null, tool_calls }
+  const out: {
+    text: string
+    json: unknown | null
+    tool_calls: SessionToolCall[]
+    usage?: TokenUsage
+  } = { text: texts.join('\n'), json: null, tool_calls }
+  if (sawUsage) {
+    out.usage = { role, input_tokens, output_tokens }
+  }
+  return out
 }
 
 function wrapRetry(handle: PiSessionHandle): PiSessionHandle {

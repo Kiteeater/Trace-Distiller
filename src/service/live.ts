@@ -20,7 +20,7 @@ export const LIVE_TOOL_NAMES = [
 
 export type LiveToolName = (typeof LIVE_TOOL_NAMES)[number]
 
-export type StageState = 'pending' | 'running' | 'done' | 'skipped'
+export type StageState = 'pending' | 'running' | 'done' | 'skipped' | 'error'
 
 export interface DistillJobSummary {
   job_id: string
