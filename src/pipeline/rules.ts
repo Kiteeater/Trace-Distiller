@@ -153,10 +153,12 @@ function applySimilarRetry(
           decision(member.id, 'dead_end', RULE_SIMILAR_RETRY, laterWritten.get(member.id)),
         )
       }
+      // Cluster rep is always dead_end once members exist. A later write/new sig
+      // (e.g. the fixing Edit) is a separate segment and stays unresolved for hole B /
+      // Fail-Closed Keep — do not leave the full first failure unresolved, or short
+      // add-fix-class traces keep the expensive error blob under no_llm.
       rep.rep_of = null
-      if (!hasFollowup(rep, segments)) {
-        resolved.set(rep.id, decision(rep.id, 'dead_end', RULE_SIMILAR_RETRY, laterWritten.get(rep.id)))
-      }
+      resolved.set(rep.id, decision(rep.id, 'dead_end', RULE_SIMILAR_RETRY, laterWritten.get(rep.id)))
     }
   }
 }

@@ -89,14 +89,18 @@ describe('orchestrator no_llm', () => {
         assert.equal(entry?.source.name, d.rule_name)
       }
       if (d.label === 'dead_end') {
-        assert.equal(
-          out.plan.collapsed.some((c) => c.segment_id === d.segment_id),
-          true,
-          d.segment_id,
-        )
         const entry = out.warrant.entries.find((e) => e.segment_id === d.segment_id)
-        assert.equal(entry?.action, 'collapse')
-        assert.ok((entry?.dead_end_summary ?? '').length > 0)
+        assert.ok(entry?.action === 'collapse' || entry?.action === 'drop', d.segment_id)
+        if (entry?.action === 'collapse') {
+          assert.equal(
+            out.plan.collapsed.some((c) => c.segment_id === d.segment_id),
+            true,
+            d.segment_id,
+          )
+          assert.ok((entry.dead_end_summary ?? '').length > 0)
+        } else {
+          assert.equal(out.plan.dropped.includes(d.segment_id), true, d.segment_id)
+        }
       }
     }
 
@@ -234,10 +238,13 @@ describe('orchestrator with_llm', () => {
         assert.equal(out.plan.dropped.includes(d.segment_id), true)
       }
       if (d.label === 'dead_end') {
-        assert.equal(
-          out.plan.collapsed.some((c) => c.segment_id === d.segment_id),
-          true,
-        )
+        const entry = out.warrant.entries.find((e) => e.segment_id === d.segment_id)
+        assert.ok(entry?.action === 'collapse' || entry?.action === 'drop', d.segment_id)
+        if (entry?.action === 'collapse') {
+          assert.equal(out.plan.collapsed.some((c) => c.segment_id === d.segment_id), true)
+        } else {
+          assert.equal(out.plan.dropped.includes(d.segment_id), true)
+        }
       }
     }
 

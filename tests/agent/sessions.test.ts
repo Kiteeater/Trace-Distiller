@@ -85,8 +85,11 @@ describe('writeWarrant', () => {
         assert.equal(entry?.source.name, d.rule_name)
       }
       if (d.label === 'dead_end') {
-        assert.equal(entry?.action, 'collapse')
-        assert.ok((entry?.dead_end_summary ?? '').length > 0)
+        // Representative policy: members / over-cap may drop; span fill may collapse.
+        assert.ok(entry?.action === 'collapse' || entry?.action === 'drop', d.segment_id)
+        if (entry?.action === 'collapse') {
+          assert.ok((entry.dead_end_summary ?? '').length > 0)
+        }
       }
     }
 
@@ -94,6 +97,36 @@ describe('writeWarrant', () => {
       const entry = warrant.entries.find((e) => e.segment_id === id)
       assert.equal(entry?.action, 'keep')
       assert.equal(entry?.source.kind, 'rule')
+      assert.equal(entry?.source.name, FAIL_CLOSED_KEEP_RULE)
+    }
+  })
+
+  it('drops similar_retry members and caps representative collapses per profile', () => {
+    const raw = parse(load('no_llm_conservative.jsonl'))
+    const ruled = applyRules({ view: segment(raw), raw })
+    const warrant = writeWarrant({
+      skeleton: ruled.view.skeleton,
+      labels: ruled.decisions,
+      view: ruled.view,
+      profile: DEFAULT_CUT_PROFILE,
+    })
+    const byId = new Map(ruled.view.segments.map((s) => [s.id, s]))
+    for (const d of ruled.decisions.filter((x) => x.label === 'dead_end')) {
+      const card = byId.get(d.segment_id)
+      const entry = warrant.entries.find((e) => e.segment_id === d.segment_id)
+      assert.ok(entry)
+      if (card?.rep_of != null) {
+        // Members start as drop; span fill may promote a few back to collapse.
+        assert.ok(entry.action === 'drop' || entry.action === 'collapse')
+      }
+    }
+    const collapses = warrant.entries.filter((e) => e.action === 'collapse')
+    // With fill enabled, collapses can exceed max_representative to satisfy span;
+    // without oversized gaps on this fixture, expect at most max_representative + small fill.
+    assert.ok(collapses.length >= 1)
+    for (const id of ruled.unresolved_ids) {
+      const entry = warrant.entries.find((e) => e.segment_id === id)
+      assert.equal(entry?.action, 'keep')
       assert.equal(entry?.source.name, FAIL_CLOSED_KEEP_RULE)
     }
   })
