@@ -8,15 +8,20 @@ import { HOLE_TOOL_NAMES, handleReadSegment } from '../../src/agent/extension.ts
 import { writeWarrant } from '../../src/agent/sessions/write_warrant.ts'
 import {
   SKELETON_PASS_JSON_KIND,
+  cardIndexEntry,
+  cardIndexPayload,
+  composeSkeletonPassPrompt,
   openQaSession,
   openReplaySession,
   openReviewSession,
   openSession,
+  selectVisibleTurns,
   skeletonPass,
 } from '../../src/agent/sessions/skeleton_pass.ts'
 import { checkContinuityPair, labelWindow } from '../../src/agent/sessions/label_window.ts'
 import {
   FakeSessionBackend,
+  composeSessionPrompt,
   resolveSessionTimeoutMs,
   applyCustomGateway,
   buildCustomProviderRegistration,
@@ -28,7 +33,14 @@ import {
   type SessionPromptResult,
 } from '../../src/agent/sessions/open_session.ts'
 import { DEFAULT_CUT_PROFILE } from '../../src/constant/compression.ts'
-import { LABEL_WINDOW_SIZE, SESSION_TIMEOUT_ENV } from '../../src/constant/window.ts'
+import {
+  CARD_INDEX_CHARS_PER_SEGMENT_MAX,
+  CARD_INDEX_HEAD_MAX_CHARS,
+  LABEL_WINDOW_SIZE,
+  SESSION_TIMEOUT_ENV,
+  SKELETON_TURN_CONTENT_MAX_CHARS,
+} from '../../src/constant/window.ts'
+import { estimateTokens } from '../../src/utils/tokens.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../../src/domain/cut_decision.ts'
 import { distill } from '../../src/pipeline/orchestrator.ts'
 import { applyRules } from '../../src/pipeline/rules.ts'
@@ -318,6 +330,108 @@ describe('hole sessions', () => {
     assert.doesNotMatch(composed, new RegExp(OTHER_SECRET))
     assert.equal(composed.includes(JSON.stringify(raw.turns)), false)
     assert.equal(fake.calls[0]?.role, 'hole_a_skeleton')
+  })
+
+
+  it('cardIndexEntry keeps ids+short heads and drops bulky fields', () => {
+    const longHead = 'H' + 'e'.repeat(80)
+    const c: SegmentCard = {
+      id: 's0099',
+      tool: 'Read',
+      sig: 'Read:add.ts',
+      outcome: 'ok',
+      rep_of: null,
+      reads: ['add.ts', 'very/long/path/that/should/not/appear'],
+      writes: ['out.ts'],
+      tokens: 999,
+      focus: 'card',
+      head: longHead,
+      raw_refs: ['t1'],
+    }
+    const entry = cardIndexEntry(c)
+    assert.equal(entry.id, 's0099')
+    assert.equal(entry.tool, 'Read')
+    assert.equal(entry.sig, 'Read:add.ts')
+    assert.equal(entry.outcome, 'ok')
+    assert.equal(entry.head, longHead.slice(0, CARD_INDEX_HEAD_MAX_CHARS))
+    assert.equal(Object.prototype.hasOwnProperty.call(entry, 'rep_of'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(entry, 'reads'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(entry, 'writes'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(entry, 'tokens'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(entry, 'focus'), false)
+
+    const withRep = cardIndexEntry({ ...c, rep_of: 's0001' })
+    assert.equal(withRep.rep_of, 's0001')
+  })
+
+  it('CARD_INDEX / hole A prompt size stays bounded (synthetic + fluff)', () => {
+    const many: SegmentCard[] = []
+    for (let i = 0; i < 40; i++) {
+      const id = `s${String(i).padStart(4, '0')}`
+      many.push({
+        id,
+        tool: 'Bash',
+        sig: `Bash:cmd-${id}`,
+        outcome: 'error',
+        rep_of: i % 3 === 0 ? null : 's0000',
+        reads: ['a'.repeat(40), 'b'.repeat(40)],
+        writes: ['c'.repeat(40)],
+        tokens: 500,
+        focus: 'card',
+        head: 'X'.repeat(120),
+        raw_refs: [id],
+      })
+    }
+    const payload = cardIndexPayload(many)
+    assert.ok(
+      payload.length <= many.length * CARD_INDEX_CHARS_PER_SEGMENT_MAX,
+      `CARD_INDEX chars ${payload.length} exceeds ${many.length * CARD_INDEX_CHARS_PER_SEGMENT_MAX}`,
+    )
+    assert.doesNotMatch(payload, /"reads"/)
+    assert.doesNotMatch(payload, /"writes"/)
+    assert.doesNotMatch(payload, /"tokens"/)
+    assert.doesNotMatch(payload, /"focus"/)
+    assert.ok(!payload.includes('X'.repeat(CARD_INDEX_HEAD_MAX_CHARS + 1)))
+
+    const fluffPath = join(repoRoot, 'benchmark/datasets/short/fluff-heavy.jsonl')
+    const raw = parse(readFileSync(fluffPath, 'utf8'))
+    const ruled = applyRules({ view: segment(raw), raw })
+    const firstUser = raw.turns.find((t) => t.role === 'user')
+    const headSet = new Set<string>()
+    if (firstUser !== undefined) {
+      const idx = raw.turns.findIndex((t) => t.id === firstUser.id)
+      const first = raw.turns[idx]
+      const second = raw.turns[idx + 1]
+      if (first !== undefined) headSet.add(first.id)
+      if (second !== undefined) headSet.add(second.id)
+    }
+    const head_turn_ids = raw.anchor_turn_ids.filter((id) => headSet.has(id))
+    const verification_turn_ids = raw.anchor_turn_ids.filter((id) => !headSet.has(id))
+    const input = {
+      trace_id: raw.meta.trace_id,
+      head_turn_ids,
+      verification_turn_ids,
+      raw,
+      view: ruled.view,
+    }
+    const visible = selectVisibleTurns(input)
+    const prompt = composeSkeletonPassPrompt(input, visible)
+    const composed = composeSessionPrompt(prompt)
+    const cardsJson = cardIndexPayload(ruled.view.segments)
+    assert.ok(
+      cardsJson.length < 2800,
+      `fluff CARD_INDEX chars ${cardsJson.length} should be well under legacy ~4000`,
+    )
+    assert.ok(
+      estimateTokens(composed) < 1200,
+      `fluff hole A estimateTokens=${estimateTokens(composed)} should stay under 1200`,
+    )
+    // Long verification tool_result must be truncated in prompt.
+    const longVer = visible.verification.find((t) => t.content.length > SKELETON_TURN_CONTENT_MAX_CHARS)
+    if (longVer !== undefined) {
+      assert.ok(composed.includes('…'))
+      assert.equal(composed.includes(longVer.content), false)
+    }
   })
 
   it('skeletonPass falls back illegal scenario to implement', async () => {

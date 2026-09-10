@@ -9,6 +9,8 @@ import {
 } from '../../src/constant/compression.ts'
 import { DEFAULT_SCENARIO, resolveSkillRoute, SKILL_ROUTE } from '../../src/constant/skill_route.ts'
 import {
+  CARD_INDEX_CHARS_PER_SEGMENT_MAX,
+  CARD_INDEX_HEAD_MAX_CHARS,
   FAIL_CLOSED_KEEP,
   LABEL_WINDOW_SIZE,
   PI_FAILURE_RETRY,
@@ -17,6 +19,7 @@ import {
   SESSION_CALL_TIMEOUT_MS,
   SESSION_TIMEOUT_ENV,
   SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD,
+  SKELETON_TURN_CONTENT_MAX_CHARS,
   SPAN_MAX_GAP_SEGMENTS,
 } from '../../src/constant/window.ts'
 import { SCENARIOS } from '../../src/enums/scenario.ts'
@@ -27,6 +30,10 @@ describe('locked defaults', () => {
     assert.equal(SPAN_MAX_GAP_SEGMENTS, 3)
     assert.equal(SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD, 0.8)
     assert.equal(SEGMENT_HEAD_MAX_CHARS, 120)
+    assert.equal(CARD_INDEX_HEAD_MAX_CHARS, 40)
+    assert.ok(CARD_INDEX_HEAD_MAX_CHARS < SEGMENT_HEAD_MAX_CHARS)
+    assert.equal(SKELETON_TURN_CONTENT_MAX_CHARS, 200)
+    assert.equal(CARD_INDEX_CHARS_PER_SEGMENT_MAX, 220)
     assert.equal(DEAD_END_MAX_REPRESENTATIVE, 3)
     assert.equal(DEAD_END_SUMMARY_MAX_CHARS, 80)
     assert.equal(REVIEW_MAX_ROUNDS, 2)

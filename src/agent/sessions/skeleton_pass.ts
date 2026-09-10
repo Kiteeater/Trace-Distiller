@@ -1,4 +1,8 @@
-import { SKELETON_PASS_TOKEN_HINT } from '../../constant/window.ts'
+import {
+  CARD_INDEX_HEAD_MAX_CHARS,
+  SKELETON_PASS_TOKEN_HINT,
+  SKELETON_TURN_CONTENT_MAX_CHARS,
+} from '../../constant/window.ts'
 import { resolveSkillRoute } from '../../constant/skill_route.ts'
 import type { AgentRole } from '../../enums/agent_role.ts'
 import { type Scenario } from '../../enums/scenario.ts'
@@ -123,14 +127,14 @@ export function composeSkeletonPassPrompt(
   system: string
   text: string
 } {
-  const cards = input.view.segments.map(cardIndexEntry)
+  const cardsJson = cardIndexPayload(input.view.segments)
   const text = [
     TRACE_DATA_NOTICE,
     `trace_id: ${input.trace_id}`,
     `token_budget_hint: ${String(SKELETON_PASS_TOKEN_HINT)}`,
     formatTurnBlock('HEAD_TURNS', visible.head),
     formatTurnBlock('VERIFICATION_TURNS', visible.verification),
-    `CARD_INDEX (not full; do not invent head/sig/focus):\n${JSON.stringify(cards)}`,
+    `CARD_INDEX (ids + short heads; do not invent fields; upgrade via tools later):\n${cardsJson}`,
     [
       'Reply with JSON only, matching this schema:',
       JSON.stringify({
@@ -256,23 +260,41 @@ function pickTurns(byId: Map<string, RawTurn>, ids: readonly string[]): RawTurn[
 
 function formatTurnBlock(title: string, turns: readonly RawTurn[]): string {
   if (turns.length === 0) return `${title}: (none)`
-  const body = turns.map((t) => `[${t.id}] ${t.role}\n${t.content}`).join('\n\n')
+  const body = turns
+    .map((t) => `[${t.id}] ${t.role}\n${truncateTurnContent(t.content)}`)
+    .join('\n\n')
   return `${title}:\n${body}`
 }
 
+function truncateTurnContent(content: string): string {
+  if (content.length <= SKELETON_TURN_CONTENT_MAX_CHARS) return content
+  return `${content.slice(0, SKELETON_TURN_CONTENT_MAX_CHARS)}…`
+}
+
+/**
+ * Compact card for hole prompts: ids + tool/sig/outcome + short head.
+ * Drops reads/writes/tokens/focus (redundant with sig / available via read_segment).
+ * Omits null rep_of to keep JSON small.
+ */
 export function cardIndexEntry(card: SegmentCard): Record<string, unknown> {
-  return {
+  const head =
+    card.head.length <= CARD_INDEX_HEAD_MAX_CHARS
+      ? card.head
+      : card.head.slice(0, CARD_INDEX_HEAD_MAX_CHARS)
+  const entry: Record<string, unknown> = {
     id: card.id,
     tool: card.tool,
     sig: card.sig,
     outcome: card.outcome,
-    rep_of: card.rep_of,
-    reads: card.reads,
-    writes: card.writes,
-    tokens: card.tokens,
-    focus: card.focus,
-    head: card.head,
+    head,
   }
+  if (card.rep_of !== null) entry.rep_of = card.rep_of
+  return entry
+}
+
+/** Serialize CARD_INDEX / WINDOW_CARDS payload (tests + callers). */
+export function cardIndexPayload(cards: readonly SegmentCard[]): string {
+  return JSON.stringify(cards.map(cardIndexEntry))
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

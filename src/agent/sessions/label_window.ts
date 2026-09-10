@@ -16,6 +16,7 @@ import type { SegmentCard } from '../../types/segment.ts'
 import {
   TRACE_DATA_NOTICE,
   cardIndexEntry,
+  cardIndexPayload,
   NotImplementedError,
   type TokenUsage,
 } from './skeleton_pass.ts'
@@ -146,7 +147,7 @@ function composeLabelWindowText(input: LabelWindowInput, cards: SegmentCard[]): 
   return [
     `intent: ${input.intent.text}`,
     `window_segment_ids: ${JSON.stringify(input.segment_ids)}`,
-    `WINDOW_CARDS (not full; use read_segment to upgrade one id):\n${JSON.stringify(cards.map(cardIndexEntry))}`,
+    `WINDOW_CARDS (ids + short heads; use read_segment to upgrade one id):\n${cardIndexPayload(cards)}`,
     'For each unresolved id, call label_segment({ segment_id, label, confidence }).',
     'Do not label ids you did not inspect. Do not invent labels.',
   ].join('\n\n')

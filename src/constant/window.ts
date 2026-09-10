@@ -11,6 +11,23 @@ export const LABEL_WINDOW_SIZE = 8
 export const SEGMENT_HEAD_MAX_CHARS = 120
 
 /**
+ * 洞 A/B 注入 CARD_INDEX / WINDOW_CARDS 时的 head 截断。严于 SEGMENT_HEAD_MAX_CHARS。
+ * 卡片库仍存 120；prompt 只给短 head，全文走 read_segment。
+ */
+export const CARD_INDEX_HEAD_MAX_CHARS = 40
+
+/**
+ * 洞 A HEAD/VERIFICATION 每条 turn 正文上限。
+ * 长 tool_result 截断，避免与卡片索引重复灌原文。
+ */
+export const SKELETON_TURN_CONTENT_MAX_CHARS = 200
+
+/**
+ * 单段 CARD_INDEX JSON 粗上限（测试守卫）。id+tool+sig+outcome+短 head 应远小于此。
+ */
+export const CARD_INDEX_CHARS_PER_SEGMENT_MAX = 220
+
+/**
  * 相邻 keep 允许跨过的最大段数。已拍板：3（ADR-0004）。
  * 允许丢掉少量例行段，长跳仍判违规。collapse 占位算一步。
  * 禁止在 pipeline 里另写魔数。
