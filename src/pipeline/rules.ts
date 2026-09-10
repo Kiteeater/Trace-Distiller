@@ -44,6 +44,7 @@ export function applyRules(input: RulesInput): RulesOutput {
 
   applySimilarRetry(segments, rawById, laterWritten, resolved)
   applyRepeatRead(segments, laterWritten, resolved)
+  applyReadThenLaterWritten(segments, laterWritten, resolved)
   applyFailedCallNoFollowup(segments, laterWritten, resolved)
 
   for (const seg of segments) {
@@ -204,6 +205,31 @@ function applyRepeatRead(
     })
     if (!isRepeat) continue
     resolved.set(seg.id, decision(seg.id, 'routine', RULE_REPEAT_READ, laterWritten.get(seg.id)))
+  }
+}
+
+
+/**
+ * Pure read of a path that a later segment writes → routine.
+ * The write/edit itself stays unresolved (Fail-Closed Keep / hole B) as the
+ * key step; keeping the pre-edit read under no_llm bloats short traces past
+ * the compression gate while adding little replay signal.
+ */
+function applyReadThenLaterWritten(
+  segments: SegmentCard[],
+  laterWritten: Map<string, GraphHint[]>,
+  resolved: Map<string, LabelDecision>,
+): void {
+  for (const seg of segments) {
+    if (resolved.has(seg.id)) continue
+    if (seg.writes.length > 0) continue
+    if (seg.reads.length === 0) continue
+    if (!laterWritten.has(seg.id)) continue
+    if (!isAction(seg)) continue
+    resolved.set(
+      seg.id,
+      decision(seg.id, 'routine', RULE_READ_THEN_LATER_WRITTEN, laterWritten.get(seg.id)),
+    )
   }
 }
 

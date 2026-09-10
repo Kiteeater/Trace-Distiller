@@ -51,7 +51,7 @@ describe('decideCut', () => {
       assert.equal(d.from_label, label)
       assert.equal(d.profile_id, DEFAULT_CUT_PROFILE.id)
       if (action === 'collapse') {
-        assert.equal(d.dead_end_summary, `head-${label}`)
+        assert.equal(d.dead_end_summary, 'Bash error')
       } else {
         assert.equal(d.dead_end_summary, undefined)
       }
@@ -74,7 +74,8 @@ describe('decideCut', () => {
       dead_end: { ...DEFAULT_CUT_PROFILE.dead_end, summary_max_chars: 8 },
     }
     const d = decideCut(labeled('dead_end'), profile, card('abcdefghijklmnop'))
-    assert.equal(d.dead_end_summary, 'abcdefgh')
+    // Compact form is "Bash error" (10 chars) → truncated to 8.
+    assert.equal(d.dead_end_summary, 'Bash err')
   })
 })
 
@@ -95,12 +96,17 @@ describe('deadEndSummary', () => {
     assert.equal(deadEndSummary('', 12), 'dead_end')
   })
 
-  it('uses the locked default of 80 chars on DEFAULT_CUT_PROFILE', () => {
+  it('prefers compact tool+outcome over long head; still respects summary_max_chars', () => {
     const d = decideCut(
       labeled('dead_end'),
       DEFAULT_CUT_PROFILE,
       card('x'.repeat(200)),
     )
-    assert.equal(d.dead_end_summary, 'x'.repeat(80))
+    assert.equal(d.dead_end_summary, 'Bash error')
+    assert.ok(d.dead_end_summary!.length <= DEFAULT_CUT_PROFILE.dead_end.summary_max_chars)
+  })
+
+  it('falls back to head text when given a bare string', () => {
+    assert.equal(deadEndSummary('x'.repeat(100), 80), 'x'.repeat(80))
   })
 })

@@ -102,6 +102,30 @@ describe('writeWarrant', () => {
     }
   })
 
+  it('drops trailing dead_end collapses after the last keep (no span value)', async () => {
+    const raw = parse(load('no_llm_conservative.jsonl'))
+    const ruled = applyRules({ view: segment(raw), raw })
+    const warrant = writeWarrant({
+      skeleton: ruled.view.skeleton,
+      labels: ruled.decisions,
+      view: ruled.view,
+      profile: DEFAULT_CUT_PROFILE,
+    })
+    const indexOf = new Map(ruled.view.segments.map((s, i) => [s.id, i]))
+    let lastKeep = -1
+    for (const e of warrant.entries) {
+      if (e.action !== 'keep') continue
+      const idx = indexOf.get(e.segment_id)
+      if (idx !== undefined && idx > lastKeep) lastKeep = idx
+    }
+    for (const e of warrant.entries) {
+      if (e.action !== 'collapse') continue
+      const idx = indexOf.get(e.segment_id)
+      assert.ok(idx !== undefined)
+      assert.ok(idx! <= lastKeep, `trailing collapse ${e.segment_id}`)
+    }
+  })
+
   it('drops similar_retry members and caps representative collapses per profile', () => {
     const raw = parse(load('no_llm_conservative.jsonl'))
     const ruled = applyRules({ view: segment(raw), raw })

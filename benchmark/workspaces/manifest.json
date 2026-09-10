@@ -30,6 +30,7 @@
     "claude-code:sess-no-llm": "add-fix",
     "claude-code:sess-short-fluff": "add-fix",
     "claude-code:sess-long-debug": "add-fix",
-    "claude-code:sess-multi-dead": "add-fix"
+    "claude-code:sess-multi-dead": "add-fix",
+    "claude-code:sess-mul-fix": "mul-fix"
   }
 }
