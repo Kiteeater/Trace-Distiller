@@ -46,3 +46,4 @@ secrets/
 
 # local scoreboard output
 benchmark/out/
+.grok-tasks/

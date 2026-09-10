@@ -17,6 +17,7 @@ import {
 import { checkContinuityPair, labelWindow } from '../../src/agent/sessions/label_window.ts'
 import {
   FakeSessionBackend,
+  resolveSessionTimeoutMs,
   applyCustomGateway,
   buildCustomProviderRegistration,
   readCustomGatewayEnv,
@@ -25,7 +26,7 @@ import {
   type SessionPromptResult,
 } from '../../src/agent/sessions/open_session.ts'
 import { DEFAULT_CUT_PROFILE } from '../../src/constant/compression.ts'
-import { LABEL_WINDOW_SIZE } from '../../src/constant/window.ts'
+import { LABEL_WINDOW_SIZE, SESSION_TIMEOUT_ENV } from '../../src/constant/window.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../../src/domain/cut_decision.ts'
 import { distill } from '../../src/pipeline/orchestrator.ts'
 import { applyRules } from '../../src/pipeline/rules.ts'
@@ -683,5 +684,38 @@ describe('hole sessions', () => {
         assert.doesNotMatch(src, secret, path)
       }
     }
+  })
+})
+
+describe('session call hard timeout', () => {
+  afterEach(() => {
+    setSessionBackend(undefined)
+    delete process.env[SESSION_TIMEOUT_ENV]
+  })
+
+  it('hanging mint session prompt times out (does not hang forever)', async () => {
+    process.env[SESSION_TIMEOUT_ENV] = '50'
+    assert.equal(resolveSessionTimeoutMs(), 50)
+    setSessionBackend(
+      new FakeSessionBackend(async () => {
+        await new Promise(() => {})
+        return {
+          text: '',
+          json: null,
+          tool_calls: [],
+          usage: { role: 'l4_qa', input_tokens: 1, output_tokens: 1 },
+        }
+      }),
+    )
+    const session = openSession({ role: 'l4_qa' })
+    const started = Date.now()
+    await assert.rejects(
+      () => session.prompt({ text: 'should timeout' }),
+      /session\.prompt\(l4_qa\) timed out after 50ms/,
+    )
+    const elapsed = Date.now() - started
+    // withPiRetry adds one retry → ~100ms + slack, still far from forever
+    assert.ok(elapsed < 2000, `expected quick fail, took ${elapsed}ms`)
+    session.dispose()
   })
 })
