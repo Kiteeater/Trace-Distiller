@@ -41,7 +41,8 @@ trace-distiller/
 ├─ bun.lock                     # 唯一锁文件；不要 package-lock.json
 ├─ tsconfig.json / tsconfig.build.json / eslint.config.js
 ├─ script/
-│  └─ run-distill.ts            # 进程入口
+│  ├─ run-distill.ts            # 进程入口（启动时加载本机 .env）
+│  └─ smoke-mint.ts             # 可选：有 key 时对 mint 打一条短 prompt
 ├─ src/
 │  ├─ types/
 │  │  ├─ raw_trace.ts
@@ -95,7 +96,7 @@ trace-distiller/
 │  ├─ report/                   # 结果 JSON → 自包含 HTML；不要再开 service/report.ts
 │  │  ├─ html.ts                # Playback 报告
 │  │  └─ live_page.ts           # 只读 live dump 页（file://）
-│  └─ utils/                    # 仅无状态：token 估算、jsonl、logger
+│  └─ utils/                    # 仅无状态：token 估算、jsonl、logger、.env 加载
 ├─ tests/
 ├─ examples/
 ├─ data/                        # 运行时原料与产物（真实数据默认 gitignore）

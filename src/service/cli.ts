@@ -76,6 +76,8 @@ const HELP = `Usage:
 
 FakeSessionBackend is for tests only. Production with_llm needs TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
+OpenAI-compatible gateway (Macaron mint): copy .env.example to .env. TRACE_DISTILLER_API_BASE + TRACE_DISTILLER_API_KEY register a custom provider; models stay TRACE_DISTILLER_MODEL_HOLE_A/B/L4 as provider/modelId (example macaron/macaron-v1-coding-venti). Keys are never logged.
+
 eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a workspace and model; this command only guarantees the session interface.
 
 bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample (default --no-llm), scores six gates, and prints a JSON table per track. Tracks are never averaged together. Missing data/raw/<id>.key-decisions.json skips key-step recall (M1, not a hard fail). All six must pass or composite is 0. M1 does not require a full dataset.

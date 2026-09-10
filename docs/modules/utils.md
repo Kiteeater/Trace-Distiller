@@ -1,6 +1,6 @@
 # utils — 无状态小函数
 
-对应路径：`src/utils/`。architecture：**仅** token 估算、jsonl 读写、logger。状态相关的一律进 domain / data，不许堆 utils。
+对应路径：`src/utils/`。architecture：**仅** token 估算、jsonl 读写、logger、`.env` 加载。状态相关的一律进 domain / data，不许堆 utils。
 
 ---
 
@@ -34,7 +34,14 @@ function estimateTokens(text: string): number
 
 /** logger.ts */
 function log(level: 'info' | 'warn' | 'error', msg: string, extra?: Record<string, unknown>): void
+
+/** env.ts */
+function parseEnvFile(text: string): Record<string, string>
+function loadEnvFile(path: string, env?: NodeJS.Dict<string>): boolean
+function loadLocalEnvFile(cwd?: string, env?: NodeJS.Dict<string>): boolean
 ```
+
+`.env` 加载不覆盖已存在的键，不 log 值。
 
 允许少量路径/哈希：`stableHash(s: string): string`（给 trace_id），仍须无状态。
 

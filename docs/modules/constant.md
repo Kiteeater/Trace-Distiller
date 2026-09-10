@@ -91,7 +91,7 @@ const DEFAULT_CUT_PROFILE = {
 
 `resolveSkillRoute(scenario)`：五字面量命中则返回对应路径；其它值（含缺省）回退 `implement`，`fallback: true`。禁止静默空 prompt。
 
-模型名**不进** constant。洞 A / 洞 B / L4 走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`（见 [pi-sdk.md](../guides/pi-sdk.md)）。
+模型名**不进** constant。洞 A / 洞 B / L4 走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`。自定义网关走 `TRACE_DISTILLER_API_BASE` / `TRACE_DISTILLER_API_KEY` / `TRACE_DISTILLER_PROVIDER`（见 [pi-sdk.md](../guides/pi-sdk.md)）。
 
 ---
 
