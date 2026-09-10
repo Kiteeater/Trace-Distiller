@@ -19,6 +19,7 @@ import type { RawTrace } from '../types/raw_trace.ts'
 import { assemble, type AssembleOutput } from './assembler.ts'
 import { applyRules } from './rules.ts'
 import { segment } from './segmenter.ts'
+import { warn as logWarn } from '../utils/logger.ts'
 
 export type DistillMode = 'no_llm' | 'with_llm'
 
@@ -45,6 +46,10 @@ export interface DistillResult {
   unresolved_ids: string[]
   /** data 层指标行；落库由 service 调 data，本函数不写 SQLite。 */
   metrics_ref: string
+  /** 仅 hole_a + hole_b 用量；L4 不计。缺省 0。 */
+  hole_a_plus_b_tokens?: number
+  /** 洞窗口失败等可观测备注；不改变 Fail-Closed Keep 语义。 */
+  hole_notes?: string[]
 }
 
 export class NotImplementedError extends Error {
@@ -133,6 +138,9 @@ async function runWithLlm(input: {
   const route = resolveSkillRoute(holeA.scenario)
   const llmDecisions: LabelDecision[] = []
   const stillUnresolved: string[] = []
+  const holeNotes: string[] = []
+  let holeTokens =
+    holeA.usage.input_tokens + holeA.usage.output_tokens
 
   for (const windowIds of chunkIds(ruled.unresolved_ids, LABEL_WINDOW_SIZE)) {
     try {
@@ -147,9 +155,14 @@ async function runWithLlm(input: {
       })
       llmDecisions.push(...labeled.decisions)
       stillUnresolved.push(...labeled.still_unlabeled)
+      holeTokens += labeled.usage.input_tokens + labeled.usage.output_tokens
       skeleton = applySkeletonPatch(skeleton, labeled.skeleton_patch)
       view = { ...view, skeleton }
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const note = `hole_b_window_failed:${windowIds.join(',')}:${message}`
+      holeNotes.push(note)
+      logWarn(note)
       stillUnresolved.push(...windowIds)
     }
   }
@@ -172,6 +185,8 @@ async function runWithLlm(input: {
     assembled: reviewed.assembled,
     decisions,
     unresolved_ids: stillUnresolved,
+    hole_a_plus_b_tokens: holeTokens,
+    ...(holeNotes.length > 0 ? { hole_notes: holeNotes } : {}),
   })
 }
 
@@ -277,8 +292,10 @@ function packResult(input: {
   assembled: AssembleOutput
   decisions: LabelDecision[]
   unresolved_ids: string[]
+  hole_a_plus_b_tokens?: number
+  hole_notes?: string[]
 }): DistillResult {
-  return {
+  const out: DistillResult = {
     raw: input.raw,
     view: input.view,
     warrant: input.warrant,
@@ -289,4 +306,11 @@ function packResult(input: {
     unresolved_ids: input.unresolved_ids,
     metrics_ref: '',
   }
+  if (input.hole_a_plus_b_tokens !== undefined) {
+    out.hole_a_plus_b_tokens = input.hole_a_plus_b_tokens
+  }
+  if (input.hole_notes !== undefined && input.hole_notes.length > 0) {
+    out.hole_notes = input.hole_notes
+  }
+  return out
 }

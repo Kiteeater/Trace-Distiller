@@ -244,6 +244,7 @@ describe('orchestrator with_llm', () => {
     const holeBCalls = backend.calls.filter((c) => c.role === 'hole_b_label')
     assert.equal(holeBCalls.length, Math.ceil(ruled.unresolved_ids.length / LABEL_WINDOW_SIZE))
     assert.deepEqual(out.unresolved_ids, [])
+    assert.ok((out.hole_a_plus_b_tokens ?? 0) > 0)
 
     const again = await distill({
       raw,
@@ -282,6 +283,10 @@ describe('orchestrator with_llm', () => {
       assert.equal(entry?.source.name, FAIL_CLOSED_KEEP_RULE)
     }
     assert.equal(out.decisions.some((d) => d.source.kind === 'llm'), false)
+    assert.ok(out.hole_notes && out.hole_notes.length > 0)
+    assert.match(out.hole_notes[0]!, /hole_b_window_failed/)
+    assert.match(out.hole_notes[0]!, /window boom/)
+    assert.ok((out.hole_a_plus_b_tokens ?? 0) > 0)
 
     const silent = labelingBackend({
       nodes: [{ id: 'n1', kind: 'main_path_hypothesis', segment_ids: [ruled.unresolved_ids[0] ?? ''], note: '' }],

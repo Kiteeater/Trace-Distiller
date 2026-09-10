@@ -259,10 +259,16 @@ export async function runCli(args: CliArgs): Promise<number> {
       )
     }
 
+    const holeFailed = (result.hole_notes?.length ?? 0) > 0
+    const holesStage =
+      mode !== 'with_llm' ? 'skipped' : holeFailed ? 'error' : 'done'
     const job_id = registerJobFromResult(result, {
-      holes: mode === 'with_llm' ? 'done' : 'skipped',
+      holes: holesStage,
     })
     logInfo('distill registered live job', { job_id, trace_id: raw.meta.trace_id })
+    if (holeFailed) {
+      logInfo('distill hole notes', { notes: result.hole_notes })
+    }
 
     let live_dump: string | undefined
     if (args.live_dump_dir !== undefined) {
@@ -273,8 +279,14 @@ export async function runCli(args: CliArgs): Promise<number> {
     const summary: Record<string, unknown> = {
       trace_id: raw.meta.trace_id,
       compression_ratio: metrics.compression_ratio,
+      distill_cost_ratio: metrics.distill_cost_ratio,
+      hole_a_plus_b_tokens: result.hole_a_plus_b_tokens ?? 0,
       out_dir: outDir,
       job_id,
+      mode,
+    }
+    if (result.hole_notes !== undefined && result.hole_notes.length > 0) {
+      summary.hole_notes = result.hole_notes
     }
     if (live_dump !== undefined) summary.live_dump = live_dump
     if (args.live_socket_path !== undefined) summary.live_socket = args.live_socket_path
