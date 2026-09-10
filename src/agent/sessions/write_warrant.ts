@@ -28,7 +28,8 @@ export interface WriteWarrantInput {
  * 死胡同代表策略（CutProfile.dead_end / span.fill_with_representative_dead_end）：
  * - 相似重试成员（rep_of != null）默认 drop，避免每个重试都留一句摘要；
  * - 代表 / 单条 dead_end 最多 collapse `max_representative` 条，多余 drop；
- * - 若开启 fill_with_representative_dead_end，为满足 span 缺口再把缺口内的 dead_end 提回 collapse。
+ * - 若开启 fill_with_representative_dead_end，为满足 span 缺口再把缺口内的 dead_end 提回 collapse；
+ * - 最后一个 keep 之后的 trailing dead_end collapse 再 drop（不参与 keep↔keep span）。
  */
 export function writeWarrant(input: WriteWarrantInput): CutWarrant {
   void input.skeleton
@@ -42,6 +43,7 @@ export function writeWarrant(input: WriteWarrantInput): CutWarrant {
   })
 
   applyDeadEndRepresentativePolicy(decisions, input.view.segments, input.profile)
+  dropTrailingDeadEndCollapses(decisions, input.view.segments)
 
   return {
     trace_id: input.view.meta.trace_id,
@@ -168,5 +170,29 @@ function promoteToCollapse(
   profile: CutProfile,
 ): void {
   d.action = 'collapse'
-  d.dead_end_summary = deadEndSummary(card?.head ?? '', profile.dead_end.summary_max_chars)
+  d.dead_end_summary = deadEndSummary(card, profile.dead_end.summary_max_chars)
 }
+
+/** keep 包络之外（最后一个 keep 之后）的 dead_end collapse 不服务 span → drop。 */
+function dropTrailingDeadEndCollapses(
+  decisions: CutDecision[],
+  segments: SegmentCard[],
+): void {
+  const indexOf = new Map(segments.map((s, i) => [s.id, i]))
+  let lastKeep = -1
+  for (const d of decisions) {
+    if (d.action !== 'keep') continue
+    const idx = indexOf.get(d.segment_id)
+    if (idx === undefined) continue
+    if (idx > lastKeep) lastKeep = idx
+  }
+  if (lastKeep < 0) return
+  for (const d of decisions) {
+    if (d.action !== 'collapse') continue
+    if (d.from_label !== 'dead_end') continue
+    const idx = indexOf.get(d.segment_id)
+    if (idx === undefined) continue
+    if (idx > lastKeep) demoteToDrop(d)
+  }
+}
+

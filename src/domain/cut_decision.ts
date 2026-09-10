@@ -38,7 +38,7 @@ export function decideCut(
     confidence: labeled.confidence,
   }
   if (action === 'collapse') {
-    decision.dead_end_summary = deadEndSummary(card?.head ?? '', profile.dead_end.summary_max_chars)
+    decision.dead_end_summary = deadEndSummary(card, profile.dead_end.summary_max_chars)
   }
   return decision
 }
@@ -61,12 +61,33 @@ function actionForLabel(label: Label, profile: CutProfile): CutAction {
   return 'keep'
 }
 
-/** 空 head 给占位，避免 assembler 拒 collapse。摘要截到 `summary_max_chars`。 */
-export function deadEndSummary(head: string, maxChars: number): string {
-  const text = head.length > 0 ? head : 'dead_end'
+/**
+ * Collapse 摘要：优先 `tool outcome`（短、稳定），否则用 head。
+ * 空内容给占位，避免 assembler 拒 collapse。截到 `summary_max_chars`。
+ * 短摘要让 short 档（add-fix）能过压缩门；长 Trace 仍靠 drop 吃掉体积。
+ */
+export function deadEndSummary(
+  cardOrHead: SegmentCard | string | undefined,
+  maxChars: number,
+): string {
+  const text = summarizeDeadEnd(cardOrHead)
   if (typeof maxChars === 'number' && Number.isFinite(maxChars) && maxChars >= 0) {
     const sliced = text.slice(0, maxChars)
     return sliced.length > 0 ? sliced : text
   }
   return text
+}
+
+function summarizeDeadEnd(cardOrHead: SegmentCard | string | undefined): string {
+  if (cardOrHead === undefined) return 'dead_end'
+  if (typeof cardOrHead === 'string') {
+    return cardOrHead.length > 0 ? cardOrHead : 'dead_end'
+  }
+  const tool = cardOrHead.tool.trim()
+  const outcome = cardOrHead.outcome.trim()
+  if (tool.length > 0) {
+    const compact = outcome.length > 0 ? `${tool} ${outcome}` : tool
+    if (compact.trim().length > 0) return compact
+  }
+  return cardOrHead.head.length > 0 ? cardOrHead.head : 'dead_end'
 }

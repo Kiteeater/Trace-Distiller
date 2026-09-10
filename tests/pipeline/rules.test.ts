@@ -150,7 +150,7 @@ describe('rules', () => {
     assert.equal(other.label, 'dead_end')
   })
 
-  it('does not auto-label a clean key edit as key_decision; read_then_later_written is a hint, still unresolved card', () => {
+  it('marks pure read_then_later_written as routine; key edit stays unresolved (not key_decision)', () => {
     const out = run([
       makeTurn('u', 'user', 'fix add.ts'),
       makeTurn('c1', 'tool_call', '{"path":"add.ts"}', { name: 'Read', args: { path: 'add.ts' } }),
@@ -167,18 +167,18 @@ describe('rules', () => {
     const edit = out.view.segments.find((s) => s.tool === 'Edit')
     assert.ok(read)
     assert.ok(edit)
-    assert.equal(read.focus, 'card')
+    assert.equal(read.focus, 'line')
     assert.equal(edit.focus, 'card')
-    assert.equal(out.unresolved_ids.includes(read.id), true)
+    assert.equal(out.unresolved_ids.includes(read.id), false)
     assert.equal(out.unresolved_ids.includes(edit.id), true)
-    assert.equal(decisionById(out, read.id), undefined)
+    const readDec = decisionById(out, read.id)
+    assert.ok(readDec)
+    assert.equal(readDec.label, 'routine')
+    assert.equal(readDec.rule_name, RULE_READ_THEN_LATER_WRITTEN)
+    assert.deepEqual(readDec.graph_hints, ['read_then_later_written'])
     assert.equal(decisionById(out, edit.id), undefined)
     assert.equal(
       out.decisions.some((d) => d.label === 'key_decision'),
-      false,
-    )
-    assert.equal(
-      out.decisions.some((d) => d.rule_name === RULE_READ_THEN_LATER_WRITTEN),
       false,
     )
 
