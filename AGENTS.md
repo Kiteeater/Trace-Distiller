@@ -20,10 +20,10 @@ node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite pa
 node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
-node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm]
+node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm] [--fake-l4] [--with-l4]
 ```
 
-`--no-llm` 强制无洞；未加且注入了假后端或设了洞模型 env 时走 `with_llm`。`eval` 读 SQLite 蒸馏指标；`--qa` / `--replay` 在有会话后端（注入 FakeSessionBackend 或 `TRACE_DISTILLER_MODEL_L4`）时跑 L4，否则跳过并注明。真实重放成功率需要仓库+模型，CI 只保证接口。`bench` 扫 `short` / `long` / `multi_dead_end` 分档报 JSON 表，禁止合并平均；无 `data/raw/<id>.key-decisions.json` 则召回 skipped（M1 不硬挂）；六项有 fail 则该样本总分 0。M1 不强求满数据集。pi 工厂 spike：`bun run pi-spike`。
+`--no-llm` 强制无洞；未加且注入了假后端或设了洞模型 env 时走 `with_llm`。`eval` 读 SQLite 蒸馏指标；`--qa` / `--replay` 在有会话后端（注入 FakeSessionBackend 或 `TRACE_DISTILLER_MODEL_L4`）时跑 L4，否则跳过并注明。真实重放成功率需要仓库+模型，CI 只保证接口。`bench` 默认 `no_llm`（防 mint 挂起）；`--fake-l4` 打本地 composite；`--with-l4` 才连真 mint（会话硬超时）。扫 `short` / `long` / `multi_dead_end` 分档报 JSON，禁止合并平均；无金标则召回 skipped；六项有 fail 则该样本总分 0。pi 工厂 spike：`bun run pi-spike`。
 
 ## 分层纪律
 
