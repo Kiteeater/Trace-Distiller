@@ -90,16 +90,27 @@ export function buildHoleCustomTools(
   return out
 }
 
+/** L4 replay coding allowlist（builtin read/bash/edit/write）。洞 A/B 禁止同名。 */
+export const L4_REPLAY_CODING_TOOLS = ['read', 'bash', 'edit', 'write'] as const
+
 export interface PiToolRegistration {
   tools: string[]
   customTools?: ToolDefinition[]
-  noTools: 'all' | 'builtin'
+  /** 省略时：按 tools allowlist 启用 builtin（L4 replay）。 */
+  noTools?: 'all' | 'builtin'
 }
 
 /** 映射 openSession tools → createAgentSession 的 tools/customTools/noTools。 */
 export function resolvePiToolRegistration(requested: readonly string[]): PiToolRegistration {
   if (requested.length === 0) {
     return { tools: [], noTools: 'all' }
+  }
+  const coding = requested.filter((n) =>
+    (L4_REPLAY_CODING_TOOLS as readonly string[]).includes(n),
+  )
+  if (coding.length > 0 && coding.length === requested.length) {
+    // Pure coding allowlist — enable those builtins; do not set noTools.
+    return { tools: [...coding] }
   }
   const customTools = buildHoleCustomTools(requested)
   const tools = customTools.map((t) => t.name)

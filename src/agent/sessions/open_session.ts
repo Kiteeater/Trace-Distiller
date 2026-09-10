@@ -1,8 +1,9 @@
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { estimateTokens } from '../../utils/tokens.ts'
 import { PI_FAILURE_RETRY } from '../../constant/window.ts'
-import { resolvePiToolRegistration } from './hole_tools.ts'
+import { L4_REPLAY_CODING_TOOLS, resolvePiToolRegistration } from './hole_tools.ts'
 import type { AgentRole } from '../../enums/agent_role.ts'
 import { LABELS, type Label } from '../../enums/label.ts'
 import type { TokenUsage } from './skeleton_pass.ts'
@@ -101,14 +102,17 @@ export interface SessionFactoryOpts {
   role: AgentRole
   model?: string
   backend?: SessionBackend
-  /** 洞工具名；默认空，禁止默认 codingTools。 */
+  /** 洞工具名；默认空，禁止默认 codingTools。L4 replay 有 cwd 时可挂 coding tools。 */
   tools?: readonly string[]
+  /** L4 replay 工作目录（真仓库副本）。洞 A/B 忽略。 */
+  cwd?: string
 }
 
 export interface ResolvedSessionOpts {
   role: AgentRole
   model: string
   tools: readonly string[]
+  cwd?: string
 }
 
 export interface PiSessionHandle {
@@ -392,7 +396,7 @@ function fakeContinuityArgs(text: string): {
 
 function defaultFakeJsonForRole(input: SessionPromptInput, role: AgentRole): unknown {
   if (role === 'l4_qa') return defaultFakeQaJson(input)
-  if (role === 'l4_replay') return defaultFakeReplayJson()
+  if (role === 'l4_replay') return defaultFakeReplayJson(input)
   if (role === 'l4_review') return defaultFakeReviewJson(input)
   return defaultSpikeLabelJson()
 }
@@ -422,11 +426,33 @@ export function defaultFakeQaJson(input: SessionPromptInput): {
   return { kind: L4_QA_JSON_KIND, items }
 }
 
-export function defaultFakeReplayJson(): {
+export function defaultFakeReplayJson(input?: SessionPromptInput): {
   kind: typeof L4_REPLAY_JSON_KIND
   success: boolean
   note: string
 } {
+  const marked = input !== undefined ? readMarkedJson(input.text, 'TASK_JSON') : undefined
+  const cwd =
+    marked !== null &&
+    typeof marked === 'object' &&
+    !Array.isArray(marked) &&
+    typeof (marked as { cwd?: unknown }).cwd === 'string'
+      ? (marked as { cwd: string }).cwd
+      : undefined
+  if (cwd !== undefined && cwd.length > 0) {
+    if (!existsSync(cwd)) {
+      return {
+        kind: L4_REPLAY_JSON_KIND,
+        success: false,
+        note: `fake backend; workspace cwd missing: ${cwd}`,
+      }
+    }
+    return {
+      kind: L4_REPLAY_JSON_KIND,
+      success: true,
+      note: 'fake backend; workspace cwd present (no real edit)',
+    }
+  }
   return {
     kind: L4_REPLAY_JSON_KIND,
     success: true,
@@ -657,10 +683,11 @@ async function createPiKernelSession(opts: ResolvedSessionOpts): Promise<PiAgent
     SettingsManager,
   } = pi
 
+  const cwd = opts.cwd ?? process.cwd()
   const authStorage = AuthStorage.inMemory()
   const settingsManager = SettingsManager.inMemory()
   const resourceLoader = new DefaultResourceLoader({
-    cwd: process.cwd(),
+    cwd,
     agentDir: join(tmpdir(), 'trace-distiller-pi-agent'),
     settingsManager,
     noExtensions: true,
@@ -680,9 +707,12 @@ async function createPiKernelSession(opts: ResolvedSessionOpts): Promise<PiAgent
     sessionManager: SessionManager.inMemory(),
     settingsManager,
     resourceLoader,
+    cwd,
     tools: toolReg.tools,
     thinkingLevel: 'off',
-    noTools: toolReg.noTools,
+  }
+  if (toolReg.noTools !== undefined) {
+    sessionOpts.noTools = toolReg.noTools
   }
   if (toolReg.customTools !== undefined && toolReg.customTools.length > 0) {
     sessionOpts.customTools = toolReg.customTools
@@ -799,6 +829,9 @@ export function openSession(opts: SessionFactoryOpts): PiSessionHandle {
     model: resolveSessionModel(opts.role, opts.model),
     tools: opts.tools ?? DEFAULT_HOLE_TOOL_NAMES,
   }
+  if (opts.cwd !== undefined && opts.cwd.length > 0) {
+    resolved.cwd = opts.cwd
+  }
   const backend = opts.backend ?? injectedBackend ?? new PiSessionBackend()
   return wrapRetry(backend.open(resolved))
 }
@@ -807,8 +840,16 @@ export function openReviewSession(opts?: Omit<SessionFactoryOpts, 'role'>): PiSe
   return openSession({ ...opts, role: 'l4_review' })
 }
 
+/**
+ * L4 重放干净会话。传入 cwd（真仓库副本）时默认挂 coding tools，
+ * 让真 mint 能在工作区里改文件/跑验证；洞 A/B 仍禁止 coding tools。
+ */
 export function openReplaySession(opts?: Omit<SessionFactoryOpts, 'role'>): PiSessionHandle {
-  return openSession({ ...opts, role: 'l4_replay' })
+  const cwd = opts?.cwd
+  const tools =
+    opts?.tools ??
+    (cwd !== undefined && cwd.length > 0 ? L4_REPLAY_CODING_TOOLS : DEFAULT_HOLE_TOOL_NAMES)
+  return openSession({ ...opts, role: 'l4_replay', tools })
 }
 
 export function openQaSession(opts?: Omit<SessionFactoryOpts, 'role'>): PiSessionHandle {

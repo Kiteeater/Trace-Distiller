@@ -42,8 +42,10 @@ export interface RunReplayOutput {
  * L4 token 不计蒸馏成本。
  */
 export async function runReplay(input: RunReplayInput): Promise<RunReplayOutput> {
+  const cwd = input.cwd ?? input.task.cwd
   const session = openReplaySession({
     ...(input.backend !== undefined ? { backend: input.backend } : {}),
+    ...(cwd !== undefined ? { cwd } : {}),
   })
   try {
     const prompt = composeReplayPrompt(input)
@@ -65,7 +67,13 @@ export function composeReplayPrompt(input: RunReplayInput): SessionPromptInput {
     TRACE_DATA_NOTICE,
     'This is a clean session. Do not proxy the original agent tool history.',
     'Playback is a distilled path for reference, not a tool-call log to replay.',
-    'Real execution success needs a workspace and model; reply with JSON only.',
+    cwd
+      ? [
+          `Work only inside cwd=${cwd}.`,
+          'Follow the distilled playback path: inspect, fix, then run the workspace verify command.',
+          'Set success=true only after verify passes in that workspace.',
+        ].join(' ')
+      : 'No workspace cwd was provided; real execution cannot succeed. Reply with JSON only.',
     formatMarkedJson('TASK_JSON', task),
     formatMarkedJson('PLAYBACK_JSON', playbackIndexForL4(input.playback)),
     [

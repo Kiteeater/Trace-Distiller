@@ -285,7 +285,7 @@ describe('eval L4 via fake backend', () => {
   it('runReplay is a clean session and eval.replay wires the score', async () => {
     const fake = new FakeSessionBackend()
     const out = await runReplay({
-      task: { trace_id: 't', text: 'Fix add', cwd: '/tmp/workspace' },
+      task: { trace_id: 't', text: 'Fix add' },
       playback,
       backend: fake,
     })

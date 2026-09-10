@@ -81,9 +81,9 @@ FakeSessionBackend is for tests only. Production with_llm needs TRACE_DISTILLER_
 
 OpenAI-compatible gateway (Macaron mint): copy .env.example to .env. TRACE_DISTILLER_API_BASE + TRACE_DISTILLER_API_KEY register a custom provider; models stay TRACE_DISTILLER_MODEL_HOLE_A/B/L4 as provider/modelId (example macaron/macaron-v1-coding-venti). Keys are never logged.
 
-eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a workspace and model; this command only guarantees the session interface.
+eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a mapped benchmark/workspaces fixture + model; this command wires cwd when present.
 
-bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample (resolveDistillMode: with_llm when hole model env is set, else no_llm; --no-llm forces no_llm), scores six gates, runs L4 qa/replay + keep-path coherence when L4/hole backends are available, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null.
+bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample (resolveDistillMode: with_llm when hole model env is set, else no_llm; --no-llm forces no_llm), scores six gates, runs L4 qa/replay + keep-path coherence when L4/hole backends are available, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces. Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null.
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
@@ -436,6 +436,7 @@ async function runBench(args: CliArgs): Promise<number> {
             playback: result.playback,
             run_qa: true,
             run_replay: true,
+            repo_root: cwd,
           })
           qa = l4.qa
           replay = l4.replay
@@ -540,6 +541,7 @@ async function runEval(args: CliArgs): Promise<number> {
       playback: packed.result.playback,
       run_qa,
       run_replay,
+      repo_root: process.cwd(),
     })
     const qa = l4.qa ?? metrics.qa
     const replay = l4.replay ?? metrics.replay

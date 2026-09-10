@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import { HOLE_TOOL_NAMES } from '../../src/agent/extension.ts'
 import {
   buildHoleCustomTools,
+  L4_REPLAY_CODING_TOOLS,
   resolvePiToolRegistration,
 } from '../../src/agent/sessions/hole_tools.ts'
 
@@ -33,4 +34,11 @@ describe('hole custom tools registration', () => {
     assert.equal(reg.customTools?.length, 1)
     assert.equal(reg.noTools, 'builtin')
   })
+  it('maps pure coding allowlist without noTools (L4 replay)', () => {
+    const reg = resolvePiToolRegistration(L4_REPLAY_CODING_TOOLS)
+    assert.deepEqual(reg.tools, [...L4_REPLAY_CODING_TOOLS])
+    assert.equal(reg.noTools, undefined)
+    assert.equal(reg.customTools, undefined)
+  })
+
 })
