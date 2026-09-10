@@ -156,11 +156,30 @@ benchmark/
 │   ├── short/         ← M1 合成小样
 │   ├── long/          ← 可空
 │   └── multi_dead_end/
+├── workspaces/        ← L4 真实小仓 + manifest
 ├── suites/            ← 各指标评测脚本 / 配置（尚未）
 └── reports/           ← 跑分结果（均值±标准差）
 ```
 
 ---
+
+
+
+## L4 重放工作区（真实小仓）
+
+合成 replay≈0 的根因：bench 以前开 L4 会话却**没有可改的仓库 cwd**，真模型只能回 success=false，六项里 replay 挂 → composite 被乘成 0。
+
+现约定：
+
+```text
+benchmark/workspaces/
+  manifest.json          # trace_id → workspace key
+  add-fix/              # 短样共用的真实小仓（坏掉的 add.ts + 验证脚本）
+```
+
+- `runOptionalL4` / `bench` 会解析 manifest，**物化临时副本** 作为 replay cwd，并给 `l4_replay` 挂 coding tools。
+- 假后端：cwd 存在即可 `success:true`（单测证明 composite>0 通路）。
+- **真 mint**：需 `TRACE_DISTILLER_MODEL_L4` + gateway；模型须在副本里改文件并跑 manifest `verify` 后再回 JSON。详见 `benchmark/workspaces/add-fix/README.md`。
 
 ## 相关文档
 

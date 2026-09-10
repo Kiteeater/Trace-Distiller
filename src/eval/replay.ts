@@ -10,7 +10,7 @@ export type ReplayTask = L4ReplayTask
 /**
  * 按剪后路径重放。必须走 sessions 的 runReplay / openReplaySession，禁止 import pi。
  * 干净会话：不代理原 agent 工具历史。
- * 真实成功率需要仓库 + 模型；接口由假后端 / 可解析 JSON 保证。
+ * 真实成功率需要 benchmark/workspaces 映射仓 + 模型；接口由假后端 / 可解析 JSON 保证。
  */
 export async function replay(
   task: ReplayTask,
