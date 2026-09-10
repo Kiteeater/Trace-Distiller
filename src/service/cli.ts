@@ -28,7 +28,10 @@ import {
   type ScoredSample,
 } from '../eval/benchmark.ts'
 import { computeDistillMetrics, compositeScore, type DistillMetrics } from '../eval/metrics.ts'
+import { scoreKeptPathCoherence } from '../eval/coherence.ts'
 import { L4_METRICS_ONLY_NOTE, runOptionalL4 } from '../eval/run.ts'
+import { renderScoreboardMarkdown } from '../eval/scoreboard.ts'
+import { holeModelsConfigured, l4BackendAvailable } from '../agent/sessions/open_session.ts'
 import { distill, resolveDistillMode, type DistillResult } from '../pipeline/orchestrator.ts'
 import { renderHtml, type ReportModel } from '../report/html.ts'
 import { renderLiveHtml } from '../report/live_page.ts'
@@ -70,7 +73,7 @@ const HELP = `Usage:
   node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
   node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
-  node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm]
+  node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--no-llm]
 
 --no-llm forces the conservative no-hole path. Without --no-llm, with_llm runs when a session backend is injected or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B is set; otherwise no_llm.
 
@@ -80,7 +83,7 @@ OpenAI-compatible gateway (Macaron mint): copy .env.example to .env. TRACE_DISTI
 
 eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a workspace and model; this command only guarantees the session interface.
 
-bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample (default --no-llm), scores six gates, and prints a JSON table per track. Tracks are never averaged together. Missing data/raw/<id>.key-decisions.json skips key-step recall (M1, not a hard fail). All six must pass or composite is 0. M1 does not require a full dataset.
+bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample (resolveDistillMode: with_llm when hole model env is set, else no_llm; --no-llm forces no_llm), scores six gates, runs L4 qa/replay + keep-path coherence when L4/hole backends are available, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null.
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
@@ -396,17 +399,43 @@ const DEFAULT_BENCH_DIR = join('benchmark', 'datasets')
 
 async function runBench(args: CliArgs): Promise<number> {
   const dir = args.datasets_dir ?? (args.input_path.length > 0 ? args.input_path : DEFAULT_BENCH_DIR)
+  const outDir = args.out_dir ?? join('benchmark', 'out')
   const profile = loadProfile(args.profile_path)
   const cwd = process.cwd()
+  const mode = resolveDistillMode({ no_llm: args.no_llm === true })
+  const runL4Metrics = l4BackendAvailable()
+  const runCoherence = holeModelsConfigured() || runL4Metrics
   const samples: ScoredSample[] = []
   try {
     for (const bin of BENCHMARK_BINS) {
       const binDir = join(dir, bin)
       for (const jsonl of listBinJsonl(binDir)) {
         const raw = loadRaw(jsonl)
-        const result = await distill({ raw, profile, mode: 'no_llm' })
+        const result = await distill({ raw, profile, mode })
         const computed = computeDistillMetrics(result)
         const gold = loadGoldSegmentIds(raw.meta.trace_id, cwd, jsonl)
+
+        let qa: number | null = null
+        let replay: number | null = null
+        let coherence_scores: number[] | null = null
+        if (runL4Metrics) {
+          const l4 = await runOptionalL4({
+            intent: result.view.intent_hypothesis,
+            playback: result.playback,
+            run_qa: true,
+            run_replay: true,
+          })
+          qa = l4.qa
+          replay = l4.replay
+        }
+        if (runCoherence) {
+          coherence_scores = await scoreKeptPathCoherence({
+            kept_ids: result.plan.kept,
+            cards: result.view.segments,
+            skeleton: result.view.skeleton,
+          })
+        }
+
         samples.push(
           scoreSample({
             bin,
@@ -415,15 +444,34 @@ async function runBench(args: CliArgs): Promise<number> {
             distill_cost_ratio: computed.distill_cost_ratio,
             kept: result.plan.kept,
             gold_segment_ids: gold,
-            replay: null,
-            qa: null,
-            coherence_scores: null,
+            replay,
+            qa,
+            coherence_scores,
           }),
         )
       }
     }
     const report = aggregateBins(samples)
-    process.stdout.write(`${JSON.stringify({ dir, bins: report.bins })}\n`)
+    const payload = {
+      dir,
+      out_dir: outDir,
+      mode,
+      l4: runL4Metrics,
+      bins: report.bins,
+    }
+    mkdirSync(outDir, { recursive: true })
+    writeFileSync(join(outDir, 'scoreboard.json'), `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+    writeFileSync(
+      join(outDir, 'scoreboard.md'),
+      renderScoreboardMarkdown({
+        dir,
+        mode,
+        l4: runL4Metrics,
+        bins: report.bins,
+      }),
+      'utf8',
+    )
+    process.stdout.write(`${JSON.stringify(payload)}\n`)
     return EXIT_OK
   } catch (error) {
     if (isAdmissionError(error)) {

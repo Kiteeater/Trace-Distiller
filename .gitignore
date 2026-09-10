@@ -43,3 +43,6 @@ data/distilled/**
 # Secrets / local eval notes
 *.pem
 secrets/
+
+# local scoreboard output
+benchmark/out/
