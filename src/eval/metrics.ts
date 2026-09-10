@@ -160,11 +160,30 @@ export function sixMetricsPassed(parts: BenchmarkParts): boolean {
 /**
  * 六项全及格才计总分，否则 0。缺项（未跑 L4 / 无金标）返回 null，不假装 0 分样本。
  * Score = 压缩率得分 × 关键步召回 × 重放成功率（召回与重放用 0–1）。
+ * 完整 composite 仍含 cost 等六项门槛；勿静默去掉 cost。
  */
 export function compositeScore(parts: BenchmarkParts): number | null {
   if (!sixMetricsPresent(parts)) return null
   if (!sixMetricsPassed(parts)) return 0
   return compressionScore(parts.compression_ratio) * parts.key_step_recall! * parts.replay!
+}
+
+/**
+ * M1 出门分：只强制压缩率 + 关键步召回（产品 MVP 硬指标）。
+ * 不读 cost / replay / qa / coherence——那些仍只进完整 composite。
+ * Score = compressionScore × key_step_recall（0–1）。
+ * 压缩或召回不及格 → 0；无金标（recall null）且压缩及格 → null。
+ */
+export function m1Score(
+  parts: Pick<BenchmarkParts, 'compression_ratio' | 'key_step_recall'>,
+): number | null {
+  const compressOk = parts.compression_ratio <= BENCHMARK_PASS.compression_ratio_max
+  if (parts.key_step_recall === null) {
+    return compressOk ? null : 0
+  }
+  const recallOk = parts.key_step_recall >= BENCHMARK_PASS.key_step_recall_min
+  if (!compressOk || !recallOk) return 0
+  return compressionScore(parts.compression_ratio) * parts.key_step_recall
 }
 
 function lerp(x: number, x0: number, y0: number, x1: number, y1: number): number {

@@ -150,7 +150,8 @@ node script/run-distill.ts bench --with-l4
 - 扫 `short/` `long/` `multi_dead_end/` 下的 `*.jsonl`。**默认 `no_llm`**（即使 `.env` 有 mint 也不自动连网），避免过夜挂起。
 - `--fake-l4`：注入 `FakeSessionBackend`（确定性 heal + verify），三档均可出现 `replay=1` / `composite>0`。
 - `--with-l4`：才启用真 mint L4 / with_llm。
-- **composite**：六项全过才算分，否则 `0`；有 skipped 且无 fail → `null`。公式 = 压缩率得分 × 关键步召回 × 重放（乘法）。三档**禁止合成平均**。
+- **composite**：六项全过才算分，否则 `0`；有 skipped 且无 fail → `null`。公式 = 压缩率得分 × 关键步召回 × 重放（乘法）。含 cost≤0.3 门槛，**勿静默去掉**。三档**禁止合成平均**。
+- **m1_score**：M1 硬门禁 = 压缩率得分 × 关键步召回。cost/replay/qa/coherence 失败不归零 m1。短 trace 真 mint 成本比常 >0.3 → composite=0 但 m1 可 >0。
 - 金标：先读 `data/raw/<trace_id>.key-decisions.json`，没有再读样本旁的 `<stem>.key-decisions.json`。没有金标 → 关键步召回 `skipped`，M1 **不算硬挂**。
 - stdout 一行 JSON + `benchmark/out/scoreboard.md`。
 - 现有样本：`short/`（add-fix + fluff-heavy）、`long/long-debug`、`multi_dead_end/many-retries`；workspaces 见 `manifest.json`。

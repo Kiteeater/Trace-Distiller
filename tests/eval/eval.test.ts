@@ -21,6 +21,7 @@ import {
   compressionScore,
   computeDistillMetrics,
   compositeScore,
+  m1Score,
   distillCostRatio,
   keyStepRecall,
   qaRatio,
@@ -221,6 +222,24 @@ describe('six-metric pure functions', () => {
       null,
     )
     assert.ok(BENCHMARK_PASS.qa_min <= passing.qa)
+  })
+
+  it('m1Score is compress x recall only; cost fail does not zero M1', () => {
+    const base = {
+      compression_ratio: 0.2,
+      key_step_recall: 0.96,
+      replay: 0.95,
+      qa: 0.9,
+      coherence_scores: [4, 5, 4],
+      distill_cost_ratio: 1.62,
+    }
+    assert.equal(sixMetricsPassed(base), false, 'cost>0.3 fails full composite')
+    assert.equal(compositeScore(base), 0)
+    assert.equal(m1Score(base), compressionScore(0.2) * 0.96)
+    assert.equal(m1Score({ ...base, compression_ratio: 0.9 }), 0)
+    assert.equal(m1Score({ ...base, key_step_recall: 0.5 }), 0)
+    assert.equal(m1Score({ ...base, key_step_recall: null }), null)
+    assert.equal(m1Score({ compression_ratio: 0.9, key_step_recall: null }), 0)
   })
 })
 
