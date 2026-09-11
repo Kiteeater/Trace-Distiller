@@ -579,6 +579,38 @@ export class FakeSessionBackend implements SessionBackend {
 }
 
 function defaultFakeRespond(input: SessionPromptInput, opts: ResolvedSessionOpts): SessionPromptResult {
+  // ADR-0010 cut-brain before continuity: cut-brain prompts mention check_continuity in guidelines.
+  if (opts.role === 'hole_b_label' && wantsCutBrain(input)) {
+    const rulesApplied =
+      input.text.includes('RULES_HINT_APPLIED=true') ||
+      (input.messages ?? []).some((m) => m.content.includes('RULES_HINT_APPLIED=true'))
+    if (!rulesApplied && wantsApplyRulesHint(input)) {
+      return {
+        text: '',
+        json: null,
+        tool_calls: [{ name: 'apply_rules_hint', arguments: {} }],
+        usage: { role: opts.role, input_tokens: Math.max(1, input.text.length), output_tokens: 8 },
+      }
+    }
+    const ids = parseFakeWindowIds(input.text)
+    if (ids.length === 0) {
+      return {
+        text: '',
+        json: null,
+        tool_calls: [],
+        usage: { role: opts.role, input_tokens: Math.max(1, input.text.length), output_tokens: 4 },
+      }
+    }
+    return {
+      text: '',
+      json: null,
+      tool_calls: ids.map((segment_id) => ({
+        name: 'label_segment',
+        arguments: { segment_id, label: 'useful_exploration', confidence: 0.72 },
+      })),
+      usage: { role: opts.role, input_tokens: Math.max(1, input.text.length), output_tokens: 8 },
+    }
+  }
   if (opts.role === 'hole_b_label' && wantsCheckContinuity(input)) {
     const pair = fakeContinuityArgs(input.text)
     return {
@@ -601,10 +633,34 @@ function defaultFakeRespond(input: SessionPromptInput, opts: ResolvedSessionOpts
   }
 }
 
+function wantsCutBrain(input: SessionPromptInput): boolean {
+  const blob = `${input.system ?? ''}
+${input.text}`
+  return blob.includes('cut-brain') || blob.includes('apply_rules_hint') || blob.includes('RULES_HINT_APPLIED')
+}
+
+function wantsApplyRulesHint(input: SessionPromptInput): boolean {
+  const blob = `${input.system ?? ''}
+${input.text}`
+  return blob.includes('apply_rules_hint') && !input.text.includes('RULES_HINT_APPLIED=true')
+}
+
+function parseFakeWindowIds(text: string): string[] {
+  const match = text.match(/window_segment_ids:\s*(\[[^\]]*\])/)
+  if (match?.[1] === undefined) return []
+  try {
+    const parsed = JSON.parse(match[1]) as unknown
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 function wantsCheckContinuity(input: SessionPromptInput): boolean {
   const blob = `${input.system ?? ''}
 ${input.text}`
-  return blob.includes('check_continuity')
+  // label_window checkContinuityPair; avoid matching cut-brain guideline mentions.
+  return blob.includes('Call check_continuity once') || (blob.includes('left:') && blob.includes('right:') && blob.includes('check_continuity'))
 }
 
 function fakeContinuityArgs(text: string): {

@@ -60,3 +60,9 @@ export const SESSION_CALL_TIMEOUT_MS = 120_000
 
 /** 覆盖 SESSION_CALL_TIMEOUT_MS 的 env 名。 */
 export const SESSION_TIMEOUT_ENV = 'TRACE_DISTILLER_SESSION_TIMEOUT_MS'
+
+/**
+ * cut-brain ReAct 最大轮数（ADR-0010）：propose → tool → mask → iterate。
+ * 禁止在 sessions 另写魔数。
+ */
+export const CUT_BRAIN_MAX_ROUNDS = 4

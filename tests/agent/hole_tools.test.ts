@@ -8,11 +8,11 @@ import {
 } from '../../src/agent/sessions/hole_tools.ts'
 
 describe('hole custom tools registration', () => {
-  it('builds the closed-set three tools for hole B', () => {
+  it('builds the closed-set cut-brain / hole tools', () => {
     const tools = buildHoleCustomTools(HOLE_TOOL_NAMES)
     assert.deepEqual(
       tools.map((t) => t.name).sort(),
-      ['check_continuity', 'label_segment', 'read_segment'],
+      ['apply_rules_hint', 'check_continuity', 'keep_segment', 'label_segment', 'read_segment'],
     )
   })
 
@@ -24,8 +24,14 @@ describe('hole custom tools registration', () => {
   it('maps hole tool names to customTools + noTools=builtin', () => {
     const reg = resolvePiToolRegistration(HOLE_TOOL_NAMES)
     assert.equal(reg.noTools, 'builtin')
-    assert.deepEqual(reg.tools.sort(), ['check_continuity', 'label_segment', 'read_segment'])
-    assert.equal(reg.customTools?.length, 3)
+    assert.deepEqual(reg.tools.sort(), [
+      'apply_rules_hint',
+      'check_continuity',
+      'keep_segment',
+      'label_segment',
+      'read_segment',
+    ])
+    assert.equal(reg.customTools?.length, 5)
   })
 
   it('ignores unknown tool names so coding tools stay out', () => {

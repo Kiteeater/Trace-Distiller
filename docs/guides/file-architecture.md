@@ -76,6 +76,7 @@ trace-distiller/
 │  │  ├─ sessions/              # 全仓库唯一可 import pi（含 tool_mask.ts）
 │  │  │  ├─ open_session.ts      # 工厂 + SessionBackend；createAgentSession 只在这里
 │  │  │  ├─ skeleton_pass.ts
+│  │  │  ├─ cut_brain.ts        # ADR-0010 ReAct 打标；洞 B 角色
 │  │  │  ├─ label_window.ts
 │  │  │  ├─ write_warrant.ts    # 可改纯代码，形状不变
 │  │  │  ├─ l4_qa.ts            # runQa；role=l4_qa
@@ -147,8 +148,8 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 | `src/domain/` 三文件 | LabelDecision / CutDecision / SpanViolation | **文件名已定** | 不变量跟 types 一起钉 |
 | `src/adapters/claude_code.ts` | L0 解析 + Admission Gate | **M1 文件已定** | 启发式阈值见 ingest 开放问题；SWE-bench parser MVP 不做 |
 | `src/pipeline/*.ts` 四文件 | 切段 / 规则 / 编排 / 组装 | **文件名已定** | Jaccard / span 数字已拍板；`writeWarrant` 已改纯代码 |
-| `src/agent/sessions/` | **唯一 pi 依赖点** | **文件名已定** | `open_session.ts` 工厂；`tool_mask.ts`（ADR-0010）；洞 A/B；`write_warrant.ts`；L4 `l4_qa` / `l4_replay` / `l4_review` |
-| `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown | **路径已定** | 三工具已拍板闭集（[tools.md](./tools.md)）；五份 skill 只写洞 B 纪律，洞 A/B 仍未接通 |
+| `src/agent/sessions/` | **唯一 pi 依赖点** | **文件名已定** | `open_session.ts` 工厂；`tool_mask.ts` / `cut_brain.ts`（ADR-0010）；洞 A/B；`write_warrant.ts`；L4 |
+| `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown | **路径已定** | LOCKED：`label_segment` / `check_continuity` / `keep_segment` / `read_segment` / `apply_rules_hint`（[tools.md](./tools.md)） |
 | `src/data/data_*.ts` 四文件 | SQLite：段 / 打标 / 凭证 / 指标 | **文件名已定** | **列级 schema OPEN**（P0） |
 | `src/eval/` | L4 数字 + 分档报分（`benchmark.ts`） | **职责已定** | 盲测协议已拍板（intent + playback；缺骨架回填 keep；最多 2 轮）。QA/replay/review 经 sessions；假后端可测。复合分见 [benchmark.md](./benchmark.md)；禁止跨赛道平均 |
 | `src/report/` | 结果 JSON → 单个 `.html` | **已定** | 视觉细节非契约 |

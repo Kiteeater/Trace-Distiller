@@ -164,7 +164,7 @@ trace-distiller/
 │  ├─ pipeline/           # biz 层：segmenter.ts rules.ts orchestrator.ts assembler.ts
 │  ├─ agent/              # pi 二开（仅两洞）
 │  │  ├─ sessions/        # skeletonPass / labelWindow（唯一 pi 依赖点）
-│  │  ├─ extension.ts     # label_segment / check_continuity
+│  │  ├─ extension.ts     # label_segment / check_continuity / keep_segment / apply_rules_hint
 │  │  └─ skills/           # 分场景裁剪 skill（Markdown）
 │  ├─ data/               # SQLite：打标结果、指标（biz 不直接碰库）
 │  ├─ eval/               # L4: 指标统计 + QA + 重放

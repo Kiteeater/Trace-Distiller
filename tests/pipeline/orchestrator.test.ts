@@ -55,7 +55,9 @@ describe('orchestrator agent path (ADR-0010)', () => {
     assert.doesNotMatch(src, /from ['"]pi['"]/)
     assert.match(src, /agent\/sessions\/write_warrant/)
     assert.match(src, /skeleton_pass/)
-    assert.match(src, /label_window/)
+    assert.match(src, /cut_brain/)
+    assert.doesNotMatch(src, /from '\.\/rules/)
+    assert.doesNotMatch(src, /applyRules/)
     assert.doesNotMatch(src, /l4_qa/)
     assert.doesNotMatch(src, /l4_replay/)
     assert.doesNotMatch(src, /l4_review/)
@@ -164,6 +166,13 @@ function skeletonPayload(nodes: Skeleton['nodes'], scenario = 'test_fix'): Recor
   }
 }
 
+function rulesHintApplied(input: SessionPromptInput): boolean {
+  return (
+    input.text.includes('RULES_HINT_APPLIED=true') ||
+    (input.messages ?? []).some((m) => m.content.includes('RULES_HINT_APPLIED=true'))
+  )
+}
+
 function labelingBackend(opts: {
   nodes: Skeleton['nodes']
   scenario?: string
@@ -173,6 +182,14 @@ function labelingBackend(opts: {
     if (session.role === 'hole_a_skeleton') {
       const json = skeletonPayload(opts.nodes, opts.scenario)
       return fakeResult({ json, role: session.role })
+    }
+    const wantHint =
+      (input.system ?? '').includes('apply_rules_hint') || input.text.includes('apply_rules_hint')
+    if (wantHint && !rulesHintApplied(input)) {
+      return fakeResult({
+        role: session.role,
+        tool_calls: [{ name: 'apply_rules_hint', arguments: {} }],
+      })
     }
     if (opts.holeB === 'throw') {
       throw new Error('window boom')
@@ -254,7 +271,10 @@ describe('orchestrator with_llm', () => {
     }
 
     const holeBCalls = backend.calls.filter((c) => c.role === 'hole_b_label')
-    assert.equal(holeBCalls.length, Math.ceil(ruled.unresolved_ids.length / LABEL_WINDOW_SIZE))
+    assert.ok(holeBCalls.length >= 1)
+    assert.ok(holeBCalls.some((c) => c.input.text.includes('apply_rules_hint') || (c.input.system ?? '').includes('apply_rules_hint')))
+    // 1 hint round + remaining unresolved windows
+    assert.ok(holeBCalls.length >= 1 + Math.ceil(ruled.unresolved_ids.length / LABEL_WINDOW_SIZE) - 1)
     assert.deepEqual(out.unresolved_ids, [])
     assert.ok((out.hole_a_plus_b_tokens ?? 0) > 0)
 
@@ -296,8 +316,8 @@ describe('orchestrator with_llm', () => {
     }
     assert.equal(out.decisions.some((d) => d.source.kind === 'llm'), false)
     assert.ok(out.hole_notes && out.hole_notes.length > 0)
-    assert.match(out.hole_notes[0]!, /hole_b_window_failed/)
-    assert.match(out.hole_notes[0]!, /window boom/)
+    assert.match(out.hole_notes.join('\n'), /cut_brain_round_/)
+    assert.match(out.hole_notes.join('\n'), /window boom/)
     assert.ok((out.hole_a_plus_b_tokens ?? 0) > 0)
 
     const silent = labelingBackend({

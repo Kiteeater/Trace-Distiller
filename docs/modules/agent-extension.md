@@ -1,6 +1,6 @@
 # agent/extension — 洞内工具
 
-对应路径：`src/agent/extension.ts`。往 pi 会话注册自定义工具。判断力工具 **只有两个**（architecture）：`label_segment` / `check_continuity`。
+对应路径：`src/agent/extension.ts`。往 pi 会话注册自定义工具。LOCKED（ADR-0010）：`label_segment` / `check_continuity` / `keep_segment` / `read_segment` / `apply_rules_hint`。
 
 TODO P0 另要求 `read_segment`：洞 B 从卡片升级到 full 的注意力闭环。它**不是判断力工具**，是确定性取数，由本 extension 提供、由 sessions 接到 RawTrace。
 
@@ -16,7 +16,7 @@ TODO P0 另要求 `read_segment`：洞 B 从卡片升级到 full 的注意力闭
 **非目标**
 
 - 不在工具 handler 里做业务决策（不改标签政策、不跑 assembler）。
-- 不加第三个判断力工具。工具越多洞里的模型越分心，成本卖点没了。
+- 不加 `drop_segment` / `edit_trace`。`keep_segment` 只交 keep 判断，不执行裁剪。
 - 不实现 `rewrite_skill`（architecture 活口，M3+）。
 - 工具 handler 不直接 SQLite。读原文从 sessions 传入的 RawTrace / 内存索引取。
 
@@ -70,7 +70,7 @@ extension 只定义 schema + 把调用转发到 sessions 注入的 ctx。真正�
 
 - handler 里调 LLM。
 - handler 里写库。
-- 提供 `drop_segment` / `edit_trace` / `set_profile` 之类执行类工具。裁剪权在代码。
+- 提供 `drop_segment` / `edit_trace` / `set_profile` 之类执行类工具。裁剪落地在代码。
 - 让 `label_segment` 一次标一整窗而不给 id——必须按段。可允许多次调用。
 
 ---

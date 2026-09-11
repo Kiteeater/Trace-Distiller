@@ -25,6 +25,7 @@ import {
   CARD_INDEX_CHARS_PER_SEGMENT_MAX,
   CARD_INDEX_HEAD_MAX_CHARS,
   FAIL_CLOSED_KEEP,
+  CUT_BRAIN_MAX_ROUNDS,
   LABEL_WINDOW_SIZE,
   PI_FAILURE_RETRY,
   REVIEW_MAX_ROUNDS,
@@ -40,6 +41,7 @@ import { SCENARIOS } from '../../src/enums/scenario.ts'
 describe('locked defaults', () => {
   it('locks window, span, jaccard, head, dead-end, review, and retry numbers', () => {
     assert.equal(LABEL_WINDOW_SIZE, 8)
+    assert.equal(CUT_BRAIN_MAX_ROUNDS, 4)
     assert.equal(SPAN_MAX_GAP_SEGMENTS, 3)
     assert.equal(SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD, 0.8)
     assert.equal(SEGMENT_HEAD_MAX_CHARS, 120)

@@ -1,4 +1,5 @@
-import { labelWindow, type SkeletonPatch } from '../agent/sessions/label_window.ts'
+import { cutBrain } from '../agent/sessions/cut_brain.ts'
+import { type SkeletonPatch } from '../agent/sessions/label_window.ts'
 import {
   hasInjectedSessionBackend,
   holeModelsConfigured,
@@ -12,7 +13,7 @@ import {
   KEEP_RATIO_FLOOR,
   KEEP_RATIO_SOFT_CAP,
 } from '../constant/compression.ts'
-import { LABEL_WINDOW_SIZE, REVIEW_MAX_ROUNDS } from '../constant/window.ts'
+import { REVIEW_MAX_ROUNDS } from '../constant/window.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../domain/cut_decision.ts'
 import { isSpanFailure } from '../domain/span_violation.ts'
 import type { LabelDecision } from '../domain/label_decision.ts'
@@ -24,7 +25,6 @@ import type { CutProfile } from '../types/cut_profile.ts'
 import type { CutWarrant } from '../types/cut_warrant.ts'
 import type { RawTrace } from '../types/raw_trace.ts'
 import { assemble, type AssembleOutput } from './assembler.ts'
-import { applyRules } from './rules.ts'
 import { segment } from './segmenter.ts'
 import { warn as logWarn } from '../utils/logger.ts'
 
@@ -92,9 +92,9 @@ export function resolveDistillMode(input: {
 }
 
 /**
- * Agent-led 编排（ADR-0010）。mode 仅 'with_llm'：洞 A → 逐窗洞 B → 凭证 → assemble → 盲测纯代码回填。
- * 规则仍先跑作 hints；最终 how-to-cut 由 agent 洞决议（未决 Fail-Closed Keep 仍是 failure policy）。
- * 禁止 import pi SDK；洞只经 sessions 函数。完整 cut-brain ReAct 循环见 ADR-0010 follow-up。
+ * Agent-led 编排（ADR-0010 Phase 2）：segment → 洞 A → cut-brain（可调 apply_rules_hint）→ writeWarrant → assemble。
+ * 不把规则 decisions 静默并进最终结果；规则仅当 agent 调用 apply_rules_hint 时采纳。
+ * 未决 Fail-Closed Keep = agent/tool failure policy。禁止 import pi SDK。
  */
 export async function distill(input: DistillInput): Promise<DistillResult> {
   const { raw, profile, mode } = input
@@ -103,12 +103,11 @@ export async function distill(input: DistillInput): Promise<DistillResult> {
   }
   const backend = input.opts?.sessionBackend
   const segmented = segment(raw)
-  const ruled = applyRules({ view: segmented, raw })
 
   return await runWithLlm({
     raw,
     profile,
-    ruled,
+    view: segmented,
     ...(backend !== undefined ? { backend } : {}),
   })
 }
@@ -116,66 +115,56 @@ export async function distill(input: DistillInput): Promise<DistillResult> {
 async function runWithLlm(input: {
   raw: RawTrace
   profile: CutProfile
-  ruled: ReturnType<typeof applyRules>
+  view: AgentView
   backend?: SessionBackend
 }): Promise<DistillResult> {
-  const { raw, profile, ruled, backend } = input
+  const { raw, profile, backend } = input
   const anchors = splitAnchorTurnIds(raw)
   const holeA = await skeletonPass({
     trace_id: raw.meta.trace_id,
     head_turn_ids: anchors.head_turn_ids,
     verification_turn_ids: anchors.verification_turn_ids,
     raw,
-    view: ruled.view,
+    view: input.view,
     ...(backend !== undefined ? { backend } : {}),
   })
 
   let skeleton: Skeleton = holeA.skeleton
   let view: AgentView = {
-    ...ruled.view,
+    ...input.view,
     intent_hypothesis: holeA.intent,
     skeleton,
   }
 
   const route = resolveSkillRoute(holeA.scenario)
-  const llmDecisions: LabelDecision[] = []
-  const stillUnresolved: string[] = []
   const holeNotes: string[] = []
-  let holeTokens =
-    holeA.usage.input_tokens + holeA.usage.output_tokens
+  let holeTokens = holeA.usage.input_tokens + holeA.usage.output_tokens
+  let decisions: LabelDecision[] = []
+  let stillUnresolved: string[] = view.segments.map((s) => s.id)
 
-  const windowSize =
-    typeof profile.label_window_size === 'number' &&
-    Number.isFinite(profile.label_window_size) &&
-    profile.label_window_size > 0
-      ? Math.floor(profile.label_window_size)
-      : LABEL_WINDOW_SIZE
-  for (const windowIds of chunkIds(ruled.unresolved_ids, windowSize)) {
-    try {
-      const labeled = await labelWindow({
-        segment_ids: windowIds,
-        view,
-        raw,
-        skeleton,
-        intent: view.intent_hypothesis,
-        skill_path: route.path,
-        ...(backend !== undefined ? { backend } : {}),
-      })
-      llmDecisions.push(...labeled.decisions)
-      stillUnresolved.push(...labeled.still_unlabeled)
-      holeTokens += labeled.usage.input_tokens + labeled.usage.output_tokens
-      skeleton = applySkeletonPatch(skeleton, labeled.skeleton_patch)
-      view = { ...view, skeleton }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      const note = `hole_b_window_failed:${windowIds.join(',')}:${message}`
-      holeNotes.push(note)
-      logWarn(note)
-      stillUnresolved.push(...windowIds)
-    }
+  try {
+    const brain = await cutBrain({
+      segment_ids: view.segments.map((s) => s.id),
+      view,
+      raw,
+      skeleton,
+      intent: view.intent_hypothesis,
+      skill_path: route.path,
+      ...(backend !== undefined ? { backend } : {}),
+    })
+    decisions = brain.decisions
+    stillUnresolved = brain.still_unresolved
+    view = { ...brain.view, intent_hypothesis: view.intent_hypothesis, skeleton }
+    holeTokens += brain.usage.input_tokens + brain.usage.output_tokens
+    if (brain.notes !== undefined) holeNotes.push(...brain.notes)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const note = `cut_brain_failed:${message}`
+    holeNotes.push(note)
+    logWarn(note)
+    // stillUnresolved stays all segment ids → Fail-Closed Keep in writeWarrant
   }
 
-  const decisions = [...ruled.decisions, ...llmDecisions]
   view = { ...view, skeleton }
   let warrant = writeWarrant({
     skeleton: view.skeleton,

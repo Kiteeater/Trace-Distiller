@@ -4,7 +4,8 @@
 
 ```text
 skeletonPass(...)   → 意图 + 骨架 + 场景分类     【洞 A】
-labelWindow(...)    → 四类标签 + 置信度           【洞 B】
+cutBrain(...)       → 标签 / 显式 keep / 可选规则 hint 【cut-brain，洞 B 角色】
+labelWindow(...)    → 四类标签 + 置信度           【洞 B 逐窗，仍可用】
 ```
 
 洞流程以 [ADR-0009](../adr/0009-agent-view-and-cut-warrant.md) 为准：**洞 A 不是全量读 Trace**，是头尾意图 + 增量骨架。
