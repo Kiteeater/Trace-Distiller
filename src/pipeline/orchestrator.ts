@@ -153,7 +153,13 @@ async function runWithLlm(input: {
   let holeTokens =
     holeA.usage.input_tokens + holeA.usage.output_tokens
 
-  for (const windowIds of chunkIds(ruled.unresolved_ids, LABEL_WINDOW_SIZE)) {
+  const windowSize =
+    typeof profile.label_window_size === 'number' &&
+    Number.isFinite(profile.label_window_size) &&
+    profile.label_window_size > 0
+      ? Math.floor(profile.label_window_size)
+      : LABEL_WINDOW_SIZE
+  for (const windowIds of chunkIds(ruled.unresolved_ids, windowSize)) {
     try {
       const labeled = await labelWindow({
         segment_ids: windowIds,
@@ -315,7 +321,18 @@ export function enforceKeepRatioFloor(input: {
   profile: CutProfile
   min_ratio?: number
 }): { warrant: CutWarrant; assembled: AssembleOutput; filled_ids: string[] } {
-  const minRatio = input.min_ratio ?? KEEP_RATIO_FLOOR
+  const profileFloor = input.profile.keep_ratio_floor
+  // Explicit null on profile (short valve) → skip keep floor.
+  if (profileFloor === null && input.min_ratio === undefined) {
+    const assembled0 = assemble({
+      raw: input.raw,
+      view: input.view,
+      warrant: input.warrant,
+      profile: input.profile,
+    })
+    return { warrant: input.warrant, assembled: assembled0, filled_ids: [] }
+  }
+  const minRatio = input.min_ratio ?? (typeof profileFloor === 'number' ? profileFloor : KEEP_RATIO_FLOOR)
   let warrant = input.warrant
   let assembled = assemble({
     raw: input.raw,
@@ -326,7 +343,7 @@ export function enforceKeepRatioFloor(input: {
   const original = input.raw.meta.total_tokens
   const filled_ids: string[] = []
   if (original <= 0) return { warrant, assembled, filled_ids }
-  // Short traces: skip floor — one large segment can leap past compression_ratio_max.
+  // Short / small traces: skip floor — one large segment can leap past compression_ratio_max.
   if (original < KEEP_FLOOR_MIN_ORIGINAL_TOKENS) return { warrant, assembled, filled_ids }
 
   const cutTokens = (): number =>

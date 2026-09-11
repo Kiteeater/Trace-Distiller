@@ -60,6 +60,7 @@ cp .env.example .env
 # TRACE_DISTILLER_MODEL_HOLE_B=macaron/macaron-v1-coding-venti
 # TRACE_DISTILLER_MODEL_L4=macaron/macaron-v1-coding-venti
 # 可选：TRACE_DISTILLER_SESSION_TIMEOUT_MS=120000
+# 长样 mint 建议：TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000
 ```
 
 真 mint L4（opt-in，防挂）：`bench --with-l4`。日常 CI / 过夜用 `bench --no-llm --fake-l4`。
@@ -103,7 +104,7 @@ node script/run-distill.ts report <trace_id> --sqlite /tmp/distiller.sqlite --ou
 
 `eval` 读压缩率、规则覆盖、LLM 段占比、Fail-Closed 数。加 `--qa` / `--replay` 且设了 `TRACE_DISTILLER_MODEL_L4`（或注入假后端）才跑 L4；会话有硬超时。
 
-`bench` 默认 `no_llm`（即使有 mint env 也不挂）。`--fake-l4` 走假后端打分；`--with-l4` 才启用真 mint。扫 `benchmark/datasets/{short,long,multi_dead_end}`，stdout 打 JSON 分档表。三档禁止合并平均。无金标则召回 skipped（M1 不硬挂）。
+`bench` 默认 `no_llm`（即使有 mint env 也不挂）。`--fake-l4` 走假后端打分；`--with-l4` 才启用真 mint。`--bin long` / `--bins short,long` 只跑所选赛道（短长阀门 CutProfile 不同）。扫 `benchmark/datasets/{short,long,multi_dead_end}`，stdout 打 JSON 分档表。三档禁止合并平均。无金标则召回 skipped（M1 不硬挂）。长 mint：`TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000 bun run bench:long:mint`。
 
 ### 只读 live 页（Distiller 裁剪，不是对方 agent）
 

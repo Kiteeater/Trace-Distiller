@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parse, sniff } from '../adapters/claude_code.ts'
-import { DEFAULT_CUT_PROFILE } from '../constant/compression.ts'
+import {
+  DEFAULT_CUT_PROFILE,
+  cutProfileForBin,
+  type ProfileBin,
+} from '../constant/compression.ts'
 import { insertLabelDecisions, listLabels, ruleCoverage, type RuleCoverage } from '../data/data_label.ts'
 import { getMetrics, insertMetrics, type MetricsRow } from '../data/data_metric.ts'
 import {
@@ -22,6 +26,7 @@ import { isSpanFailure } from '../domain/span_violation.ts'
 import {
   aggregateBins,
   BENCHMARK_BINS,
+  isBenchmarkBin,
   keyDecisionFileCandidates,
   parseKeyDecisions,
   scoreSample,
@@ -71,6 +76,8 @@ export interface CliArgs {
   fake_l4?: boolean
   /** bench 显式启用真 mint L4 / with_llm；缺省强制 no_llm 防挂起 */
   with_l4?: boolean
+  /** bench: only these bins (short|long|multi_dead_end). Empty = all. */
+  bins?: ProfileBin[]
   qa?: boolean
   replay?: boolean
   help?: boolean
@@ -81,7 +88,7 @@ const HELP = `Usage:
   node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
   node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
-  node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--no-llm] [--fake-l4] [--with-l4]
+  node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--no-llm] [--fake-l4] [--with-l4] [--bin short|long|multi_dead_end] [--bins a,b]
 
 --no-llm forces the conservative no-hole path. Without --no-llm, with_llm runs when a session backend is injected or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B is set; otherwise no_llm.
 
@@ -91,7 +98,7 @@ OpenAI-compatible gateway (Macaron mint): copy .env.example to .env. TRACE_DISTI
 
 eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a mapped benchmark/workspaces fixture + model; this command wires cwd when present.
 
-bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample, scores six gates, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Default is --no-llm (even if mint env is set) so overnight/CI cannot hang. --with-l4 opts into with_llm + real mint L4 (session calls have SESSION_CALL_TIMEOUT_MS hard timeout). --fake-l4 injects FakeSessionBackend (deterministic heal + verify) so composite can exceed 0 without mint. Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces; success is gated by workspace verify[] when present. Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null. m1_score = compressionScore x key_step_recall (M1 gate; cost fail does not zero m1). L4/coherence failures surface as sample notes.
+bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample, scores six gates, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Default is --no-llm (even if mint env is set) so overnight/CI cannot hang. --with-l4 opts into with_llm + real mint L4 (session calls have SESSION_CALL_TIMEOUT_MS hard timeout; for long mint set TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000). --fake-l4 injects FakeSessionBackend (deterministic heal + verify) so composite can exceed 0 without mint. --bin / --bins select tracks so short and long are not forced into one hang-prone run; each selected bin uses its CutProfile valve (short=less aggressive dead_end + soft cost; long/multi=stronger collapse + keep floor ~8–15%) unless --profile overrides. Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces; success is gated by workspace verify[] when present. Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null. m1_score = compressionScore x key_step_recall (M1 gate; cost fail does not zero m1). L4/coherence failures surface as sample notes.
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
@@ -124,6 +131,7 @@ export function parseArgv(argv: string[]): CliArgs {
   let no_llm: boolean | undefined
   let fake_l4: boolean | undefined
   let with_l4: boolean | undefined
+  let bins: ProfileBin[] | undefined
   let qa: boolean | undefined
   let replay: boolean | undefined
 
@@ -193,6 +201,21 @@ export function parseArgv(argv: string[]): CliArgs {
       with_l4 = true
       continue
     }
+    if (token === '--bin' || token === '--bins') {
+      const [raw, nextI] = take(i, token)
+      i = nextI
+      const parts = raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+      if (parts.length === 0) throw new Error(`${token} 需要 short|long|multi_dead_end`)
+      const parsed: ProfileBin[] = []
+      for (const part of parts) {
+        if (!isBenchmarkBin(part)) {
+          throw new Error(`未知 bin ${part}（期望 short|long|multi_dead_end）`)
+        }
+        if (!parsed.includes(part)) parsed.push(part)
+      }
+      bins = bins === undefined ? parsed : [...new Set([...bins, ...parsed])]
+      continue
+    }
     if (token === '--qa') {
       qa = true
       continue
@@ -225,6 +248,7 @@ export function parseArgv(argv: string[]): CliArgs {
   if (no_llm !== undefined) args.no_llm = no_llm
   if (fake_l4 !== undefined) args.fake_l4 = fake_l4
   if (with_l4 !== undefined) args.with_l4 = with_l4
+  if (bins !== undefined) args.bins = bins
   if (qa !== undefined) args.qa = qa
   if (replay !== undefined) args.replay = replay
   return args
@@ -337,23 +361,31 @@ function loadRaw(inputPath: string): RawTrace {
   return parse(text)
 }
 
-function loadProfile(profilePath: string | undefined): CutProfile {
-  if (profilePath === undefined) return DEFAULT_CUT_PROFILE
+function loadProfile(profilePath: string | undefined, base: CutProfile = DEFAULT_CUT_PROFILE): CutProfile {
+  if (profilePath === undefined) return base
   const parsed: unknown = JSON.parse(readFileSync(profilePath, 'utf8'))
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`无效 CutProfile: ${profilePath}`)
   }
   const row = parsed as Partial<CutProfile>
-  return {
-    ...DEFAULT_CUT_PROFILE,
+  const merged: CutProfile = {
+    ...base,
     ...row,
     compression_ratio: {
-      ...DEFAULT_CUT_PROFILE.compression_ratio,
+      ...base.compression_ratio,
       ...(row.compression_ratio ?? {}),
     },
-    span: { ...DEFAULT_CUT_PROFILE.span, ...(row.span ?? {}) },
-    dead_end: { ...DEFAULT_CUT_PROFILE.dead_end, ...(row.dead_end ?? {}) },
+    span: { ...base.span, ...(row.span ?? {}) },
+    dead_end: { ...base.dead_end, ...(row.dead_end ?? {}) },
   }
+  if (row.label_window_size !== undefined) merged.label_window_size = row.label_window_size
+  if (row.keep_ratio_floor !== undefined) merged.keep_ratio_floor = row.keep_ratio_floor
+  return merged
+}
+
+function resolveBenchBins(args: CliArgs): ProfileBin[] {
+  if (args.bins !== undefined && args.bins.length > 0) return args.bins
+  return [...BENCHMARK_BINS]
 }
 
 function writeCuts(outDir: string, result: DistillResult): void {
@@ -432,7 +464,7 @@ const DEFAULT_BENCH_DIR = join('benchmark', 'datasets')
 async function runBench(args: CliArgs): Promise<number> {
   const dir = args.datasets_dir ?? (args.input_path.length > 0 ? args.input_path : DEFAULT_BENCH_DIR)
   const outDir = args.out_dir ?? join('benchmark', 'out')
-  const profile = loadProfile(args.profile_path)
+  const selectedBins = resolveBenchBins(args)
   const cwd = process.cwd()
   // Default no_llm even when mint env is set. Real mint path is opt-in via --with-l4.
   const wantRealL4 = args.with_l4 === true
@@ -448,8 +480,9 @@ async function runBench(args: CliArgs): Promise<number> {
     injectedFake || (wantRealL4 && (holeModelsConfigured() || runL4))
   const samples: ScoredSample[] = []
   try {
-    for (const bin of BENCHMARK_BINS) {
+    for (const bin of selectedBins) {
       const binDir = join(dir, bin)
+      const profile = loadProfile(args.profile_path, cutProfileForBin(bin))
       for (const jsonl of listBinJsonl(binDir)) {
         const raw = loadRaw(jsonl)
         const result = await distill({ raw, profile, mode })
@@ -515,6 +548,7 @@ async function runBench(args: CliArgs): Promise<number> {
       l4: runL4,
       fake_l4: args.fake_l4 === true,
       with_l4: wantRealL4,
+      selected_bins: selectedBins,
       bins: report.bins,
     }
     mkdirSync(outDir, { recursive: true })

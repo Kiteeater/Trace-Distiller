@@ -33,7 +33,7 @@ Ground Truth = 可独立验证的完成标记（测试通过 / 任务产出被�
 
 ### 公开长会话（benchmark/datasets/long）
 
-已适配 [choucsan/mimo-claude-code-traces-1k](https://huggingface.co/datasets/choucsan/mimo-claude-code-traces-1k)（MIT）：见 `benchmark/datasets/long/SOURCES.md`。HF 上的 session JSONL；本库注入显式 GT 以便 Admission Gate。无密钥。
+已适配 [choucsan/mimo-claude-code-traces-1k](https://huggingface.co/datasets/choucsan/mimo-claude-code-traces-1k)（MIT）：见 `benchmark/datasets/long/SOURCES.md` 与 `multi_dead_end/SOURCES.md`。优先收录带失败工具/测试后再恢复的长会话。HF 上的 session JSONL；本库注入显式 GT 以便 Admission Gate。无密钥。
 
 ### 来源优先级（M1）
 

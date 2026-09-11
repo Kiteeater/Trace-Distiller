@@ -556,6 +556,50 @@ describe('cli', { concurrency: 1 }, () => {
     assert.ok(names.some((n) => n.endsWith('.live.json')), names.join(','))
   })
 
+  it('parseArgv accepts --bin and --bins for valve selection', () => {
+    const one = parseArgv(['bench', '--bin', 'long', '--with-l4'])
+    assert.deepEqual(one.bins, ['long'])
+    assert.equal(one.with_l4, true)
+    const multi = parseArgv(['bench', '--bins', 'short,long', '--bin', 'multi_dead_end'])
+    assert.deepEqual(multi.bins, ['short', 'long', 'multi_dead_end'])
+  })
+
+  it('bench --bin long only scores the long track', async () => {
+    const chunks: string[] = []
+    const origWrite = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    try {
+      const code = await runCli({
+        command: 'bench',
+        input_path: '',
+        datasets_dir: join(repoRoot, 'benchmark/datasets'),
+        bins: ['long'],
+        no_llm: true,
+      })
+      assert.equal(code, EXIT_OK)
+    } finally {
+      process.stdout.write = origWrite
+    }
+    const line = chunks
+      .join('')
+      .split('\n')
+      .map((row) => row.trim())
+      .filter((row) => row.startsWith('{'))
+      .at(-1)
+    assert.ok(line)
+    const report = JSON.parse(line!) as {
+      selected_bins: string[]
+      bins: { short: { n: number }; long: { n: number }; multi_dead_end: { n: number } }
+    }
+    assert.deepEqual(report.selected_bins, ['long'])
+    assert.equal(report.bins.short.n, 0)
+    assert.ok(report.bins.long.n >= 1)
+    assert.equal(report.bins.multi_dead_end.n, 0)
+  })
+
   it('bench prints per-track JSON and does not average bins', async () => {
     const chunks: string[] = []
     const origWrite = process.stdout.write.bind(process.stdout)
