@@ -13,6 +13,8 @@ describe('scoreboard markdown', () => {
         stddev_composite: 0,
         mean_m1_score: 80,
         stddev_m1_score: 0,
+        mean_hole_a_efficiency: 0.42,
+        stddev_hole_a_efficiency: 0,
         samples: [
           {
             trace_id: 't1',
@@ -28,6 +30,16 @@ describe('scoreboard markdown', () => {
             composite: 60,
             m1_score: 80,
             gold: 'independent',
+            hole_a_vector: {
+              quality: 1,
+              cosine: 1,
+              skeleton_recall: null,
+              tokens: 10,
+              segments_read: 2,
+              cost: 10,
+              efficiency: 0.42,
+              embedding: 'deterministic_hash',
+            },
           },
         ],
       },
@@ -38,6 +50,8 @@ describe('scoreboard markdown', () => {
         stddev_composite: null,
         mean_m1_score: null,
         stddev_m1_score: null,
+        mean_hole_a_efficiency: null,
+        stddev_hole_a_efficiency: null,
         samples: [],
       },
       multi_dead_end: {
@@ -47,6 +61,8 @@ describe('scoreboard markdown', () => {
         stddev_composite: null,
         mean_m1_score: null,
         stddev_m1_score: null,
+        mean_hole_a_efficiency: null,
+        stddev_hole_a_efficiency: null,
         samples: [],
       },
     }
@@ -56,7 +72,11 @@ describe('scoreboard markdown', () => {
     assert.match(md, /never averaged/i)
     assert.match(md, /m1_score/)
     assert.match(md, /\| m1 \|/)
+    assert.match(md, /\| a_eff \|/)
     assert.match(md, /mean m1=/)
+    assert.match(md, /mean a_eff=/)
+    assert.match(md, /0\.420/)
+    assert.match(md, /ADR-0011 b/)
     assert.doesNotMatch(md, /overall score/i)
   })
 })

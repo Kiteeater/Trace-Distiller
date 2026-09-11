@@ -58,6 +58,18 @@ export interface DistillResult {
   hole_a_plus_b_tokens?: number
   /** 洞窗口失败等可观测备注；不改变 Fail-Closed Keep 语义。 */
   hole_notes?: string[]
+  /**
+   * Hole A run metadata for bench vector efficiency (ADR-0011 b).
+   * Not a stop signal — sparse_intent still stops on enough + hard budget.
+   */
+  hole_a?: HoleARunMeta
+}
+
+/** Tokens / segments Hole A actually consumed. Intent/skeleton live on `view`. */
+export interface HoleARunMeta {
+  tokens: number
+  segments_read: string[]
+  rounds: number
 }
 
 export class NotImplementedError extends Error {
@@ -189,6 +201,11 @@ async function runWithLlm(input: {
     decisions,
     unresolved_ids: stillUnresolved,
     hole_a_plus_b_tokens: holeTokens,
+    hole_a: {
+      tokens: holeA.usage.input_tokens + holeA.usage.output_tokens,
+      segments_read: [...holeA.segments_read],
+      rounds: holeA.rounds,
+    },
     ...(holeNotes.length > 0 ? { hole_notes: holeNotes } : {}),
   })
 }
@@ -478,6 +495,7 @@ function packResult(input: {
   unresolved_ids: string[]
   hole_a_plus_b_tokens?: number
   hole_notes?: string[]
+  hole_a?: HoleARunMeta
 }): DistillResult {
   const out: DistillResult = {
     raw: input.raw,
@@ -495,6 +513,9 @@ function packResult(input: {
   }
   if (input.hole_notes !== undefined && input.hole_notes.length > 0) {
     out.hole_notes = input.hole_notes
+  }
+  if (input.hole_a !== undefined) {
+    out.hole_a = input.hole_a
   }
   return out
 }

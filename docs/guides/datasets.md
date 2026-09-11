@@ -146,7 +146,7 @@ SWE-bench：只收 resolved；本仓库无样例，**MVP 不写 parser**。
 
 1. **「像新任务」的置信度启发式**（ingest 开放问题 1）：不够自信时必须退回 `multi_task_ambiguous`。
 2. **测试类工具白名单**（ingest 开放问题 2）。
-3. **金标 JSON 字段表**：`{ "trace_id": string, "segment_ids": string[] }`。路径仍是 `data/raw/<trace_id>.key-decisions.json`；`bench` 也可读样本旁 `<stem>.key-decisions.json`。不喂洞 B。
+3. **金标 JSON 字段表**：`{ "trace_id": string, "segment_ids": string[], "intent_text"?: string, "skeleton_segment_ids"?: string[] }`。路径仍是 `data/raw/<trace_id>.key-decisions.json`；`bench` 也可读样本旁 `<stem>.key-decisions.json`。`intent_text` / `skeleton_segment_ids` 仅供 Hole A 向量效率（ADR-0011 b）；不喂洞 A/B。
 4. **`examples/` vs `data/raw`**：demo 子集的脱敏与许可未定。
 5. **SWE-bench 包结构**：本仓库无样例；MVP 不做，类型预留即可。
 

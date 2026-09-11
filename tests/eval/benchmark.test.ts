@@ -177,9 +177,16 @@ describe('benchmark bins are not averaged together', () => {
 describe('independent gold', () => {
   it('parses key-decisions.json and prefers data/raw path', () => {
     const gold = parseKeyDecisions(
-      JSON.stringify({ trace_id: 'claude-code:sess-no-llm', segment_ids: ['s0006', 's0007'] }),
+      JSON.stringify({
+        trace_id: 'claude-code:sess-no-llm',
+        segment_ids: ['s0006', 's0007'],
+        intent_text: 'Fix add',
+        skeleton_segment_ids: ['s0006'],
+      }),
     )
     assert.deepEqual(gold.segment_ids, ['s0006', 's0007'])
+    assert.equal(gold.intent_text, 'Fix add')
+    assert.deepEqual(gold.skeleton_segment_ids, ['s0006'])
     const paths = keyDecisionFileCandidates({
       trace_id: 'claude-code:sess-no-llm',
       cwd: '/repo',

@@ -32,8 +32,16 @@ import {
   noteFromBenchDistillError,
   parseKeyDecisions,
   scoreSample,
+  type KeyDecisionsGold,
   type ScoredSample,
 } from '../eval/benchmark.ts'
+import {
+  resolveEmbeddingProvider,
+  scoreHoleAVectorEfficiency,
+  summarizeSkeletonPoints,
+  type EmbeddingProvider,
+  type HoleAVectorScore,
+} from '../eval/vector_efficiency.ts'
 import { computeDistillMetrics, compositeScore, type DistillMetrics } from '../eval/metrics.ts'
 import { scoreKeptPathCoherence } from '../eval/coherence.ts'
 import { L4_METRICS_ONLY_NOTE, runOptionalL4 } from '../eval/run.ts'
@@ -93,6 +101,11 @@ export interface CliArgs {
   with_l4?: boolean
   /** bench: only these bins (short|long|multi_dead_end). Empty = all. */
   bins?: ProfileBin[]
+  /**
+   * Bench-only Hole A vector efficiency (ADR-0011 b). Default on.
+   * `--no-vector-efficiency` skips. Never an online stop signal.
+   */
+  vector_efficiency?: boolean
   qa?: boolean
   replay?: boolean
   help?: boolean
@@ -103,7 +116,7 @@ const HELP = `Usage:
   node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
   node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
-  node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--fake-l4] [--with-l4] [--bin short|long|multi_dead_end] [--bins a,b]
+  node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--fake-l4] [--with-l4] [--bin short|long|multi_dead_end] [--bins a,b] [--vector-efficiency|--no-vector-efficiency]
 
 Agent-led cut only (ADR-0010). --no-llm / pure rules-only mode was removed — passing it errors. Distill requires an agent path: injected FakeSessionBackend / --fake-l4 (CI), or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
@@ -113,7 +126,7 @@ OpenAI-compatible gateway (Macaron mint): copy .env.example to .env. TRACE_DISTI
 
 eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a mapped benchmark/workspaces fixture + model; this command wires cwd when present.
 
-bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample, scores six gates, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Default injects FakeSessionBackend when not --with-l4 so overnight/CI cannot hang on mint (ADR-0010 agent path, not rules-only). --with-l4 opts into real mint L4 (session calls have SESSION_CALL_TIMEOUT_MS hard timeout; for long mint set TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000). --fake-l4 also runs deterministic L4 heal + verify so composite can exceed 0 without mint. --bin / --bins select tracks so short and long are not forced into one hang-prone run; each selected bin uses its CutProfile valve (short=less aggressive dead_end + soft cost; long/multi=stronger collapse + keep floor ~8–15%) unless --profile overrides. Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces; unmapped traces skip replay (null, not fail=0); success is gated by workspace verify[] when present. QA near-JSON is repaired; still-unparseable after retries skips (null). Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null. m1_score = compressionScore x key_step_recall (M1 gate; cost fail does not zero m1). L4/coherence failures surface as sample notes. Distill/SpanFailure per sample is recorded (composite 0) so the scoreboard still writes.
+bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample, scores six gates, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Default injects FakeSessionBackend when not --with-l4 so overnight/CI cannot hang on mint (ADR-0010 agent path, not rules-only). --with-l4 opts into real mint L4 (session calls have SESSION_CALL_TIMEOUT_MS hard timeout; for long mint set TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000). --fake-l4 also runs deterministic L4 heal + verify so composite can exceed 0 without mint. --bin / --bins select tracks so short and long are not forced into one hang-prone run; each selected bin uses its CutProfile valve (short=less aggressive dead_end + soft cost; long/multi=stronger collapse + keep floor ~8–15%) unless --profile overrides. Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces; unmapped traces skip replay (null, not fail=0); success is gated by workspace verify[] when present. QA near-JSON is repaired; still-unparseable after retries skips (null). Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null. m1_score = compressionScore x key_step_recall (M1 gate; cost fail does not zero m1). Hole A vector efficiency (ADR-0011 b) is bench-only: a_eff = quality / log(1+tokens); quality = cosine(predicted intent vs optional gold intent_text) and optional skeleton_segment_ids recall. Default embedding is deterministic hash (no API key; TRACE_DISTILLER_EMBEDDING_PROVIDER=openai|http for a real provider). Not an online stop (sparse_intent still uses enough + hard budget). --no-vector-efficiency skips. L4/coherence failures surface as sample notes. Distill/SpanFailure per sample is recorded (composite 0) so the scoreboard still writes.
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
@@ -146,6 +159,7 @@ export function parseArgv(argv: string[]): CliArgs {
   let fake_l4: boolean | undefined
   let with_l4: boolean | undefined
   let bins: ProfileBin[] | undefined
+  let vector_efficiency: boolean | undefined
   let qa: boolean | undefined
   let replay: boolean | undefined
 
@@ -237,6 +251,14 @@ export function parseArgv(argv: string[]): CliArgs {
       replay = true
       continue
     }
+    if (token === '--vector-efficiency') {
+      vector_efficiency = true
+      continue
+    }
+    if (token === '--no-vector-efficiency') {
+      vector_efficiency = false
+      continue
+    }
     if (token.startsWith('-')) {
       throw new Error(`未知参数 ${token}`)
     }
@@ -261,6 +283,7 @@ export function parseArgv(argv: string[]): CliArgs {
   if (fake_l4 !== undefined) args.fake_l4 = fake_l4
   if (with_l4 !== undefined) args.with_l4 = with_l4
   if (bins !== undefined) args.bins = bins
+  if (vector_efficiency !== undefined) args.vector_efficiency = vector_efficiency
   if (qa !== undefined) args.qa = qa
   if (replay !== undefined) args.replay = replay
   return args
@@ -497,6 +520,17 @@ async function runBench(args: CliArgs): Promise<number> {
   const runCoherence =
     wantFakeL4 || (wantRealL4 && (holeModelsConfigured() || runL4))
   const samples: ScoredSample[] = []
+  let holeAEmbedder: EmbeddingProvider | undefined
+  let holeAVectorProviderNote: string | undefined
+  if (args.vector_efficiency !== false) {
+    try {
+      holeAEmbedder = resolveEmbeddingProvider()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      holeAVectorProviderNote = `hole_a_vector skipped: embedding provider (${message})`
+      logError(holeAVectorProviderNote)
+    }
+  }
   try {
     for (const bin of selectedBins) {
       const binDir = join(dir, bin)
@@ -509,7 +543,7 @@ async function runBench(args: CliArgs): Promise<number> {
           trace_id = raw.meta.trace_id
           const result = await benchDistillImpl({ raw, profile, mode })
           const computed = computeDistillMetrics(result)
-          const gold = loadGoldSegmentIds(raw.meta.trace_id, cwd, jsonl)
+          const gold = loadGold(raw.meta.trace_id, cwd, jsonl)
 
           let qa: number | null = null
           let replay: number | null = null
@@ -545,6 +579,24 @@ async function runBench(args: CliArgs): Promise<number> {
             sampleNotes.push(...coh.notes)
           }
 
+          let hole_a_vector: HoleAVectorScore | null | undefined
+          if (args.vector_efficiency === false) {
+            // opt-out
+          } else if (holeAEmbedder === undefined) {
+            if (holeAVectorProviderNote !== undefined) sampleNotes.push(holeAVectorProviderNote)
+          } else {
+            try {
+              hole_a_vector = await scoreHoleAVector({
+                result,
+                gold,
+                embedder: holeAEmbedder,
+              })
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              sampleNotes.push(`hole_a_vector skipped: ${message}`)
+            }
+          }
+
           samples.push(
             scoreSample({
               bin,
@@ -553,11 +605,12 @@ async function runBench(args: CliArgs): Promise<number> {
               distill_cost_ratio: computed.distill_cost_ratio,
               original_tokens: raw.meta.total_tokens,
               kept: result.plan.kept,
-              gold_segment_ids: gold,
+              gold_segment_ids: gold === null ? null : gold.segment_ids,
               replay,
               qa,
               coherence_scores,
               ...(sampleNotes.length > 0 ? { notes: sampleNotes } : {}),
+              ...(hole_a_vector !== undefined ? { hole_a_vector } : {}),
             }),
           )
         } catch (error) {
@@ -619,7 +672,7 @@ function listBinJsonl(binDir: string): string[] {
     .sort()
 }
 
-function loadGoldSegmentIds(traceId: string, cwd: string, jsonlPath: string): string[] | null {
+function loadGold(traceId: string, cwd: string, jsonlPath: string): KeyDecisionsGold | null {
   const candidates = keyDecisionFileCandidates({
     trace_id: traceId,
     cwd,
@@ -627,9 +680,37 @@ function loadGoldSegmentIds(traceId: string, cwd: string, jsonlPath: string): st
   })
   for (const path of candidates) {
     if (!existsSync(path)) continue
-    return parseKeyDecisions(readFileSync(path, 'utf8')).segment_ids
+    return parseKeyDecisions(readFileSync(path, 'utf8'))
   }
   return null
+}
+
+async function scoreHoleAVector(input: {
+  result: { view: { intent_hypothesis: { text: string }; skeleton: { nodes: ReadonlyArray<{ kind: string; note: string; segment_ids: string[] }> } }; hole_a?: { tokens: number; segments_read: string[] } }
+  gold: KeyDecisionsGold | null
+  embedder: EmbeddingProvider | undefined
+}): Promise<HoleAVectorScore> {
+  const nodes = input.result.view.skeleton.nodes
+  const predicted_skeleton_segment_ids: string[] = []
+  const seen = new Set<string>()
+  for (const node of nodes) {
+    for (const id of node.segment_ids) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      predicted_skeleton_segment_ids.push(id)
+    }
+  }
+  const summary = summarizeSkeletonPoints(nodes)
+  return await scoreHoleAVectorEfficiency({
+    predicted_intent: input.result.view.intent_hypothesis.text,
+    ...(summary.length > 0 ? { predicted_skeleton_summary: summary } : {}),
+    predicted_skeleton_segment_ids,
+    gold_intent: input.gold?.intent_text ?? null,
+    gold_skeleton_segment_ids: input.gold?.skeleton_segment_ids ?? null,
+    tokens: input.result.hole_a?.tokens ?? 0,
+    segments_read: input.result.hole_a?.segments_read.length ?? 0,
+    ...(input.embedder !== undefined ? { embedder: input.embedder } : {}),
+  })
 }
 
 async function runEval(args: CliArgs): Promise<number> {

@@ -3,5 +3,6 @@
   "segment_ids": [
     "s0017",
     "s0018"
-  ]
+  ],
+  "intent_text": "Fix add.ts so 1+1 equals 2; ignore noisy retries."
 }

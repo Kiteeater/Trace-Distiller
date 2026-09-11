@@ -18,6 +18,8 @@ export function renderScoreboardMarkdown(input: {
     '',
     '> **M1 vs composite:** `m1_score` = 压缩率得分 × 关键步召回（M1 硬门禁）。`composite` 六项门槛中，**short 档或 original_tokens≤25k 的 cost 只报不分**（洞 A+B 固定开销会顶穿 0.3；仍不计 L4）。QA 0/0 视为 skipped。compress+recall 过时看 `m1_score`。',
     '',
+    '> **Hole A vector efficiency (ADR-0011 b):** `a_eff` = quality / log(1+tokens). Quality = embedding cosine(predicted intent vs gold intent) [, skeleton point recall if `skeleton_segment_ids` gold]. **Bench-only — not an online stop** (`sparse_intent` still stops on `enough` + hard budget). Default embedding = deterministic hash (no API key). Not part of m1/composite.',
+    '',
   ]
 
   for (const bin of ['short', 'long', 'multi_dead_end'] as const) {
@@ -37,12 +39,16 @@ export function renderScoreboardMarkdown(input: {
       table.mean_m1_score === null || table.mean_m1_score === undefined
         ? '—'
         : table.mean_m1_score.toFixed(2)
-    lines.push(`n=${table.n} · mean composite=${mean} · mean m1=${meanM1}`)
+    const meanA =
+      table.mean_hole_a_efficiency === null || table.mean_hole_a_efficiency === undefined
+        ? '—'
+        : table.mean_hole_a_efficiency.toFixed(3)
+    lines.push(`n=${table.n} · mean composite=${mean} · mean m1=${meanM1} · mean a_eff=${meanA}`)
     lines.push('')
     lines.push(
-      '| trace | compress | recall | replay | qa | coherence | cost | composite | m1 | gold |',
+      '| trace | compress | recall | replay | qa | coherence | cost | composite | m1 | a_eff | gold |',
     )
-    lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---:|---|')
+    lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|')
     for (const s of table.samples) {
       lines.push(row(s))
     }
@@ -71,5 +77,9 @@ function row(s: ScoredSample): string {
   }
   const comp = s.composite === null ? '—' : s.composite.toFixed(2)
   const m1 = s.m1_score === null ? '—' : s.m1_score.toFixed(2)
-  return `| ${s.trace_id} | ${cell(m.compression_ratio)} | ${cell(m.key_step_recall)} | ${cell(m.replay)} | ${cell(m.qa)} | ${cell(m.coherence)} | ${cell(m.distill_cost_ratio)} | ${comp} | ${m1} | ${s.gold} |`
+  const aEff =
+    s.hole_a_vector === undefined || s.hole_a_vector === null || s.hole_a_vector.efficiency === null
+      ? 'skip'
+      : s.hole_a_vector.efficiency.toFixed(3)
+  return `| ${s.trace_id} | ${cell(m.compression_ratio)} | ${cell(m.key_step_recall)} | ${cell(m.replay)} | ${cell(m.qa)} | ${cell(m.coherence)} | ${cell(m.distill_cost_ratio)} | ${comp} | ${m1} | ${aEff} | ${s.gold} |`
 }

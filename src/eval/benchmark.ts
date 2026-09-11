@@ -10,6 +10,7 @@ import {
   m1Score,
   type BenchmarkParts,
 } from './metrics.ts'
+import type { HoleAVectorScore } from './vector_efficiency.ts'
 
 /** 三档赛道。分开报表，禁止合成跨档平均分。 */
 export const BENCHMARK_BINS = ['short', 'long', 'multi_dead_end'] as const
@@ -20,6 +21,10 @@ export type MetricStatus = 'pass' | 'fail' | 'skipped'
 export interface KeyDecisionsGold {
   trace_id: string
   segment_ids: string[]
+  /** Optional gold intent for Hole A vector quality (ADR-0011 b). Not fed to Hole A. */
+  intent_text?: string
+  /** Optional gold skeleton point ids. Missing → skeleton recall skipped. */
+  skeleton_segment_ids?: string[]
 }
 
 export interface ScoreSampleInput {
@@ -37,6 +42,11 @@ export interface ScoreSampleInput {
   coherence_scores: readonly number[] | null
   /** L4 / coherence / verify 可观察失败说明（类似 hole_notes） */
   notes?: readonly string[]
+  /**
+   * ADR-0011 (b) Hole A vector efficiency. Bench-only; not an m1/composite gate
+   * and never an online stop signal.
+   */
+  hole_a_vector?: HoleAVectorScore | null
 }
 
 export interface MetricCell {
@@ -64,6 +74,8 @@ export interface ScoredSample {
   m1_score: number | null
   gold: 'independent' | 'skipped'
   notes?: string[]
+  /** Bench-only Hole A vector efficiency (ADR-0011 b). Omitted when not computed. */
+  hole_a_vector?: HoleAVectorScore | null
 }
 
 export interface BinTable {
@@ -73,6 +85,8 @@ export interface BinTable {
   stddev_composite: number | null
   mean_m1_score: number | null
   stddev_m1_score: number | null
+  mean_hole_a_efficiency: number | null
+  stddev_hole_a_efficiency: number | null
   samples: ScoredSample[]
 }
 
@@ -113,14 +127,38 @@ export function parseKeyDecisions(text: string): KeyDecisionsGold {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('key-decisions.json 必须是对象')
   }
-  const row = parsed as { trace_id?: unknown; segment_ids?: unknown }
+  const row = parsed as { trace_id?: unknown; segment_ids?: unknown; intent_text?: unknown; intent?: unknown; skeleton_segment_ids?: unknown }
   if (typeof row.trace_id !== 'string' || row.trace_id.length === 0) {
     throw new Error('key-decisions.json 需要 trace_id')
   }
   if (!Array.isArray(row.segment_ids) || row.segment_ids.some((id) => typeof id !== 'string')) {
     throw new Error('key-decisions.json 需要 string[] segment_ids')
   }
-  return { trace_id: row.trace_id, segment_ids: row.segment_ids }
+  const gold: KeyDecisionsGold = { trace_id: row.trace_id, segment_ids: row.segment_ids }
+  const intent_text = readOptionalIntentText(row.intent_text ?? row.intent)
+  if (intent_text !== undefined) gold.intent_text = intent_text
+  if (Array.isArray(row.skeleton_segment_ids)) {
+    if (row.skeleton_segment_ids.some((id) => typeof id !== 'string')) {
+      throw new Error('key-decisions.json skeleton_segment_ids 必须是 string[]')
+    }
+    gold.skeleton_segment_ids = row.skeleton_segment_ids
+  }
+  return gold
+}
+
+function readOptionalIntentText(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const t = value.trim()
+    return t.length > 0 ? t : undefined
+  }
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const text = (value as { text?: unknown }).text
+    if (typeof text === 'string') {
+      const t = text.trim()
+      return t.length > 0 ? t : undefined
+    }
+  }
+  return undefined
 }
 
 /**
@@ -268,6 +306,9 @@ export function scoreSample(input: ScoreSampleInput): ScoredSample {
   if (input.notes !== undefined && input.notes.length > 0) {
     sample.notes = [...input.notes]
   }
+  if (input.hole_a_vector !== undefined) {
+    sample.hole_a_vector = input.hole_a_vector
+  }
   return sample
 }
 
@@ -296,6 +337,12 @@ export function aggregateBins(samples: readonly ScoredSample[]): BenchmarkReport
     const m1Stats = meanStd(m1Scores)
     table.mean_m1_score = m1Stats.mean
     table.stddev_m1_score = m1Stats.stddev
+    const holeAScores = table.samples
+      .map((s) => s.hole_a_vector?.efficiency)
+      .filter((n): n is number => n !== null && n !== undefined)
+    const holeAStats = meanStd(holeAScores)
+    table.mean_hole_a_efficiency = holeAStats.mean
+    table.stddev_hole_a_efficiency = holeAStats.stddev
   }
   return { bins }
 }
@@ -308,6 +355,8 @@ function emptyBin(bin: BenchmarkBin): BinTable {
     stddev_composite: null,
     mean_m1_score: null,
     stddev_m1_score: null,
+    mean_hole_a_efficiency: null,
+    stddev_hole_a_efficiency: null,
     samples: [],
   }
 }
