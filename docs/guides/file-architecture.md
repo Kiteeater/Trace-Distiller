@@ -79,7 +79,8 @@ trace-distiller/
 │  │  │  ├─ candidate_pool.ts   # ADR-0011 分层候选池
 │  │  │  ├─ sparse_intent.ts    # ADR-0011 多轮稀疏采样（洞 A）
 │  │  │  ├─ skeleton_pass.ts    # 洞 A 入口 → sparseIntent；兼容旧类型
-│  │  │  ├─ cut_brain.ts        # ADR-0010 ReAct 打标；洞 B 角色
+│  │  │  ├─ cut_brain.ts        # ADR-0012 单槽 + 渐进披露；洞 B 角色
+│  │  │  ├─ cut_brain_harness.ts # S0–S3 / evidence card / keep bits
 │  │  │  ├─ label_window.ts
 │  │  │  ├─ write_warrant.ts    # 可改纯代码，形状不变
 │  │  │  ├─ l4_qa.ts            # runQa；role=l4_qa

@@ -89,6 +89,7 @@ describe('hole tool handlers', () => {
       segment_id: 's0001',
       label: 'key_decision',
       confidence: 0.9,
+      keep_bits: [],
     })
     assert.equal('rationale' in got, false)
   })
@@ -154,7 +155,7 @@ describe('hole tool handlers', () => {
 
   it('keep_segment accepts window ids; apply_rules_hint accepts empty args', () => {
     const ok = handleKeepSegment({ segment_id: 's0001' }, new Set(['s0001']))
-    assert.deepEqual(ok, { ok: true, segment_id: 's0001', confidence: 1 })
+    assert.deepEqual(ok, { ok: true, segment_id: 's0001', confidence: 1, keep_bits: [] })
     const miss = handleKeepSegment({ segment_id: 's0009' }, new Set(['s0001']))
     assert.equal(miss.ok, false)
     const hint = handleApplyRulesHint({})

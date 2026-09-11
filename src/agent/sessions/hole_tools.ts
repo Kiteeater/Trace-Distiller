@@ -33,22 +33,29 @@ export function buildHoleCustomTools(
         name: 'label_segment',
         label: 'Label segment',
         description:
-          'Assign a four-class Label to one unresolved segment_id in the current window.',
-        promptSnippet: 'Label one window segment with key_decision|useful_exploration|dead_end|routine',
+          'Assign a Label to the current single-slot focus_id (ADR-0012). keep requires keep_bits.',
+        promptSnippet:
+          'Label the current focus_id; keep needs keep_bits skeleton_hit|key_decision_flag',
         promptGuidelines: [
-          'Call label_segment once per unresolved segment_id you decide on.',
-          'Do not invent segment ids outside window_segment_ids.',
+          'Call label_segment once for the current focus_id only (focus_slot=1).',
+          'Do not invent segment ids. Do not label multiple ids in one turn.',
         ],
         parameters: Type.Object({
-          segment_id: Type.String({ description: 'Segment id in the current window' }),
+          segment_id: Type.String({ description: 'Current focus_id' }),
           label: LABEL_ENUM,
           confidence: Type.Number({ description: 'Confidence in [0, 1]' }),
+          keep_bits: Type.Optional(
+            Type.Array(
+              Type.Union([Type.Literal('skeleton_hit'), Type.Literal('key_decision_flag')]),
+            ),
+          ),
         }),
         async execute(_toolCallId, params) {
           return ack('label_segment', {
             segment_id: params.segment_id,
             label: params.label,
             confidence: params.confidence,
+            keep_bits: params.keep_bits ?? [],
           })
         },
       }),
@@ -88,20 +95,26 @@ export function buildHoleCustomTools(
         name: 'keep_segment',
         label: 'Keep segment',
         description:
-          'Explicitly keep one unresolved segment_id (ADR-0010). Prefer when you are sure the step must stay without assigning a four-class exploration label.',
-        promptSnippet: 'Explicit keep for one window segment_id',
+          'Explicitly keep the current focus_id (ADR-0012). Requires keep_bits skeleton_hit|key_decision_flag and confidence ≥ 0.5.',
+        promptSnippet: 'Explicit keep for the current focus_id with keep_bits',
         promptGuidelines: [
-          'Call keep_segment for ids you want Fail-Closed-style keep without inventing a drop/collapse label.',
-          'Do not invent segment ids outside the open set.',
+          'Call keep_segment only for the current focus_id with at least one keep_bit.',
+          'Illegal keep (missing bits / low confidence) is overridden to collapse_uncertain.',
         ],
         parameters: Type.Object({
-          segment_id: Type.String({ description: 'Segment id to keep' }),
+          segment_id: Type.String({ description: 'Focus id to keep' }),
           confidence: Type.Optional(Type.Number({ description: 'Confidence in [0, 1]; default 1' })),
+          keep_bits: Type.Optional(
+            Type.Array(
+              Type.Union([Type.Literal('skeleton_hit'), Type.Literal('key_decision_flag')]),
+            ),
+          ),
         }),
         async execute(_toolCallId, params) {
           return ack('keep_segment', {
             segment_id: params.segment_id,
             confidence: params.confidence ?? 1,
+            keep_bits: params.keep_bits ?? [],
           })
         },
       }),
@@ -114,18 +127,23 @@ export function buildHoleCustomTools(
         name: 'read_segment',
         label: 'Read segment',
         description:
-          'Fetch full text for one segment_id in the current window only. Prefer WINDOW_CARDS when enough. Tool result is masked for the next agent turn (ADR-0010).',
-        promptSnippet: 'Read one window segment raw text',
+          'Request one S2 evidence card for the current focus_id (structure|headtail|error). Result is ACK + card_id only; full text never re-enters the next turn (ADR-0010/0012).',
+        promptSnippet: 'Disclose one evidence card: structure|headtail|error',
         parameters: Type.Object({
-          segment_id: Type.String({ description: 'Segment id in the current window' }),
+          segment_id: Type.String({ description: 'Current focus_id' }),
+          kind: Type.Optional(
+            Type.Union([
+              Type.Literal('structure'),
+              Type.Literal('headtail'),
+              Type.Literal('error'),
+            ]),
+          ),
         }),
         async execute(_toolCallId, params) {
-          // Full text may later be fetched by extension handlers into warrant/store;
-          // agent turn only sees masked ack (no full payload).
           return ack('read_segment', {
             segment_id: params.segment_id,
-            focus: 'full',
-            text: '',
+            kind: params.kind ?? 'structure',
+            card_id: `s2:${params.segment_id}:${params.kind ?? 'structure'}`,
           })
         },
       }),

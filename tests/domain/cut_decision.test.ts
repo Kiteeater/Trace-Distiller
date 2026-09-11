@@ -38,12 +38,13 @@ function card(head: string): SegmentCard {
 }
 
 describe('decideCut', () => {
-  it('maps the four labels against the default profile', () => {
+  it('maps labels against the default profile including collapse_uncertain', () => {
     const rows: Array<[Label, 'keep' | 'collapse' | 'drop']> = [
       ['key_decision', 'keep'],
       ['useful_exploration', 'keep'],
       ['dead_end', 'collapse'],
       ['routine', 'drop'],
+      ['collapse_uncertain', 'collapse'],
     ]
     for (const [label, action] of rows) {
       const d = decideCut(labeled(label), DEFAULT_CUT_PROFILE, card(`head-${label}`))

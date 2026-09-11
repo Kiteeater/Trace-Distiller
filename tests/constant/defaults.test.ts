@@ -25,8 +25,16 @@ import {
   CARD_INDEX_CHARS_PER_SEGMENT_MAX,
   CARD_INDEX_HEAD_MAX_CHARS,
   FAIL_CLOSED_KEEP,
+  CUT_BRAIN_FOCUS_SLOT,
+  CUT_BRAIN_LOW_CONFIDENCE,
   CUT_BRAIN_MAX_ROUNDS,
+  CUT_BRAIN_PER_SEGMENT_DISCLOSE_CAP,
+  CUT_BRAIN_ROUNDS_PER_UNRESOLVED,
+  CUT_BRAIN_SCHEMA_RETRIES,
+  EVIDENCE_CARD_KINDS,
+  KEEP_EVIDENCE_BITS,
   LABEL_WINDOW_SIZE,
+  S2_EVIDENCE_CARD_TOKEN_CAP,
   PI_FAILURE_RETRY,
   REVIEW_MAX_ROUNDS,
   SEGMENT_HEAD_MAX_CHARS,
@@ -46,7 +54,15 @@ import { SCENARIOS } from '../../src/enums/scenario.ts'
 describe('locked defaults', () => {
   it('locks window, span, jaccard, head, dead-end, review, and retry numbers', () => {
     assert.equal(LABEL_WINDOW_SIZE, 8)
-    assert.equal(CUT_BRAIN_MAX_ROUNDS, 4)
+    assert.equal(CUT_BRAIN_MAX_ROUNDS, 256)
+    assert.equal(CUT_BRAIN_ROUNDS_PER_UNRESOLVED, 2)
+    assert.equal(CUT_BRAIN_PER_SEGMENT_DISCLOSE_CAP, 2)
+    assert.equal(CUT_BRAIN_FOCUS_SLOT, 1)
+    assert.equal(S2_EVIDENCE_CARD_TOKEN_CAP, 256)
+    assert.equal(CUT_BRAIN_LOW_CONFIDENCE, 0.5)
+    assert.equal(CUT_BRAIN_SCHEMA_RETRIES, 1)
+    assert.deepEqual([...KEEP_EVIDENCE_BITS], ['skeleton_hit', 'key_decision_flag'])
+    assert.deepEqual([...EVIDENCE_CARD_KINDS], ['structure', 'headtail', 'error'])
     assert.equal(SPARSE_INTENT_MAX_ROUNDS, 3)
     assert.equal(SPARSE_INTENT_MAX_SEGMENTS_READ, 12)
     assert.equal(SPARSE_INTENT_MAX_TOKENS, 8_000)
@@ -70,6 +86,7 @@ describe('locked defaults', () => {
     assert.equal(SESSION_CALL_TIMEOUT_MS, 120_000)
     assert.equal(SESSION_TIMEOUT_ENV, 'TRACE_DISTILLER_SESSION_TIMEOUT_MS')
     assert.equal(FAIL_CLOSED_KEEP, true)
+    assert.deepEqual(DEFAULT_CUT_PROFILE.collapse_labels, ['dead_end', 'collapse_uncertain'])
     assert.equal(DEFAULT_CUT_PROFILE.span.max_gap_segments, 3)
     assert.equal(DEFAULT_CUT_PROFILE.dead_end.max_representative, 3)
     assert.equal(DEFAULT_CUT_PROFILE.dead_end.summary_max_chars, 80)

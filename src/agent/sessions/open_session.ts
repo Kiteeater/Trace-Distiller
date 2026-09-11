@@ -4,9 +4,12 @@ import { join } from 'node:path'
 import { estimateTokens } from '../../utils/tokens.ts'
 import { resolveTimeoutMs, withTimeout } from '../../utils/timeout.ts'
 import {
+  EVIDENCE_CARD_KINDS,
   PI_FAILURE_RETRY,
+  S2_EVIDENCE_CARD_TOKEN_CAP,
   SESSION_CALL_TIMEOUT_MS,
   SESSION_TIMEOUT_ENV,
+  type EvidenceCardKind,
 } from '../../constant/window.ts'
 import { L4_REPLAY_CODING_TOOLS, resolvePiToolRegistration } from './hole_tools.ts'
 import type { AgentRole } from '../../enums/agent_role.ts'
@@ -579,37 +582,9 @@ export class FakeSessionBackend implements SessionBackend {
 }
 
 function defaultFakeRespond(input: SessionPromptInput, opts: ResolvedSessionOpts): SessionPromptResult {
-  // ADR-0010 cut-brain before continuity: cut-brain prompts mention check_continuity in guidelines.
+  // ADR-0012 cut-brain: single-slot + collapse_uncertain. Must not blanket useful_exploration→keep.
   if (opts.role === 'hole_b_label' && wantsCutBrain(input)) {
-    const rulesApplied =
-      input.text.includes('RULES_HINT_APPLIED=true') ||
-      (input.messages ?? []).some((m) => m.content.includes('RULES_HINT_APPLIED=true'))
-    if (!rulesApplied && wantsApplyRulesHint(input)) {
-      return {
-        text: '',
-        json: null,
-        tool_calls: [{ name: 'apply_rules_hint', arguments: {} }],
-        usage: { role: opts.role, input_tokens: Math.max(1, input.text.length), output_tokens: 8 },
-      }
-    }
-    const ids = parseFakeWindowIds(input.text)
-    if (ids.length === 0) {
-      return {
-        text: '',
-        json: null,
-        tool_calls: [],
-        usage: { role: opts.role, input_tokens: Math.max(1, input.text.length), output_tokens: 4 },
-      }
-    }
-    return {
-      text: '',
-      json: null,
-      tool_calls: ids.map((segment_id) => ({
-        name: 'label_segment',
-        arguments: { segment_id, label: 'useful_exploration', confidence: 0.72 },
-      })),
-      usage: { role: opts.role, input_tokens: Math.max(1, input.text.length), output_tokens: 8 },
-    }
+    return defaultFakeHoleB(input, opts)
   }
   if (opts.role === 'hole_b_label' && wantsCheckContinuity(input)) {
     const pair = fakeContinuityArgs(input.text)
@@ -639,21 +614,123 @@ ${input.text}`
   return blob.includes('cut-brain') || blob.includes('apply_rules_hint') || blob.includes('RULES_HINT_APPLIED')
 }
 
+function defaultFakeHoleB(input: SessionPromptInput, opts: ResolvedSessionOpts): SessionPromptResult {
+  const usage = {
+    role: opts.role,
+    input_tokens: Math.max(1, input.text.length),
+    output_tokens: 8,
+  }
+  const rulesApplied =
+    input.text.includes('RULES_HINT_APPLIED=true') ||
+    (input.messages ?? []).some((m) => m.content.includes('RULES_HINT_APPLIED=true'))
+  if (!rulesApplied && wantsApplyRulesHint(input)) {
+    return {
+      text: '',
+      json: null,
+      tool_calls: [{ name: 'apply_rules_hint', arguments: {} }],
+      usage,
+    }
+  }
+
+  const focus = parseMarkedRecord(input.text, 'FOCUS_CARD')
+  const focusId = typeof focus?.id === 'string' ? focus.id : parseFocusIdLine(input.text)
+  if (focusId === undefined) {
+    return {
+      text: '',
+      json: null,
+      tool_calls: [],
+      usage: { ...usage, output_tokens: 4 },
+    }
+  }
+
+  const s2 = parseMarkedRecord(input.text, 'EVIDENCE_CARD')
+  const in_skeleton = focus?.in_skeleton === true
+  const outlier = focus?.outlier === true
+  const error = focus?.error === true || focus?.outcome === 'error'
+  const writes_n = typeof focus?.writes_n === 'number' ? focus.writes_n : 0
+  const tool = typeof focus?.tool === 'string' ? focus.tool : ''
+  const outcome = typeof focus?.outcome === 'string' ? focus.outcome : ''
+  const isWrite = writes_n > 0 || /^(write|edit)$/i.test(tool)
+  const isVerify = /^(bash|shell)$/i.test(tool) && outcome === 'ok'
+  // Same S2 cap as the real path (ADR-0012 invariant). Fake never L4-full-reads.
+
+  // Over-threshold Write must not default keep — even after discloses / skeleton hits.
+  if (outlier) {
+    return fakeHoleBDecision(focusId, 'collapse_uncertain', 0.4, [], usage)
+  }
+  if (in_skeleton) {
+    return fakeHoleBDecision(focusId, 'key_decision', 0.86, ['skeleton_hit'], usage)
+  }
+  // Non-outlier write/edit or passing verification: closed-set keep (not useful_exploration).
+  if (isWrite || isVerify) {
+    return fakeHoleBDecision(focusId, 'key_decision', 0.8, ['key_decision_flag'], usage)
+  }
+  // At most one disclose; never encode "2 discloses → keep".
+  if (error && s2 === undefined) {
+    const kind: EvidenceCardKind = 'error'
+    if (!(EVIDENCE_CARD_KINDS as readonly string[]).includes(kind)) {
+      return fakeHoleBDecision(focusId, 'collapse_uncertain', 0.45, [], usage)
+    }
+    return {
+      text: '',
+      json: {
+        kind: 'hole_b_turn_v1',
+        segment_id: focusId,
+        decision: null,
+        confidence: 0.45,
+        evidence_request: kind,
+        s2_token_cap: S2_EVIDENCE_CARD_TOKEN_CAP,
+      },
+      tool_calls: [{ name: 'read_segment', arguments: { segment_id: focusId, kind } }],
+      usage,
+    }
+  }
+  return fakeHoleBDecision(focusId, 'collapse_uncertain', 0.55, [], usage)
+}
+
+function fakeHoleBDecision(
+  segment_id: string,
+  label: Label,
+  confidence: number,
+  keep_bits: readonly string[],
+  usage: TokenUsage,
+): SessionPromptResult {
+  return {
+    text: '',
+    json: {
+      kind: 'hole_b_turn_v1',
+      segment_id,
+      decision: label,
+      confidence,
+      evidence_request: null,
+      keep_bits: [...keep_bits],
+      s2_token_cap: S2_EVIDENCE_CARD_TOKEN_CAP,
+    },
+    tool_calls: [
+      {
+        name: 'label_segment',
+        arguments: { segment_id, label, confidence, keep_bits: [...keep_bits] },
+      },
+    ],
+    usage,
+  }
+}
+
+function parseMarkedRecord(text: string, name: string): Record<string, unknown> | undefined {
+  const marked = readMarkedJson(text, name)
+  if (typeof marked !== 'object' || marked === null || Array.isArray(marked)) return undefined
+  return marked as Record<string, unknown>
+}
+
+function parseFocusIdLine(text: string): string | undefined {
+  const match = text.match(/focus_id:\s*"?([A-Za-z0-9_-]+)"?/)
+  return match?.[1]
+}
+
 function wantsApplyRulesHint(input: SessionPromptInput): boolean {
   const blob = `${input.system ?? ''}
 ${input.text}`
   return blob.includes('apply_rules_hint') && !input.text.includes('RULES_HINT_APPLIED=true')
-}
-
-function parseFakeWindowIds(text: string): string[] {
-  const match = text.match(/window_segment_ids:\s*(\[[^\]]*\])/)
-  if (match?.[1] === undefined) return []
-  try {
-    const parsed = JSON.parse(match[1]) as unknown
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
-  } catch {
-    return []
-  }
 }
 
 function wantsCheckContinuity(input: SessionPromptInput): boolean {
