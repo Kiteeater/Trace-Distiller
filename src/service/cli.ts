@@ -122,7 +122,7 @@ Agent-led cut only (ADR-0010). --no-llm / pure rules-only mode was removed — p
 
 FakeSessionBackend is for tests/CI. Production needs TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
-OpenAI-compatible gateway (Macaron mint): copy .env.example to .env. TRACE_DISTILLER_API_BASE + TRACE_DISTILLER_API_KEY register a custom provider; models stay TRACE_DISTILLER_MODEL_HOLE_A/B/L4 as provider/modelId (example macaron/macaron-v1-coding-venti). Keys are never logged.
+OpenAI-compatible gateway: copy .env.example to .env. TRACE_DISTILLER_API_BASE + TRACE_DISTILLER_API_KEY register a custom provider. TRACE_DISTILLER_PROVIDER names it (else derived from the first TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B / TRACE_DISTILLER_MODEL_L4 slash prefix). Models stay TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B / TRACE_DISTILLER_MODEL_L4 as provider/modelId (example provider/modelId). Mint/Macaron is one possible config, not required. Keys are never logged.
 
 eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a mapped benchmark/workspaces fixture + model; this command wires cwd when present.
 

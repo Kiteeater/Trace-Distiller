@@ -29,7 +29,12 @@ export const MODEL_ENV_BY_ROLE: Record<AgentRole, string> = {
 export const GATEWAY_API_BASE_ENV = 'TRACE_DISTILLER_API_BASE'
 export const GATEWAY_API_KEY_ENV = 'TRACE_DISTILLER_API_KEY'
 export const GATEWAY_PROVIDER_ENV = 'TRACE_DISTILLER_PROVIDER'
-export const DEFAULT_GATEWAY_PROVIDER = 'macaron'
+
+const GATEWAY_MODEL_ENV_KEYS = [
+  MODEL_ENV_BY_ROLE.hole_a_skeleton,
+  MODEL_ENV_BY_ROLE.hole_b_label,
+  MODEL_ENV_BY_ROLE.l4_qa,
+] as const
 
 export const CUSTOM_PROVIDER_COMPAT = {
   supportsDeveloperRole: false,
@@ -39,7 +44,8 @@ export const CUSTOM_PROVIDER_COMPAT = {
 export interface CustomGatewayEnv {
   baseUrl: string
   apiKey: string
-  provider: string
+  /** Set when TRACE_DISTILLER_PROVIDER or a MODEL_* `provider/modelId` prefix is present. */
+  provider?: string
 }
 
 export interface CustomProviderRegisterConfig {
@@ -193,17 +199,6 @@ export function resolveSessionModel(role: AgentRole, model?: string, env: NodeJS
   return `unspecified:${role}`
 }
 
-export function readCustomGatewayEnv(env: NodeJS.Dict<string> = process.env): CustomGatewayEnv | undefined {
-  const baseUrl = env[GATEWAY_API_BASE_ENV]
-  const apiKey = env[GATEWAY_API_KEY_ENV]
-  if (typeof baseUrl !== 'string' || baseUrl.length === 0) return undefined
-  if (typeof apiKey !== 'string' || apiKey.length === 0) return undefined
-  const providerRaw = env[GATEWAY_PROVIDER_ENV]
-  const provider =
-    typeof providerRaw === 'string' && providerRaw.length > 0 ? providerRaw : DEFAULT_GATEWAY_PROVIDER
-  return { baseUrl, apiKey, provider }
-}
-
 export function parseProviderModel(model: string): { provider: string; id: string } | undefined {
   const slash = model.indexOf('/')
   if (slash <= 0) return undefined
@@ -211,6 +206,32 @@ export function parseProviderModel(model: string): { provider: string; id: strin
   const id = model.slice(slash + 1)
   if (provider.length === 0 || id.length === 0) return undefined
   return { provider, id }
+}
+
+/**
+ * Custom-gateway provider: explicit TRACE_DISTILLER_PROVIDER, else the slash
+ * prefix of the first TRACE_DISTILLER_MODEL_HOLE_A / HOLE_B / L4 value.
+ * No built-in default (Mint/macaron is one possible config, not required).
+ */
+export function deriveGatewayProvider(env: NodeJS.Dict<string> = process.env): string | undefined {
+  const providerRaw = env[GATEWAY_PROVIDER_ENV]
+  if (typeof providerRaw === 'string' && providerRaw.length > 0) return providerRaw
+  for (const key of GATEWAY_MODEL_ENV_KEYS) {
+    const raw = env[key]
+    if (typeof raw !== 'string' || raw.length === 0) continue
+    const parsed = parseProviderModel(raw)
+    if (parsed !== undefined) return parsed.provider
+  }
+  return undefined
+}
+
+export function readCustomGatewayEnv(env: NodeJS.Dict<string> = process.env): CustomGatewayEnv | undefined {
+  const baseUrl = env[GATEWAY_API_BASE_ENV]
+  const apiKey = env[GATEWAY_API_KEY_ENV]
+  if (typeof baseUrl !== 'string' || baseUrl.length === 0) return undefined
+  if (typeof apiKey !== 'string' || apiKey.length === 0) return undefined
+  const provider = deriveGatewayProvider(env)
+  return provider !== undefined ? { baseUrl, apiKey, provider } : { baseUrl, apiKey }
 }
 
 export function resolveCustomGatewayModelRef(
@@ -263,7 +284,14 @@ export function applyCustomGateway<T>(
 ): ApplyCustomGatewayResult<T> {
   const gateway = readCustomGatewayEnv(env)
   if (gateway === undefined) return { used: false }
-  const ref = resolveCustomGatewayModelRef(model, gateway.provider)
+  const parsedModel = parseProviderModel(model)
+  const provider = parsedModel?.provider ?? gateway.provider
+  if (provider === undefined || provider.length === 0) {
+    throw new Error(
+      'custom gateway requires TRACE_DISTILLER_PROVIDER or a provider/modelId in TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B / TRACE_DISTILLER_MODEL_L4 (or the session model)',
+    )
+  }
+  const ref = resolveCustomGatewayModelRef(model, provider)
   const registration = buildCustomProviderRegistration({
     provider: ref.provider,
     modelId: ref.id,

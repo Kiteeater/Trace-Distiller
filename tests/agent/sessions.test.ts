@@ -731,16 +731,16 @@ describe('hole sessions', () => {
     }
   })
 
-  it('registerProvider args match openai-completions mint shape without a real key', () => {
+  it('registerProvider args match openai-completions gateway shape without a real key', () => {
     const registration = buildCustomProviderRegistration({
-      provider: 'macaron',
-      modelId: 'macaron-v1-coding-venti',
-      baseUrl: 'https://mint-alpha.macaron.im/v1',
+      provider: 'example-provider',
+      modelId: 'example-model',
+      baseUrl: 'https://example.com/v1',
       apiKey: 'sk-test-not-a-real-key',
     })
-    assert.equal(registration.provider, 'macaron')
-    assert.equal(registration.modelId, 'macaron-v1-coding-venti')
-    assert.equal(registration.config.baseUrl, 'https://mint-alpha.macaron.im/v1')
+    assert.equal(registration.provider, 'example-provider')
+    assert.equal(registration.modelId, 'example-model')
+    assert.equal(registration.config.baseUrl, 'https://example.com/v1')
     assert.equal(registration.config.api, 'openai-completions')
     assert.equal(registration.config.apiKey, 'sk-test-not-a-real-key')
     assert.equal(registration.config.authHeader, true)
@@ -751,8 +751,8 @@ describe('hole sessions', () => {
     assert.equal(registration.config.models.length, 1)
     const model = registration.config.models[0]
     assert.ok(model)
-    assert.equal(model.id, 'macaron-v1-coding-venti')
-    assert.equal(model.name, 'macaron-v1-coding-venti')
+    assert.equal(model.id, 'example-model')
+    assert.equal(model.name, 'example-model')
     assert.equal(model.reasoning, false)
     assert.deepEqual(model.input, ['text'])
     assert.equal(model.contextWindow, 128000)
@@ -763,13 +763,13 @@ describe('hole sessions', () => {
 
   it('applyCustomGateway registers via fake registry and writes AuthStorage', () => {
     const calls: Array<{ name: string; config: CustomProviderRegisterConfig }> = []
-    const found = { id: 'macaron-v1-coding-venti', provider: 'macaron' }
+    const found = { id: 'example-model', provider: 'example-provider' }
     const registry = {
       registerProvider(name: string, config: CustomProviderRegisterConfig) {
         calls.push({ name, config })
       },
       find(provider: string, id: string) {
-        if (provider === 'macaron' && id === 'macaron-v1-coding-venti') return found
+        if (provider === 'example-provider' && id === 'example-model') return found
         return undefined
       },
     }
@@ -781,24 +781,24 @@ describe('hole sessions', () => {
           authCalls.push({ provider, credential })
         },
       },
-      'macaron/macaron-v1-coding-venti',
+      'example-provider/example-model',
       {
-        TRACE_DISTILLER_API_BASE: 'https://mint-alpha.macaron.im/v1',
+        TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
         TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
-        TRACE_DISTILLER_PROVIDER: 'macaron',
+        TRACE_DISTILLER_PROVIDER: 'example-provider',
       },
     )
     assert.equal(result.used, true)
     if (result.used !== true) return
     assert.equal(result.model, found)
     assert.equal(calls.length, 1)
-    assert.equal(calls[0]?.name, 'macaron')
+    assert.equal(calls[0]?.name, 'example-provider')
     const config = calls[0]?.config as { api?: string; authHeader?: boolean; apiKey?: string }
     assert.equal(config.api, 'openai-completions')
     assert.equal(config.authHeader, true)
     assert.equal(config.apiKey, 'sk-test-not-a-real-key')
     assert.deepEqual(authCalls, [
-      { provider: 'macaron', credential: { type: 'api_key', key: 'sk-test-not-a-real-key' } },
+      { provider: 'example-provider', credential: { type: 'api_key', key: 'sk-test-not-a-real-key' } },
     ])
   })
 
@@ -818,8 +818,8 @@ describe('hole sessions', () => {
           registered += 1
         },
       },
-      'macaron/macaron-v1-coding-venti',
-      { TRACE_DISTILLER_PROVIDER: 'macaron' },
+      'example-provider/example-model',
+      { TRACE_DISTILLER_PROVIDER: 'example-provider' },
     )
     assert.deepEqual(result, { used: false })
     assert.equal(registered, 0)
@@ -828,12 +828,113 @@ describe('hole sessions', () => {
     assert.equal(readCustomGatewayEnv({ TRACE_DISTILLER_API_BASE: '', TRACE_DISTILLER_API_KEY: '' }), undefined)
   })
 
-  it('TRACE_DISTILLER_PROVIDER defaults to macaron', () => {
+  it('TRACE_DISTILLER_PROVIDER is honored when set', () => {
     const env = readCustomGatewayEnv({
-      TRACE_DISTILLER_API_BASE: 'https://mint-alpha.macaron.im/v1',
+      TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
+      TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+      TRACE_DISTILLER_PROVIDER: 'example-provider',
+      TRACE_DISTILLER_MODEL_HOLE_A: 'other-provider/other-model',
+    })
+    assert.equal(env?.provider, 'example-provider')
+  })
+
+  it('derives gateway provider from MODEL_* slash prefix when PROVIDER unset', () => {
+    const env = readCustomGatewayEnv({
+      TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
+      TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+      TRACE_DISTILLER_MODEL_HOLE_A: 'example-provider/example-model',
+    })
+    assert.equal(env?.provider, 'example-provider')
+    const fromB = readCustomGatewayEnv({
+      TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
+      TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+      TRACE_DISTILLER_MODEL_HOLE_A: 'bare-model',
+      TRACE_DISTILLER_MODEL_HOLE_B: 'example-provider/example-model',
+    })
+    assert.equal(fromB?.provider, 'example-provider')
+    const calls: Array<{ name: string }> = []
+    const found = { id: 'bare-model', provider: 'example-provider' }
+    const applied = applyCustomGateway(
+      {
+        registerProvider(name: string) {
+          calls.push({ name })
+        },
+        find(provider: string, id: string) {
+          if (provider === 'example-provider' && id === 'bare-model') return found
+          return undefined
+        },
+      },
+      {
+        set() {},
+      },
+      'bare-model',
+      {
+        TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
+        TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+        TRACE_DISTILLER_MODEL_HOLE_A: 'example-provider/example-model',
+      },
+    )
+    assert.equal(applied.used, true)
+    if (applied.used !== true) return
+    assert.equal(applied.model, found)
+    assert.equal(calls[0]?.name, 'example-provider')
+  })
+
+  it('applyCustomGateway throws when custom gateway has no PROVIDER and no MODEL_* slash prefix', () => {
+    assert.throws(
+      () =>
+        applyCustomGateway(
+          {
+            registerProvider() {},
+            find() {
+              return undefined
+            },
+          },
+          {
+            set() {},
+          },
+          'bare-model',
+          {
+            TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
+            TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+          },
+        ),
+      /TRACE_DISTILLER_PROVIDER/,
+    )
+    const missing = readCustomGatewayEnv({
+      TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
       TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
     })
-    assert.equal(env?.provider, 'macaron')
+    assert.ok(missing)
+    assert.equal(missing.provider, undefined)
+  })
+
+  it('applyCustomGateway uses session model slash prefix when PROVIDER and MODEL_* unset', () => {
+    const calls: Array<{ name: string }> = []
+    const found = { id: 'example-model', provider: 'example-provider' }
+    const result = applyCustomGateway(
+      {
+        registerProvider(name: string) {
+          calls.push({ name })
+        },
+        find(provider: string, id: string) {
+          if (provider === 'example-provider' && id === 'example-model') return found
+          return undefined
+        },
+      },
+      {
+        set() {},
+      },
+      'example-provider/example-model',
+      {
+        TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
+        TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+      },
+    )
+    assert.equal(result.used, true)
+    if (result.used !== true) return
+    assert.equal(result.model, found)
+    assert.equal(calls[0]?.name, 'example-provider')
   })
 
   it('committed sources do not embed API keys', () => {
