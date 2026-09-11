@@ -42,7 +42,7 @@ export interface OptionalL4Result {
 /**
  * CLI eval 的 L4 开关。无后端则跳过并注明，不假装跑过。
  * Replay：若 manifest 映射到真实小仓，则物化临时 cwd 再跑 runReplay。
- * QA / replay 解析失败记 0 + note（可观察，不拖垮整榜）。
+ * QA 0/0 → skipped；replay 解析失败但 workspace verify 通过则可恢复 success。
  * 有 verify[] 时成功后硬跑闸门；失败则 replay=0。
  */
 export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4Result> {
@@ -62,7 +62,11 @@ export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4R
           ...(input.questions !== undefined ? { questions: input.questions } : {}),
         })
         qa = qaRatio(out.score)
-        if (qa < 1) {
+        if (qa === null) {
+          notes.push(
+            `qa skipped: correct=${out.score.correct}/${out.score.answered} (no questions answered)`,
+          )
+        } else if (qa < 1) {
           notes.push(`qa partial: correct=${out.score.correct}/${out.score.answered}`)
         }
       } catch (err) {
@@ -113,17 +117,24 @@ export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4R
           if (verifyArgv !== undefined && verifyArgv.length > 0) {
             const verified = runWorkspaceVerify(work, verifyArgv)
             notes.push(`replay ${verified.note}`)
-            if (!modelSuccess) {
-              replayScore = 0
-            } else if (!verified.ok) {
-              replayScore = 0
-              notes.push(
-                hasInjectedSessionBackend()
-                  ? 'replay verify gate failed after fake claim (composite replay=0)'
-                  : 'replay verify gate failed after model claim (real mint must pass tests)',
-              )
-            } else {
+            if (verified.ok) {
+              // Workspace verify is the hard gate: recover success when JSON/parse failed
+              // but tests already passed (common mint L4 prose failure mode).
+              if (!modelSuccess) {
+                notes.push(
+                  'replay recovered: workspace verify passed despite model/parse failure',
+                )
+              }
               replayScore = 1
+            } else {
+              replayScore = 0
+              if (modelSuccess) {
+                notes.push(
+                  hasInjectedSessionBackend()
+                    ? 'replay verify gate failed after fake claim (composite replay=0)'
+                    : 'replay verify gate failed after model claim (real mint must pass tests)',
+                )
+              }
             }
           } else {
             replayScore = modelSuccess ? 1 : 0

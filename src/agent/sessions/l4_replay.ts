@@ -50,7 +50,30 @@ export async function runReplay(input: RunReplayInput): Promise<RunReplayOutput>
   try {
     const prompt = composeReplayPrompt(input)
     const result = await session.prompt(prompt)
-    return interpretReplayResult(result, session.role)
+    try {
+      return interpretReplayResult(result, session.role)
+    } catch (first) {
+      // One retry: ask for JSON-only (models often reply with prose).
+      const retryPrompt = {
+        text: [
+          'Previous reply was not valid structured JSON.',
+          'Reply with JSON only, matching this schema:',
+          JSON.stringify({
+            kind: L4_REPLAY_JSON_KIND,
+            success: true,
+            note: 'string',
+          }),
+          'Do not wrap in markdown. Do not add prose outside the JSON object.',
+        ].join('\n'),
+        ...(prompt.system !== undefined ? { system: prompt.system } : {}),
+      }
+      const retry = await session.prompt(retryPrompt)
+      try {
+        return interpretReplayResult(retry, session.role)
+      } catch {
+        throw first
+      }
+    }
   } finally {
     session.dispose()
   }

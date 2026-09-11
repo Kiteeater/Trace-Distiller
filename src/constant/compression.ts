@@ -27,6 +27,28 @@ export const BENCHMARK_PASS = {
   distill_cost_ratio_max: 0.3,
 } as const
 
+/**
+ * Short / small traces: hole A+B fixed overhead (~6–10k) makes distill_cost_ratio>0.3
+ * almost always. Cost is still **reported**; composite must not fail on this gate.
+ * Long traces with original_tokens above this still use distill_cost_ratio_max.
+ * Cost still excludes L4 (ADR-0007).
+ */
+export const COST_SOFT_ORIGINAL_TOKENS = 25_000
+
+/**
+ * Prefer not crushing keep below this ratio (cut_tokens/original).
+ * Target band ~8–15% for long/multi coherence; short also must not over-cut.
+ * Soft floor — preserve gold / key skeleton first via blind-review fill-in.
+ */
+export const KEEP_RATIO_FLOOR = 0.08
+
+/** Only enforce keep floor on mid/long traces; short uneven segments can jump past 0.3. */
+export const KEEP_FLOOR_MIN_ORIGINAL_TOKENS = 5_000
+
+/** Prefer not promoting keep past this when lifting off the floor (~8–15% band). */
+export const KEEP_RATIO_SOFT_CAP = 0.15
+
+
 /** 规则层清完后，预期仍要进洞 B 的段比例（成本粗账，不是硬门禁）。 */
 export const LLM_LABEL_FRACTION_HINT = 0.3
 

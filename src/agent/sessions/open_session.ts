@@ -288,7 +288,67 @@ export function parseStructuredJson(text: string): unknown {
   const trimmed = text.trim()
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
   const candidate = (fenced?.[1] ?? trimmed).trim()
-  return JSON.parse(candidate) as unknown
+  try {
+    return JSON.parse(candidate) as unknown
+  } catch (first) {
+    const extracted = extractJsonFromProse(candidate)
+    if (extracted !== undefined) {
+      try {
+        return JSON.parse(extracted) as unknown
+      } catch {
+        // fall through to original error
+      }
+    }
+    throw first
+  }
+}
+
+/** Pull the first balanced `{…}` / `[…]` from prose (L4 models often wrap JSON). */
+export function extractJsonFromProse(text: string): string | undefined {
+  const startObj = text.indexOf('{')
+  const startArr = text.indexOf('[')
+  let start = -1
+  let open = ''
+  let close = ''
+  if (startObj >= 0 && (startArr < 0 || startObj < startArr)) {
+    start = startObj
+    open = '{'
+    close = '}'
+  } else if (startArr >= 0) {
+    start = startArr
+    open = '['
+    close = ']'
+  } else {
+    return undefined
+  }
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i]!
+    if (inString) {
+      if (escape) {
+        escape = false
+        continue
+      }
+      if (ch === '\\') {
+        escape = true
+        continue
+      }
+      if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch === open) depth += 1
+    else if (ch === close) {
+      depth -= 1
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return undefined
 }
 
 export function isSpikeLabelJson(value: unknown): value is SpikeLabelJson {

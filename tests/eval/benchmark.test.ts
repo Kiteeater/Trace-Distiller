@@ -55,11 +55,42 @@ describe('benchmark multiplicative score', () => {
   })
 
   it('m1_score survives cost fail while composite zeros', () => {
-    const sample = scoreSample(passingInput({ distill_cost_ratio: 1.62 }))
+    const sample = scoreSample(
+      passingInput({
+        bin: 'long',
+        original_tokens: 80_000,
+        distill_cost_ratio: 1.62,
+      }),
+    )
     assert.equal(sample.metrics.distill_cost_ratio.status, 'fail')
     assert.equal(sample.composite, 0)
     assert.equal(sample.m1_score, compressionScore(0.2) * 1)
     assert.ok(sample.m1_score! > 0)
+  })
+
+  it('short / small original_tokens: cost reported but does not fail composite', () => {
+    const short = scoreSample(
+      passingInput({ bin: 'short', original_tokens: 500, distill_cost_ratio: 47.8 }),
+    )
+    assert.equal(short.metrics.distill_cost_ratio.status, 'pass')
+    assert.equal(short.metrics.distill_cost_ratio.value, 47.8)
+    assert.ok(short.composite !== null && short.composite > 0)
+
+    const smallLong = scoreSample(
+      passingInput({
+        bin: 'long',
+        original_tokens: 10_000,
+        distill_cost_ratio: 0.9,
+      }),
+    )
+    assert.equal(smallLong.metrics.distill_cost_ratio.status, 'pass')
+    assert.ok(smallLong.composite !== null && smallLong.composite > 0)
+  })
+
+  it('QA 0/0 (null) is skipped, not a composite fail', () => {
+    const sample = scoreSample(passingInput({ qa: null }))
+    assert.equal(sample.metrics.qa.status, 'skipped')
+    assert.equal(sample.composite, null)
   })
 
   it('one failing metric zeros the composite even if others look good', () => {

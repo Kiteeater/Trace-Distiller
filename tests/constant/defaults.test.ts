@@ -3,9 +3,13 @@ import { describe, it } from 'node:test'
 import {
   BENCHMARK_PASS,
   COMPRESSION_SCORE_KNOTS,
+  COST_SOFT_ORIGINAL_TOKENS,
   DEAD_END_MAX_REPRESENTATIVE,
   DEAD_END_SUMMARY_MAX_CHARS,
   DEFAULT_CUT_PROFILE,
+  KEEP_RATIO_FLOOR,
+  KEEP_FLOOR_MIN_ORIGINAL_TOKENS,
+  KEEP_RATIO_SOFT_CAP,
 } from '../../src/constant/compression.ts'
 import { DEFAULT_SCENARIO, resolveSkillRoute, SKILL_ROUTE } from '../../src/constant/skill_route.ts'
 import {
@@ -37,6 +41,10 @@ describe('locked defaults', () => {
     assert.equal(DEAD_END_MAX_REPRESENTATIVE, 3)
     assert.equal(DEAD_END_SUMMARY_MAX_CHARS, 80)
     assert.equal(REVIEW_MAX_ROUNDS, 2)
+    assert.equal(KEEP_RATIO_FLOOR, 0.08)
+    assert.equal(KEEP_FLOOR_MIN_ORIGINAL_TOKENS, 5_000)
+    assert.equal(KEEP_RATIO_SOFT_CAP, 0.15)
+    assert.equal(COST_SOFT_ORIGINAL_TOKENS, 25_000)
     assert.equal(PI_FAILURE_RETRY, 1)
     assert.equal(SESSION_CALL_TIMEOUT_MS, 120_000)
     assert.equal(SESSION_TIMEOUT_ENV, 'TRACE_DISTILLER_SESSION_TIMEOUT_MS')

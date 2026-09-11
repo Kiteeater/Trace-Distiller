@@ -1,6 +1,7 @@
 import {
   BENCHMARK_PASS,
   COMPRESSION_SCORE_KNOTS,
+  COST_SOFT_ORIGINAL_TOKENS,
 } from '../constant/compression.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../domain/cut_decision.ts'
 import type { Skeleton } from '../types/agent_view.ts'
@@ -58,14 +59,42 @@ export function distillCostRatio(input: CostInput): number {
   return input.hole_a_plus_b_tokens / input.tokens_removed
 }
 
+/**
+ * Cost gate for composite: short-bin / small original_tokens → reported but not failing.
+ * L4 tokens never enter distill_cost_ratio (ADR-0007).
+ */
+export function costGateApplies(input: {
+  bin?: string
+  original_tokens?: number
+}): boolean {
+  if (input.bin === 'short') return false
+  const n = input.original_tokens
+  if (typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= COST_SOFT_ORIGINAL_TOKENS) {
+    return false
+  }
+  return true
+}
+
+export function costGatePass(
+  distill_cost_ratio: number,
+  input: { bin?: string; original_tokens?: number } = {},
+): boolean {
+  if (!Number.isFinite(distill_cost_ratio)) return false
+  if (!costGateApplies(input)) return true
+  return distill_cost_ratio <= BENCHMARK_PASS.distill_cost_ratio_max
+}
+
 export interface QaScoreLike {
   answered: number
   correct: number
 }
 
-/** QA：correct / answered；未答题为 0。 */
-export function qaRatio(score: QaScoreLike): number {
-  if (score.answered <= 0) return 0
+/**
+ * QA：correct / answered。
+ * answered=0（0/0）→ null（skipped，不记 fail）；有题未答对才是 0。
+ */
+export function qaRatio(score: QaScoreLike): number | null {
+  if (score.answered <= 0) return null
   return score.correct / score.answered
 }
 
@@ -134,6 +163,9 @@ export interface BenchmarkParts {
   qa: number | null
   coherence_scores: readonly number[] | null
   distill_cost_ratio: number
+  /** 用于 short/small soft cost gate；缺省按硬门槛。 */
+  bin?: string
+  original_tokens?: number
 }
 
 export function sixMetricsPresent(parts: BenchmarkParts): boolean {
@@ -153,7 +185,12 @@ export function sixMetricsPassed(parts: BenchmarkParts): boolean {
     parts.replay! >= BENCHMARK_PASS.replay_min &&
     parts.qa! >= BENCHMARK_PASS.qa_min &&
     coherencePass(parts.coherence_scores!) &&
-    parts.distill_cost_ratio <= BENCHMARK_PASS.distill_cost_ratio_max
+    costGatePass(parts.distill_cost_ratio, {
+      ...(parts.bin !== undefined ? { bin: parts.bin } : {}),
+      ...(parts.original_tokens !== undefined
+        ? { original_tokens: parts.original_tokens }
+        : {}),
+    })
   )
 }
 

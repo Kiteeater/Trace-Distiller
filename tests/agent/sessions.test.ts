@@ -919,3 +919,13 @@ describe('pi usage extraction (mint cost)', () => {
     assert.ok((real!.input_tokens + real!.output_tokens) < 500)
   })
 })
+
+describe('parseStructuredJson prose extract', () => {
+  it('parses JSON embedded in prose and fenced blocks', async () => {
+    const { parseStructuredJson, extractJsonFromProse } = await import('../../src/agent/sessions/open_session.ts')
+    assert.deepEqual(extractJsonFromProse('The bug is fixed.\n{"kind":"l4_replay_v0","success":true}'), '{"kind":"l4_replay_v0","success":true}')
+    const obj = parseStructuredJson('The bug is fixed. Here is JSON:\n{"kind":"l4_replay_v0","success":true,"note":"ok"}')
+    assert.equal((obj as { success: boolean }).success, true)
+  })
+})
+

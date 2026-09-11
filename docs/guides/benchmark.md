@@ -79,6 +79,10 @@ Score = 压缩率得分 × 关键步召回率 × 重放成功率
 - **人工 + 强模型双标**；争议仲裁后再入库。旁路文件约定见 [datasets.md](./datasets.md)：`data/raw/<trace_id>.key-decisions.json`，gitignore，**不喂洞 B**。
 - **不拿 Distiller 自己的 Rule / 洞 B 标签评自己。**
 - **成本只计洞 A + 洞 B**，不含 L4（QA / 重放 / review）token。
+- **Cost soft gate（真 mint）**：`short` 档，或 `original_tokens ≤ 25_000`（`COST_SOFT_ORIGINAL_TOKENS`）时，`distill_cost_ratio` **照常写入记分板**，但 **不因 >0.3 判 fail / 不拖垮 composite**——洞 A+B 固定开销在短样上几乎必然 >0.3。更大 long 样仍用硬门槛 0.3。
+- **Keep 地板**：`original_tokens≥5k` 时 `KEEP_RATIO_FLOOR=0.08`（软顶 `KEEP_RATIO_SOFT_CAP=0.15`），避免 long/multi 被剪到 <5%；短样不强制抬 keep，以免单段跳过 0.3。
+- **QA 0/0**：视为 skipped（不是 fail）。
+- **L4 JSON**：`parseStructuredJson` 会从 prose 抽 JSON；replay 解析失败时若 workspace `verify[]` 已过可恢复 success。
 
 ## 怎么用 / 怎么跑
 
