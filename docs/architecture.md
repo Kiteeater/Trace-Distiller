@@ -98,7 +98,7 @@ labelWindow(segments, skeleton, skill)      → 四类标签 + 置信度（洞 B
 
 ### Agent 洞 B — cut-brain 打标（pi；单槽 + 渐进披露）
 
-- **现行目标**（[ADR-0012](./adr/0012-hole-b-single-slot-progressive-disclosure.md)）：单槽 focus（默认 1）+ S0–S3 分层；证据卡 `structure|headtail|error` 渐进披露；两次 disclose 仍低置信 → `collapse_uncertain`（非 keep）；预算耗尽禁 keep-all  
+- **现行目标**（[ADR-0012](./adr/0012-hole-b-single-slot-progressive-disclosure.md)）：单槽 focus（**v1 恒 1**）+ S0–S3 分层；证据卡 `structure|headtail|error` 渐进披露；disclose 触帽仍低置信 / 非法 keep → `collapse_uncertain`（非 keep）；0010 Keep 仅硬失败且无可用 B 输出；预算耗尽默认 `collapse_uncertain`  
 - 输入：S1 focus 卡（+ 可选 S2/S3）；输出：decision + confidence + evidence_request；B 只提案标签  
 - 全局重组时的**衔接检查**也走洞 B 会话（一次 LLM，不是再开编排 agent）  
 
