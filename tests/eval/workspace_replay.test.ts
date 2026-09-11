@@ -160,7 +160,7 @@ describe("real replay workspace wiring", () => {
     assert.ok(l4.notes.some((n) => /verify failed|verify gate failed/.test(n)), l4.notes.join("; "))
   })
 
-  it("qa parse failure is observable as qa=0 + note (not throw)", async () => {
+  it("qa unparseable after retries is skipped (null), not fail=0", async () => {
     setSessionBackend(
       new FakeSessionBackend((input, opts) => {
         if (opts.role === "l4_qa") {
@@ -191,8 +191,69 @@ describe("real replay workspace wiring", () => {
       run_replay: false,
       repo_root: repoRoot,
     })
-    assert.equal(l4.qa, 0)
-    assert.ok(l4.notes.some((n) => /qa failed/.test(n)), l4.notes.join("; "))
+    assert.equal(l4.qa, null)
+    assert.ok(l4.notes.some((n) => /qa skipped: unparseable/.test(n)), l4.notes.join("; "))
+  })
+
+  it("unmapped workspace skips replay (null) instead of fail=0", async () => {
+    setSessionBackend(new FakeSessionBackend())
+    const l4 = await runOptionalL4({
+      intent: { version: 0, text: "Imported MIMO task" },
+      playback: {
+        trace_id: "claude-code:mimo-unmapped-fixture",
+        plan_ref: "plan",
+        cards: [card("s0001", "Edit", "x")],
+        collapsed: [],
+      },
+      run_qa: false,
+      run_replay: true,
+      repo_root: repoRoot,
+    })
+    assert.equal(l4.replay, null)
+    assert.ok(
+      l4.notes.some((n) => /replay skipped: no mapped workspace/.test(n)),
+      l4.notes.join("; "),
+    )
+    const sample = scoreSample({
+      bin: "long",
+      trace_id: "claude-code:mimo-unmapped-fixture",
+      compression_ratio: 0.12,
+      distill_cost_ratio: 0.1,
+      kept: ["s0001"],
+      gold_segment_ids: ["s0001"],
+      replay: l4.replay,
+      qa: 1,
+      coherence_scores: [5, 5, 4, 5],
+    })
+    assert.equal(sample.metrics.replay.status, "skipped")
+    // skipped replay keeps composite null (not zeroed by missing fixture)
+    assert.equal(sample.composite, null)
+    assert.ok(sample.m1_score !== null && sample.m1_score! > 0)
+  })
+
+  it("salvages QA near-JSON with trailing commas via parse path", async () => {
+    setSessionBackend(
+      new FakeSessionBackend(() => ({
+        text:
+          'Here you go:\n```json\n{"kind":"l4_qa_v0","items":[{"id":"q1","question":"task?","answer":"fix","correct":true},{"id":"q2","question":"edit?","answer":"a+b","correct":true},{"id":"q3","question":"verify?","answer":"pytest","correct":true},],}\n```',
+        json: null,
+        tool_calls: [],
+        usage: { role: "l4_qa", input_tokens: 1, output_tokens: 1 },
+      })),
+    )
+    const l4 = await runOptionalL4({
+      intent: { version: 0, text: "Fix add" },
+      playback: {
+        trace_id: FLUFF_TRACE,
+        plan_ref: "plan",
+        cards: [card("s0017", "Edit", "x")],
+        collapsed: [],
+      },
+      run_qa: true,
+      run_replay: false,
+      repo_root: repoRoot,
+    })
+    assert.equal(l4.qa, 1)
   })
 
   it("coherence failure notes when tool call missing", async () => {

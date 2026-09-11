@@ -55,16 +55,22 @@ export interface RunQaOutput {
 
 const QA_TARGET_QUESTIONS = 3
 
+/** Max extra prompts after the first when JSON stays unparseable. */
+export const QA_MALFORMED_RETRIES = 2
+
 /**
  * L4 QA 干净会话。role=l4_qa；token 不计蒸馏成本。
  * 假后端与真 pi 同一入口（openQaSession）。
  *
  * Stability (mint):
- * - Strong JSON schema; parseStructuredJson extracts `{…}` from prose.
- * - One retry on malformed JSON (like runReplay).
+ * - Strong JSON schema; parseStructuredJson extracts/repairs near-JSON
+ *   (prose, fences, trailing commas, truncated objects).
+ * - Up to QA_MALFORMED_RETRIES retries on malformed JSON.
  * - One retry when score is low (< qa_min) or answered=0 while playback has cards
  *   (models often invent unanswerable questions or self-grade 1/3).
  * - Prompt requires questions answerable from PLAYBACK_JSON only.
+ * - Callers (runOptionalL4) skip (null) rather than fail=0 when still
+ *   unparseable with zero valid pairs after retries.
  */
 export async function runQa(input: RunQaInput): Promise<RunQaOutput> {
   const session = openQaSession({
@@ -73,18 +79,28 @@ export async function runQa(input: RunQaInput): Promise<RunQaOutput> {
   try {
     const prompt = composeQaPrompt(input)
     const first = await session.prompt(prompt)
-    let out: RunQaOutput
+    let out: RunQaOutput | undefined
     let retried = false
+    let lastParseErr: unknown
     try {
       out = interpretQaResult(first, session.role, input.questions)
     } catch (parseErr) {
+      lastParseErr = parseErr
+    }
+
+    for (let i = 0; out === undefined && i < QA_MALFORMED_RETRIES; i += 1) {
       retried = true
       const retry = await session.prompt(composeQaRetryPrompt(prompt, 'malformed'))
       try {
         out = interpretQaResult(retry, session.role, input.questions)
-      } catch {
-        throw parseErr
+      } catch (parseErr) {
+        lastParseErr = parseErr
       }
+    }
+    if (out === undefined) {
+      throw lastParseErr instanceof Error
+        ? lastParseErr
+        : new Error('runQa: failed to parse structured JSON')
     }
 
     if (shouldRetryQaScore(out, input)) {

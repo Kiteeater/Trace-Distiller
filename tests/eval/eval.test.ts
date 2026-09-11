@@ -8,7 +8,7 @@ import {
   composeSessionPrompt,
   setSessionBackend,
 } from '../../src/agent/sessions/open_session.ts'
-import { interpretQaResult, runQa, shouldRetryQaScore } from '../../src/agent/sessions/l4_qa.ts'
+import { interpretQaResult, QA_MALFORMED_RETRIES, runQa, shouldRetryQaScore } from '../../src/agent/sessions/l4_qa.ts'
 import { runReplay } from '../../src/agent/sessions/l4_replay.ts'
 import {
   assertBlindReviewPrompt,
@@ -470,6 +470,39 @@ describe('eval L4 via fake backend', () => {
     assert.equal(qa.score.answered, 3)
     assert.equal(qa.retried, true)
     assert.ok(calls >= 2)
+  })
+
+  it('retries malformed QA JSON up to QA_MALFORMED_RETRIES then succeeds', async () => {
+    let calls = 0
+    const good = {
+      kind: 'l4_qa_v0',
+      items: [
+        { id: 'q1', question: 'What was the task?', answer: 'Fix add', correct: true },
+        { id: 'q2', question: 'What was edited?', answer: 'add.ts', correct: true },
+        { id: 'q3', question: 'How verified?', answer: 'pytest', correct: true },
+      ],
+    }
+    const fake = new FakeSessionBackend(() => {
+      calls += 1
+      if (calls <= QA_MALFORMED_RETRIES) {
+        return {
+          text: 'not valid {json',
+          json: null,
+          tool_calls: [],
+          usage: { role: 'l4_qa', input_tokens: 1, output_tokens: 1 },
+        }
+      }
+      return {
+        text: JSON.stringify(good),
+        json: good,
+        tool_calls: [],
+        usage: { role: 'l4_qa', input_tokens: 1, output_tokens: 1 },
+      }
+    })
+    const qa = await runQa({ intent, playback, backend: fake })
+    assert.equal(qa.score.correct, 3)
+    assert.equal(qa.retried, true)
+    assert.equal(calls, QA_MALFORMED_RETRIES + 1)
   })
 
   it('interpretQaResult extracts items from prose and tolerates is_correct alias', () => {

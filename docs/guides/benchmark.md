@@ -83,7 +83,8 @@ Score = 压缩率得分 × 关键步召回率 × 重放成功率
 - **Keep 地板**：`original_tokens≥5k` 时 `KEEP_RATIO_FLOOR=0.08`（软顶 `KEEP_RATIO_SOFT_CAP=0.15`），避免 long/multi 被剪到 <5%；短样不强制抬 keep，以免单段跳过 0.3。
 - **短 / 长阀门（CutProfile bin valve）**：`cutProfileForBin(bin)` 为三档提供默认 CutProfile——**short**：`max_representative=5`、更大/默认洞窗、`keep_ratio_floor=null`（少剪 + 已有 soft cost）；**long**：`max_representative=2`、更小洞窗（更积极）、`keep_ratio_floor≈0.08`（目标带 8–15%）；**multi_dead_end**：代表上限 3 + 同 long 的地板/洞窗。`bench --bin short|long|multi_dead_end` 或 `--bins a,b` 只跑所选赛道，避免短长混跑挂起。长 mint 建议 `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`；快捷：`bun run bench:long:mint`。
 - **QA 0/0**：视为 skipped（不是 fail）。
-- **L4 JSON**：`parseStructuredJson` 会从 prose 抽 JSON；replay 解析失败时若 workspace `verify[]` 已过可恢复 success。
+- **L4 JSON**：`parseStructuredJson` 会从 prose / fence 抽 JSON，并软修复 trailing commas、注释、截断对象；QA 畸形最多再试 2 次。仍无合法 pairs → QA **skipped**（不是 fail=0）。
+- **Replay 无 mapped workspace**：`manifest.json` 未映射的 trace（如多数导入 MIMO）replay **skipped**（null），不因缺 fixture 归零 composite。真重放仍需 mapped fixture + L4 模型 + 可选 `verify[]`。replay 解析失败时若 workspace `verify[]` 已过可恢复 success。
 
 ## 怎么用 / 怎么跑
 
