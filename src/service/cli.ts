@@ -44,7 +44,12 @@ import {
   l4BackendAvailable,
   setSessionBackend,
 } from '../agent/sessions/open_session.ts'
-import { distill, resolveDistillMode, type DistillResult } from '../pipeline/orchestrator.ts'
+import {
+  distill,
+  NO_LLM_REMOVED_MESSAGE,
+  resolveDistillMode,
+  type DistillResult,
+} from '../pipeline/orchestrator.ts'
 
 type DistillFn = typeof distill
 /** Test-only hook: runBench calls this instead of distill directly. */
@@ -81,9 +86,10 @@ export interface CliArgs {
   live_dump_dir?: string
   live_socket_path?: string
   datasets_dir?: string
+  /** @deprecated ADR-0010 removed; parseArgv rejects --no-llm */
   no_llm?: boolean
   fake_l4?: boolean
-  /** bench 显式启用真 mint L4 / with_llm；缺省强制 no_llm 防挂起 */
+  /** bench 显式启用真 mint L4；缺省 FakeSessionBackend 防挂起（agent path） */
   with_l4?: boolean
   /** bench: only these bins (short|long|multi_dead_end). Empty = all. */
   bins?: ProfileBin[]
@@ -93,21 +99,21 @@ export interface CliArgs {
 }
 
 const HELP = `Usage:
-  node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--live-dump dir] [--live-socket path] [--no-llm]
+  node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--live-dump dir] [--live-socket path] [--fake-l4]
   node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
   node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
-  node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--no-llm] [--fake-l4] [--with-l4] [--bin short|long|multi_dead_end] [--bins a,b]
+  node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--fake-l4] [--with-l4] [--bin short|long|multi_dead_end] [--bins a,b]
 
---no-llm forces the conservative no-hole path. Without --no-llm, with_llm runs when a session backend is injected or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B is set; otherwise no_llm.
+Agent-led cut only (ADR-0010). --no-llm / pure rules-only mode was removed — passing it errors. Distill requires an agent path: injected FakeSessionBackend / --fake-l4 (CI), or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
-FakeSessionBackend is for tests only. Production with_llm needs TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
+FakeSessionBackend is for tests/CI. Production needs TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
 OpenAI-compatible gateway (Macaron mint): copy .env.example to .env. TRACE_DISTILLER_API_BASE + TRACE_DISTILLER_API_KEY register a custom provider; models stay TRACE_DISTILLER_MODEL_HOLE_A/B/L4 as provider/modelId (example macaron/macaron-v1-coding-venti). Keys are never logged.
 
 eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a mapped benchmark/workspaces fixture + model; this command wires cwd when present.
 
-bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample, scores six gates, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Default is --no-llm (even if mint env is set) so overnight/CI cannot hang. --with-l4 opts into with_llm + real mint L4 (session calls have SESSION_CALL_TIMEOUT_MS hard timeout; for long mint set TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000). --fake-l4 injects FakeSessionBackend (deterministic heal + verify) so composite can exceed 0 without mint. --bin / --bins select tracks so short and long are not forced into one hang-prone run; each selected bin uses its CutProfile valve (short=less aggressive dead_end + soft cost; long/multi=stronger collapse + keep floor ~8–15%) unless --profile overrides. Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces; unmapped traces skip replay (null, not fail=0); success is gated by workspace verify[] when present. QA near-JSON is repaired; still-unparseable after retries skips (null). Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null. m1_score = compressionScore x key_step_recall (M1 gate; cost fail does not zero m1). L4/coherence failures surface as sample notes. Distill/SpanFailure per sample is recorded (composite 0) so the scoreboard still writes.
+bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample, scores six gates, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Default injects FakeSessionBackend when not --with-l4 so overnight/CI cannot hang on mint (ADR-0010 agent path, not rules-only). --with-l4 opts into real mint L4 (session calls have SESSION_CALL_TIMEOUT_MS hard timeout; for long mint set TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000). --fake-l4 also runs deterministic L4 heal + verify so composite can exceed 0 without mint. --bin / --bins select tracks so short and long are not forced into one hang-prone run; each selected bin uses its CutProfile valve (short=less aggressive dead_end + soft cost; long/multi=stronger collapse + keep floor ~8–15%) unless --profile overrides. Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces; unmapped traces skip replay (null, not fail=0); success is gated by workspace verify[] when present. QA near-JSON is repaired; still-unparseable after retries skips (null). Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null. m1_score = compressionScore x key_step_recall (M1 gate; cost fail does not zero m1). L4/coherence failures surface as sample notes. Distill/SpanFailure per sample is recorded (composite 0) so the scoreboard still writes.
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
@@ -137,7 +143,6 @@ export function parseArgv(argv: string[]): CliArgs {
   let live_dump_dir: string | undefined
   let live_socket_path: string | undefined
   let datasets_dir: string | undefined
-  let no_llm: boolean | undefined
   let fake_l4: boolean | undefined
   let with_l4: boolean | undefined
   let bins: ProfileBin[] | undefined
@@ -199,8 +204,7 @@ export function parseArgv(argv: string[]): CliArgs {
       continue
     }
     if (token === '--no-llm') {
-      no_llm = true
-      continue
+      throw new Error(NO_LLM_REMOVED_MESSAGE)
     }
     if (token === '--fake-l4') {
       fake_l4 = true
@@ -254,7 +258,6 @@ export function parseArgv(argv: string[]): CliArgs {
   if (live_dump_dir !== undefined) args.live_dump_dir = live_dump_dir
   if (live_socket_path !== undefined) args.live_socket_path = live_socket_path
   if (datasets_dir !== undefined) args.datasets_dir = datasets_dir
-  if (no_llm !== undefined) args.no_llm = no_llm
   if (fake_l4 !== undefined) args.fake_l4 = fake_l4
   if (with_l4 !== undefined) args.with_l4 = with_l4
   if (bins !== undefined) args.bins = bins
@@ -284,10 +287,18 @@ export async function runCli(args: CliArgs): Promise<number> {
       socketStarted = true
       logInfo('live unix socket listening', { path: args.live_socket_path })
     }
+    if (args.fake_l4 === true) {
+      setSessionBackend(new FakeSessionBackend())
+    }
     const raw = loadRaw(args.input_path)
     const profile = loadProfile(args.profile_path)
-    const mode = resolveDistillMode({ no_llm: args.no_llm === true })
-    const result = await distill({ raw, profile, mode })
+    const mode = resolveDistillMode({})
+    let result: DistillResult
+    try {
+      result = await distill({ raw, profile, mode })
+    } finally {
+      if (args.fake_l4 === true) setSessionBackend(undefined)
+    }
     const outDir = args.out_dir ?? join('data', 'distilled')
     writeCuts(outDir, result)
 
@@ -313,8 +324,7 @@ export async function runCli(args: CliArgs): Promise<number> {
     }
 
     const holeFailed = (result.hole_notes?.length ?? 0) > 0
-    const holesStage =
-      mode !== 'with_llm' ? 'skipped' : holeFailed ? 'error' : 'done'
+    const holesStage = holeFailed ? 'error' : 'done'
     const job_id = registerJobFromResult(result, {
       holes: holesStage,
     })
@@ -475,18 +485,17 @@ async function runBench(args: CliArgs): Promise<number> {
   const outDir = args.out_dir ?? join('benchmark', 'out')
   const selectedBins = resolveBenchBins(args)
   const cwd = process.cwd()
-  // Default no_llm even when mint env is set. Real mint path is opt-in via --with-l4.
+  // ADR-0010: agent path only. Without --with-l4, inject FakeSessionBackend (hang-safe agent path).
   const wantRealL4 = args.with_l4 === true
-  const forceNoLlm = args.no_llm === true || !wantRealL4
-  const mode = resolveDistillMode({ no_llm: forceNoLlm })
-  const injectedFake = args.fake_l4 === true
-  if (injectedFake) {
+  const wantFakeL4 = args.fake_l4 === true
+  if (!wantRealL4) {
     setSessionBackend(new FakeSessionBackend())
   }
-  // --fake-l4 → FakeSessionBackend. --with-l4 → real mint when MODEL_L4 set. Else skip (no hang).
-  const runL4 = injectedFake || (wantRealL4 && l4BackendAvailable())
+  const mode = resolveDistillMode({})
+  // Default / --fake-l4 → FakeSessionBackend. --with-l4 → real mint when MODEL_L4 set. Else L4 skip (no hang).
+  const runL4 = wantFakeL4 || (wantRealL4 && l4BackendAvailable())
   const runCoherence =
-    injectedFake || (wantRealL4 && (holeModelsConfigured() || runL4))
+    wantFakeL4 || (wantRealL4 && (holeModelsConfigured() || runL4))
   const samples: ScoredSample[] = []
   try {
     for (const bin of selectedBins) {
@@ -517,7 +526,7 @@ async function runBench(args: CliArgs): Promise<number> {
             qa = l4.qa
             replay = l4.replay
             sampleNotes.push(...l4.notes)
-          } else if (!injectedFake && !wantRealL4) {
+          } else if (!wantFakeL4 && !wantRealL4) {
             sampleNotes.push(
               'l4 skipped: pass --with-l4 for real mint or --fake-l4 for CI (default avoids hang)',
             )
@@ -598,7 +607,7 @@ async function runBench(args: CliArgs): Promise<number> {
     logError(message)
     return EXIT_OTHER
   } finally {
-    if (injectedFake) setSessionBackend(undefined)
+    setSessionBackend(undefined)
   }
 }
 

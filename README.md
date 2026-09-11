@@ -2,9 +2,9 @@
 
 > Agent 一次任务可能留下几百步记录。本工具只处理「最终做对了」的那条，把它剪短：训练能用，人也能看懂。
 
-**当前状态**：TypeScript 流水线 + 两个 agent 洞。无洞（`--no-llm`）与假后端带洞两条通路可跑；自包含 HTML 报告；SQLite 记段 / 打标 / 凭证 / 指标；只读 live dump 页（`file://`，进程内 job 表）。可选本机 Unix domain socket（`--live-socket`，默认关闭）。L4 接口已接通：`--fake-l4` 可本地打出 composite>0；真 mint 用 `--with-l4`（会话有硬超时）。
+**当前状态**：Agent 主编裁剪 + 确定性护栏（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）。`--no-llm` 已删除；CI 用 `--fake-l4` / FakeSessionBackend。自包含 HTML 报告；SQLite 记段 / 打标 / 凭证 / 指标；只读 live dump 页（`file://`）。可选 Unix domain socket（`--live-socket`）。L4：`--fake-l4` 本地 composite；`--with-l4` 真 mint。
 
-编排是纯 TypeScript 流水线，不是 runtime agent。LLM 只出现在洞 A（骨架）和洞 B（逐窗打标）。分层见 [docs/architecture.md](./docs/architecture.md)。
+Agent session 决定 how to cut；admission / span / warrant / I/O 仍是确定性 TypeScript。工具结果经 tool mask 回灌。分层见 [docs/architecture.md](./docs/architecture.md)。
 
 ---
 
@@ -33,14 +33,14 @@ bun run test
 
 # 1) 无洞蒸馏示例（或：bun run distill:example）
 node script/run-distill.ts distill examples/add-fix.jsonl \
-  --no-llm \
+  --fake-l4 \
   --sqlite /tmp/distiller.sqlite \
   --report /tmp/add-fix.report.html \
   --live-dump /tmp/distiller-live
 # 打开 /tmp/distiller-live/live.html
 
 # 2) 分档记分板（默认 no_llm，有 mint .env 也不会挂）
-node script/run-distill.ts bench --no-llm --fake-l4
+node script/run-distill.ts bench --fake-l4
 # 或：bun run bench:fake  /  bun run bench:m1
 # → stdout JSON + benchmark/out/scoreboard.md
 ```
@@ -63,7 +63,7 @@ cp .env.example .env
 # 长样 mint 建议：TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000
 ```
 
-真 mint L4（opt-in，防挂）：`bench --with-l4`。日常 CI / 过夜用 `bench --no-llm --fake-l4`。
+真 mint L4（opt-in，防挂）：`bench --with-l4`。日常 CI / 过夜用 `bench --fake-l4`。
 
 
 ---
@@ -73,11 +73,11 @@ cp .env.example .env
 入口：
 
 ```text
-node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--live-dump dir] [--live-socket path] [--no-llm]
+node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--out-dir dir] [--report out.html] [--live-dump dir] [--live-socket path] [--fake-l4]
 node script/run-distill.ts eval <trace_id> --sqlite path
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
-node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm] [--fake-l4] [--with-l4]
+node script/run-distill.ts bench [--dir benchmark/datasets] [--fake-l4] [--with-l4]
 ```
 
 `package.json` 快捷脚本：`bun run distill -- distill …`、`bun run distill:example`、`bun run bench:fake` / `bun run bench:m1`（仍是 node 跑 `script/run-distill.ts`）。
@@ -88,7 +88,7 @@ node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm] [--fake-l
 
 ```bash
 node script/run-distill.ts distill examples/add-fix.jsonl \
-  --no-llm \
+  --fake-l4 \
   --sqlite /tmp/distiller.sqlite \
   --report /tmp/add-fix.report.html
 ```
@@ -112,7 +112,7 @@ node script/run-distill.ts report <trace_id> --sqlite /tmp/distiller.sqlite --ou
 
 ```bash
 node script/run-distill.ts distill examples/add-fix.jsonl \
-  --no-llm \
+  --fake-l4 \
   --live-dump /tmp/distiller-live
 # 打开 /tmp/distiller-live/live.html
 node script/run-distill.ts live-dump --sqlite /tmp/distiller.sqlite --out-dir /tmp/distiller-live
@@ -122,7 +122,7 @@ node script/run-distill.ts live-dump --sqlite /tmp/distiller.sqlite --out-dir /t
 
 ### 带洞（真模型）
 
-设置洞模型后再跑，不要加 `--no-llm`。`node script/run-distill.ts` 启动时会加载本机 `.env`（若存在）；不要提交 `.env`。
+设置洞模型后再跑（或 `--fake-l4`）。`--no-llm` 已删除（ADR-0010）。`node script/run-distill.ts` 启动时会加载本机 `.env`（若存在）；不要提交 `.env`。
 
 接 Macaron mint（OpenAI-compatible 网关）：复制 `.env.example` 为 `.env`，填 `TRACE_DISTILLER_API_KEY`。`PiSessionBackend` 在 `API_BASE`+`API_KEY` 都设时 `registerProvider`，不走内置 `getModel`。密钥永不打进日志。
 

@@ -64,7 +64,9 @@ describe('cli', { concurrency: 1 }, () => {
     assert.match(help, /never averaged/)
     assert.match(help, /--fake-l4/)
     assert.match(help, /--with-l4/)
-    assert.match(help, /Default is --no-llm/)
+    assert.match(help, /ADR-0010/)
+    assert.match(help, /Agent-led/)
+    assert.doesNotMatch(help, /Default is --no-llm/)
   })
 
   it('does not import pi, createAgentSession, or listen', () => {
@@ -98,7 +100,7 @@ describe('cli', { concurrency: 1 }, () => {
       'live-out',
       '--live-socket',
       '/tmp/distiller.live.sock',
-      '--no-llm',
+      '--fake-l4',
     ])
     assert.equal(args.command, 'distill')
     assert.equal(args.input_path, 'a.jsonl')
@@ -108,10 +110,17 @@ describe('cli', { concurrency: 1 }, () => {
     assert.equal(args.report_path, 'r.html')
     assert.equal(args.live_dump_dir, 'live-out')
     assert.equal(args.live_socket_path, '/tmp/distiller.live.sock')
-    assert.equal(args.no_llm, true)
+    assert.equal(args.fake_l4, true)
   })
 
-  it('writes training/playback json for --no-llm fixture and exits 0', async () => {
+  it('parseArgv rejects --no-llm (ADR-0010)', () => {
+    assert.throws(
+      () => parseArgv(['distill', 'a.jsonl', '--no-llm']),
+      (err: unknown) => err instanceof Error && err.message.includes('ADR-0010'),
+    )
+  })
+
+  it('writes training/playback json for fixture via --fake-l4 and exits 0', async () => {
     resetLiveState()
     const outDir = tmp()
     const sqlite = join(outDir, 'distiller.sqlite')
@@ -122,7 +131,7 @@ describe('cli', { concurrency: 1 }, () => {
       out_dir: outDir,
       sqlite_path: sqlite,
       report_path: report,
-      no_llm: true,
+      fake_l4: true,
     })
     assert.equal(code, EXIT_OK)
 
@@ -183,7 +192,7 @@ describe('cli', { concurrency: 1 }, () => {
         command: 'distill',
         input_path: join(fixtures, 'no_gt_verbal_ok.jsonl'),
         out_dir: outDir,
-        no_llm: true,
+        fake_l4: true,
       })
       assert.equal(code, EXIT_ADMISSION)
     } finally {
@@ -215,7 +224,7 @@ describe('cli', { concurrency: 1 }, () => {
         scriptSrc,
         'distill',
         join(fixtures, 'no_llm_conservative.jsonl'),
-        '--no-llm',
+        '--fake-l4',
         '--out-dir',
         outDir,
       ],
@@ -226,7 +235,7 @@ describe('cli', { concurrency: 1 }, () => {
     assert.equal(existsSync(join(outDir, 'claude-code-sess-no-llm-playback.json')), true)
   })
 
-  it('without --no-llm and without backend/env falls back to no_llm', async () => {
+  it('without --fake-l4 and without backend/env errors (ADR-0010 agent path required)', async () => {
     const outDir = tmp()
     const prevL4 = process.env.TRACE_DISTILLER_MODEL_L4
     const prevHoleA = process.env.TRACE_DISTILLER_MODEL_HOLE_A
@@ -235,17 +244,22 @@ describe('cli', { concurrency: 1 }, () => {
     delete process.env.TRACE_DISTILLER_MODEL_HOLE_A
     delete process.env.TRACE_DISTILLER_MODEL_HOLE_B
     setSessionBackend(undefined)
+    const chunks: string[] = []
+    const origWrite = process.stderr.write.bind(process.stderr)
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stderr.write
     try {
       const code = await runCli({
         command: 'distill',
         input_path: join(fixtures, 'no_llm_conservative.jsonl'),
         out_dir: outDir,
       })
-      assert.equal(code, EXIT_OK)
-      const jobs = list_jobs()
-      assert.equal(jobs.length, 1)
-      assert.equal(get_cut_progress(jobs[0]!.job_id).holes, 'skipped')
+      assert.notEqual(code, EXIT_OK)
+      assert.match(chunks.join(''), /ADR-0010|Agent path required/)
     } finally {
+      process.stderr.write = origWrite
       if (prevL4 === undefined) delete process.env.TRACE_DISTILLER_MODEL_L4
       else process.env.TRACE_DISTILLER_MODEL_L4 = prevL4
       if (prevHoleA === undefined) delete process.env.TRACE_DISTILLER_MODEL_HOLE_A
@@ -255,7 +269,7 @@ describe('cli', { concurrency: 1 }, () => {
     }
   })
 
-  it('eval and report reconstruct metrics and html from sqlite after no_llm distill', async () => {
+  it('eval and report reconstruct metrics and html from sqlite after fake-l4 distill', async () => {
     const outDir = tmp()
     const sqlite = join(outDir, 'distiller.sqlite')
     const distillCode = await runCli({
@@ -263,7 +277,7 @@ describe('cli', { concurrency: 1 }, () => {
       input_path: join(fixtures, 'no_llm_conservative.jsonl'),
       out_dir: outDir,
       sqlite_path: sqlite,
-      no_llm: true,
+      fake_l4: true,
     })
     assert.equal(distillCode, EXIT_OK)
 
@@ -420,14 +434,13 @@ describe('cli', { concurrency: 1 }, () => {
     assert.equal(liveArgs.command, 'live-dump')
     assert.equal(liveArgs.sqlite_path, 'db.sqlite')
     assert.equal(liveArgs.out_dir, 'live')
-    const benchArgs = parseArgv(['bench', '--dir', 'benchmark/datasets', '--fake-l4', '--no-llm'])
+    const benchArgs = parseArgv(['bench', '--dir', 'benchmark/datasets', '--fake-l4'])
     assert.equal(benchArgs.command, 'bench')
     assert.equal(benchArgs.datasets_dir, 'benchmark/datasets')
     assert.equal(benchArgs.fake_l4, true)
-    assert.equal(benchArgs.no_llm, true)
   })
 
-  it('without --no-llm and injected FakeSessionBackend runs with_llm', async () => {
+  it('with injected FakeSessionBackend runs with_llm', async () => {
     setSessionBackend(
       new FakeSessionBackend((input, opts) => {
         if (opts.role === 'hole_a_skeleton') {
@@ -478,7 +491,7 @@ describe('cli', { concurrency: 1 }, () => {
       input_path: join(fixtures, 'no_llm_conservative.jsonl'),
       out_dir: outDir,
       live_dump_dir: liveDir,
-      no_llm: true,
+      fake_l4: true,
     })
     assert.equal(code, EXIT_OK)
     const jobs = list_jobs()
@@ -512,7 +525,7 @@ describe('cli', { concurrency: 1 }, () => {
         input_path: join(fixtures, 'no_llm_conservative.jsonl'),
         out_dir: outDir,
         live_socket_path: sock,
-        no_llm: true,
+        fake_l4: true,
       })
       assert.equal(code, EXIT_OK)
     } finally {
@@ -540,7 +553,7 @@ describe('cli', { concurrency: 1 }, () => {
       input_path: join(fixtures, 'no_llm_conservative.jsonl'),
       out_dir: outDir,
       sqlite_path: sqlite,
-      no_llm: true,
+      fake_l4: true,
     })
     assert.equal(distillCode, EXIT_OK)
     resetLiveState()
@@ -580,7 +593,7 @@ describe('cli', { concurrency: 1 }, () => {
         input_path: '',
         datasets_dir: join(repoRoot, 'benchmark/datasets'),
         bins: ['long'],
-        no_llm: true,
+        fake_l4: true,
       })
       assert.equal(code, EXIT_OK)
     } finally {
@@ -615,7 +628,7 @@ describe('cli', { concurrency: 1 }, () => {
         command: 'bench',
         input_path: '',
         datasets_dir: join(repoRoot, 'benchmark/datasets'),
-        no_llm: true,
+        fake_l4: true,
       })
       assert.equal(code, EXIT_OK)
     } finally {
@@ -644,7 +657,7 @@ describe('cli', { concurrency: 1 }, () => {
     assert.doesNotMatch(line, /"overall"/)
   })
 
-  it('bench --no-llm --fake-l4 yields fluff composite > 0 without mint', async () => {
+  it('bench --fake-l4 yields fluff composite > 0 without mint', async () => {
     const outDir = tmp()
     const chunks: string[] = []
     const origWrite = process.stdout.write.bind(process.stdout)
@@ -658,7 +671,6 @@ describe('cli', { concurrency: 1 }, () => {
         input_path: '',
         datasets_dir: join(repoRoot, 'benchmark/datasets'),
         out_dir: outDir,
-        no_llm: true,
         fake_l4: true,
       })
       assert.equal(code, EXIT_OK)
@@ -720,7 +732,7 @@ describe('cli', { concurrency: 1 }, () => {
     assert.equal(args.with_l4, true)
   })
 
-  it('bench defaults to no_llm even when mint env is set (no hang)', async () => {
+  it('bench defaults to FakeSessionBackend agent path even when mint env is set (no hang)', async () => {
     const prevA = process.env.TRACE_DISTILLER_MODEL_HOLE_A
     const prevL4 = process.env.TRACE_DISTILLER_MODEL_L4
     process.env.TRACE_DISTILLER_MODEL_HOLE_A = 'macaron/macaron-v1-coding-venti'
@@ -737,7 +749,7 @@ describe('cli', { concurrency: 1 }, () => {
         command: 'bench',
         input_path: '',
         datasets_dir: join(repoRoot, 'benchmark/datasets'),
-        // deliberately omit no_llm / with_l4 / fake_l4
+        // deliberately omit with_l4 / fake_l4 (default FakeSessionBackend agent path)
       })
       assert.equal(code, EXIT_OK)
     } finally {
@@ -762,7 +774,7 @@ describe('cli', { concurrency: 1 }, () => {
       with_l4?: boolean
       bins: { short: { samples: Array<{ notes?: string[] }> } }
     }
-    assert.equal(report.mode, 'no_llm')
+    assert.equal(report.mode, 'with_llm')
     assert.equal(report.l4, false)
     assert.equal(report.with_l4, false)
     const noteBlob = (report.bins.short.samples[0]?.notes ?? []).join(' ')
@@ -817,7 +829,7 @@ describe('cli', { concurrency: 1 }, () => {
         datasets_dir: datasets,
         out_dir: outDir,
         bins: ['short'],
-        no_llm: true,
+        fake_l4: true,
       })
       assert.equal(code, EXIT_OK)
     } finally {

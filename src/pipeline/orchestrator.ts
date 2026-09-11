@@ -28,7 +28,8 @@ import { applyRules } from './rules.ts'
 import { segment } from './segmenter.ts'
 import { warn as logWarn } from '../utils/logger.ts'
 
-export type DistillMode = 'no_llm' | 'with_llm'
+/** Agent-led path only (ADR-0010). `--no_llm` / rules-only removed. */
+export type DistillMode = 'with_llm'
 
 export interface DistillOpts {
   sessionBackend?: SessionBackend
@@ -66,54 +67,43 @@ export class NotImplementedError extends Error {
   }
 }
 
+/** Error when callers pass the removed `--no-llm` flag (ADR-0010). */
+export const NO_LLM_REMOVED_MESSAGE =
+  '--no-llm was removed (ADR-0010; see docs/adr/0010-agent-led-cut-with-tool-mask.md). Agent-led cut is required; use FakeSessionBackend / --fake-l4 for CI, or set TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.'
+
+export const AGENT_PATH_REQUIRED_MESSAGE =
+  'Agent path required (ADR-0010): set TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B, or inject FakeSessionBackend / --fake-l4. Pure rules-only --no-llm was removed.'
+
 /**
- * 无 --no-llm 且（注入了假后端或洞模型 env）时走 with_llm，否则保守 no_llm。
+ * Always agent path (`with_llm`). `--no-llm` throws. Missing backend+models throws (no silent rules-only fallback).
  */
 export function resolveDistillMode(input: {
   no_llm?: boolean
   sessionBackend?: SessionBackend
   env?: NodeJS.Dict<string>
 }): DistillMode {
-  if (input.no_llm === true) return 'no_llm'
+  if (input.no_llm === true) {
+    throw new Error(NO_LLM_REMOVED_MESSAGE)
+  }
   if (input.sessionBackend !== undefined) return 'with_llm'
   if (hasInjectedSessionBackend()) return 'with_llm'
   if (holeModelsConfigured(input.env ?? process.env)) return 'with_llm'
-  return 'no_llm'
+  throw new Error(AGENT_PATH_REQUIRED_MESSAGE)
 }
 
 /**
- * 确定性编排。mode='no_llm'：规则 + 未决 Fail-Closed Keep。
- * mode='with_llm'：洞 A → 逐窗洞 B → 凭证 → assemble → 盲测纯代码回填。
- * 禁止 import pi SDK；洞只经 sessions 函数。
+ * Agent-led 编排（ADR-0010）。mode 仅 'with_llm'：洞 A → 逐窗洞 B → 凭证 → assemble → 盲测纯代码回填。
+ * 规则仍先跑作 hints；最终 how-to-cut 由 agent 洞决议（未决 Fail-Closed Keep 仍是 failure policy）。
+ * 禁止 import pi SDK；洞只经 sessions 函数。完整 cut-brain ReAct 循环见 ADR-0010 follow-up。
  */
 export async function distill(input: DistillInput): Promise<DistillResult> {
   const { raw, profile, mode } = input
+  if (mode !== 'with_llm') {
+    throw new Error(NO_LLM_REMOVED_MESSAGE)
+  }
   const backend = input.opts?.sessionBackend
   const segmented = segment(raw)
   const ruled = applyRules({ view: segmented, raw })
-
-  if (mode === 'no_llm') {
-    const warrant0 = writeWarrant({
-      skeleton: ruled.view.skeleton,
-      labels: ruled.decisions,
-      view: ruled.view,
-      profile,
-    })
-    const floored = enforceKeepRatioFloor({
-      raw,
-      view: ruled.view,
-      warrant: warrant0,
-      profile,
-    })
-    return packResult({
-      raw,
-      view: ruled.view,
-      warrant: floored.warrant,
-      assembled: floored.assembled,
-      decisions: ruled.decisions,
-      unresolved_ids: ruled.unresolved_ids,
-    })
-  }
 
   return await runWithLlm({
     raw,

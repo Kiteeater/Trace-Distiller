@@ -7,6 +7,7 @@ import { parse } from '../../src/adapters/claude_code.ts'
 import { DEFAULT_CUT_PROFILE } from '../../src/constant/compression.ts'
 import { compressionRatio } from '../../src/eval/metrics.ts'
 import { distill } from '../../src/pipeline/orchestrator.ts'
+import { FakeSessionBackend, setSessionBackend } from '../../src/agent/sessions/open_session.ts'
 import {
   LIVE_TOOL_NAMES,
   UnknownJobError,
@@ -47,7 +48,7 @@ describe('live in-memory jobs', () => {
   it('registers DistillResult and serves the six subscribe tools', async () => {
     resetLiveState()
     const raw = parse(readFileSync(join(fixtures, 'no_llm_conservative.jsonl'), 'utf8'))
-    const result = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'no_llm' })
+    const result = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'with_llm', opts: { sessionBackend: new FakeSessionBackend() } })
     const job_id = registerJobFromResult(result)
 
     const listed = list_jobs()
@@ -90,7 +91,7 @@ describe('live in-memory jobs', () => {
   it('dumpJobSnapshot includes the six live tool fields without attaching', async () => {
     resetLiveState()
     const raw = parse(readFileSync(join(fixtures, 'no_llm_conservative.jsonl'), 'utf8'))
-    const result = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'no_llm' })
+    const result = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'with_llm', opts: { sessionBackend: new FakeSessionBackend() } })
     const job_id = registerJobFromResult(result)
     const snap = dumpJobSnapshot(job_id)
     for (const name of LIVE_TOOL_NAMES) {

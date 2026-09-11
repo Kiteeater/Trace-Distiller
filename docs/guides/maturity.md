@@ -11,8 +11,8 @@
 快捷命令（见根 `package.json`）：
 
 ```bash
-bun run distill:example   # 无洞蒸馏示例 + live dump
-bun run bench:fake        # = bench:m1；--no-llm --fake-l4 分档记分板
+bun run distill:example   # agent 路径（--fake-l4）示例 + live dump
+bun run bench:fake        # = bench:m1；--fake-l4 分档记分板
 bun run bench:m1          # 同上；看 m1_score / scoreboard 的 m1 列
 bun run bench:long        # 仅 long 档假 L4（阀门 CutProfile）
 bun run bench:long:mint   # 真 mint long-only；默认 SESSION_TIMEOUT_MS=300000
@@ -24,8 +24,8 @@ bun run bench:long:mint   # 真 mint long-only；默认 SESSION_TIMEOUT_MS=30000
 
 | 能力 | 怎么跑 | 说明 |
 |------|--------|------|
-| **离线蒸馏（无洞）** | `bun run distill:example` 或 `node script/run-distill.ts distill … --no-llm` | 规则已决议按 CutProfile 裁；未决 Fail-Closed Keep；写出 Training/Playback 中间表示、HTML 报告、可选 live dump |
-| **假 L4 记分板 + m1** | `bun run bench:fake` / `bun run bench:m1` | `bench --no-llm --fake-l4`；stdout JSON + `benchmark/out/scoreboard.md`；有 `m1` 列（压缩率得分 × 关键步召回；cost 失败不归零 m1） |
+| **离线蒸馏（假后端 agent 路径）** | `bun run distill:example` 或 `node script/run-distill.ts distill … --fake-l4` | ADR-0010：无 `--no-llm`；FakeSessionBackend 走洞 A/B；写出 Training/Playback、HTML 报告、可选 live dump |
+| **假 L4 记分板 + m1** | `bun run bench:fake` / `bun run bench:m1` | `bench --fake-l4`；stdout JSON + `benchmark/out/scoreboard.md`；有 `m1` 列（压缩率得分 × 关键步召回；cost 失败不归零 m1） |
 | **真 mint 重放 + 校验（接口）** | `bench --with-l4`（需本机 `.env`）+ workspace fixture | L4 会话硬超时；mapped workspace 有 `verify[]` 时门禁重放；密钥不进仓库 |
 
 同源双投影：assembler 已从同一 CutPlan 写出 `*-training.json`（`TrainingCut`：按保留集抽出的 RawTurn 列）与 `*-playback.json`（卡片流）。这是 M1 中间表示，**不是**定型 SFT 模板。

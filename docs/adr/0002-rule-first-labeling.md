@@ -5,3 +5,5 @@
 **Status**: accepted
 
 **Considered Options**: LLM-first 全量打标；纯规则无 LLM。前者成本与 context 风险过高；后者对「有效探索 vs 死胡同」覆盖不足，故折中为规则优先。
+
+**Note (ADR-0010)**: 规则优先仍是成本启发式，但 **不再提供纯规则 `--no-llm` 独立产品路径**；规则层变为 agent 可调用的工具/提示。裁剪决策权在 agent session（editor-in-chief）。

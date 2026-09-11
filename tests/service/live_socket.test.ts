@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { parse } from '../../src/adapters/claude_code.ts'
 import { DEFAULT_CUT_PROFILE } from '../../src/constant/compression.ts'
 import { distill } from '../../src/pipeline/orchestrator.ts'
+import { FakeSessionBackend, setSessionBackend } from '../../src/agent/sessions/open_session.ts'
 import { list_jobs, registerJobFromResult, resetLiveState } from '../../src/service/live.ts'
 import {
   liveSocketPath,
@@ -95,7 +96,7 @@ describe('live unix socket', () => {
     if (empty.ok) assert.deepEqual(empty.result, [])
 
     const raw = parse(readFileSync(join(fixtures, 'no_llm_conservative.jsonl'), 'utf8'))
-    const result = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'no_llm' })
+    const result = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'with_llm', opts: { sessionBackend: new FakeSessionBackend() } })
     const job_id = registerJobFromResult(result)
     assert.equal(list_jobs().length, 1)
 
