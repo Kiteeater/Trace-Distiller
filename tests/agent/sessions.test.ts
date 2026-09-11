@@ -1152,5 +1152,54 @@ describe('parseStructuredJson prose extract', () => {
     assert.ok(salvaged.items.length >= 1, repaired)
     assert.equal(salvaged.items[0]?.id, 'q1')
   })
+
+  it('salvages unescaped quotes inside QA string values', async () => {
+    const { parseStructuredJson, repairNearJson } = await import('../../src/agent/sessions/open_session.ts')
+    const bad =
+      '{"kind":"l4_qa_v0","items":[{"id":"q1","question":"What does the "add" function do?","answer":"Fix the "add" function","correct":true}]}'
+    assert.throws(() => JSON.parse(bad))
+    const repaired = repairNearJson(bad)
+    const obj = parseStructuredJson(bad) as {
+      kind: string
+      items: Array<{ id: string; question: string; answer: string; correct: boolean }>
+    }
+    assert.equal(obj.kind, 'l4_qa_v0')
+    assert.equal(obj.items.length, 1)
+    assert.equal(obj.items[0]?.id, 'q1')
+    assert.match(obj.items[0]!.question, /add/)
+    assert.match(obj.items[0]!.answer, /add/)
+    assert.equal(obj.items[0]?.correct, true)
+    assert.deepEqual(JSON.parse(repaired), obj)
+  })
+
+  it('salvages a mixed items array when only some answers have unescaped quotes', async () => {
+    const { parseStructuredJson } = await import('../../src/agent/sessions/open_session.ts')
+    const mixed =
+      '{"kind":"l4_qa_v0","items":[' +
+      '{"id":"q1","question":"What was the task?","answer":"Fix the "add" function","correct":true},' +
+      '{"id":"q2","question":"What was edited?","answer":"add.ts","correct":true},' +
+      '{"id":"q3","question":"How verified?","answer":"pytest","correct":false}' +
+      ']}'
+    const obj = parseStructuredJson(mixed) as {
+      kind: string
+      items: Array<{ id: string; answer: string; correct: boolean }>
+    }
+    assert.equal(obj.kind, 'l4_qa_v0')
+    assert.equal(obj.items.length, 3)
+    assert.deepEqual(obj.items.map((i) => i.id), ['q1', 'q2', 'q3'])
+    assert.match(obj.items[0]!.answer, /add/)
+    assert.equal(obj.items[1]?.answer, 'add.ts')
+    assert.equal(obj.items[2]?.answer, 'pytest')
+    assert.equal(obj.items[2]?.correct, false)
+  })
+
+  it('still throws on unsalvageable garbage (no silent empty success)', async () => {
+    const { parseStructuredJson, repairNearJson } = await import('../../src/agent/sessions/open_session.ts')
+    assert.throws(() => parseStructuredJson('not valid {json'))
+    assert.throws(() => parseStructuredJson('definitely not json at all'))
+    assert.throws(() => parseStructuredJson('{"kind":"l4_qa_v0","items":'))
+    const stillBad = repairNearJson('not valid {json')
+    assert.throws(() => JSON.parse(stillBad))
+  })
 })
 

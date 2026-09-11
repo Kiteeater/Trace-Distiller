@@ -129,7 +129,7 @@ eval → types, enums, constant, domain, data
 
 1. **token 计量口径（P0）**：工具输出全文？卡片？不定则压缩率验收无意义。
 2. **盲测判分协议（已拍板）**：review 会话输入只有 intent + playback（禁止 warrant / skeleton）。答卷为 `turning_point_segment_ids` + `evidence_segment_ids`。代码对照骨架：节点对应段在 playback 中完全看不见则回填那些段 keep。最多 `REVIEW_MAX_ROUNDS=2`。自由文本不判分。LLM 答卷经 `runBlindReview`；编排器回填仍走纯代码 `reviewAgainstPlan`。
-3. **QA 题怎么从原始 Trace 自动出（部分落地）**：`runQa` 在 QUESTIONS_JSON 为空时由 L4 同轮出题+作答；要求题目必须可从 PLAYBACK 回答，默认 3 题（意图 / 关键编辑 / 验证）。解析走 `parseStructuredJson`（可从 prose 抠 JSON）；**畸形 JSON 或 correct/answered < qa_min（或有卡却 0/0）时各重试一次**（与 replay 同形）。假后端单测覆盖「先 1/3 再满分」路径。题型生成器仍 OPEN。
+3. **QA 题怎么从原始 Trace 自动出（部分落地）**：`runQa` 在 QUESTIONS_JSON 为空时由 L4 同轮出题+作答；要求题目必须可从 PLAYBACK 回答，默认 3 题（意图 / 关键编辑 / 验证）。解析走 `parseStructuredJson`（可从 prose 抠 JSON；软修复含 **字符串内未转义引号**）；**畸形 JSON 或 correct/answered < qa_min（或有卡却 0/0）时各重试一次**（与 replay 同形）。假后端单测覆盖「先 1/3 再满分」路径。题型生成器仍 OPEN。
 4. **重放环境**：SWE-bench docker？本地无沙箱？architecture 只说「pi 起干净会话跑任务」。
 5. **关键步金标** MVP 从哪来：3–5 条可以手标，流程未写。
 6. **Playback vs Training 用哪份做 QA/review**：0009 说剪后 trace；人读应用 Playback，模型复述也许 Training 原文更好。未拍板。

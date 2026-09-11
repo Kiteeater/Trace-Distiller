@@ -505,6 +505,26 @@ describe('eval L4 via fake backend', () => {
     assert.equal(calls, QA_MALFORMED_RETRIES + 1)
   })
 
+  it('salvages unescaped-quote QA JSON on first parse without a malformed retry', async () => {
+    let calls = 0
+    const fake = new FakeSessionBackend(() => {
+      calls += 1
+      return {
+        text:
+          '{"kind":"l4_qa_v0","items":[{"id":"q1","question":"What was the task?","answer":"Fix the "add" function","correct":true},{"id":"q2","question":"What was edited?","answer":"add.ts","correct":true},{"id":"q3","question":"How verified?","answer":"pytest","correct":true}]}',
+        json: null,
+        tool_calls: [],
+        usage: { role: 'l4_qa', input_tokens: 1, output_tokens: 1 },
+      }
+    })
+    const qa = await runQa({ intent, playback, backend: fake })
+    assert.equal(qa.score.answered, 3)
+    assert.equal(qa.score.correct, 3)
+    assert.match(qa.items[0]?.answer ?? '', /add/)
+    assert.equal(calls, 1)
+    assert.equal(qa.retried, undefined)
+  })
+
   it('interpretQaResult extracts items from prose and tolerates is_correct alias', () => {
     const parsed = interpretQaResult(
       {
