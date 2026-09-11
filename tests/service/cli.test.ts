@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
@@ -10,7 +10,9 @@ import { getMetrics } from '../../src/data/data_metric.ts'
 import { ruleCoverage } from '../../src/data/data_label.ts'
 import { FakeSessionBackend, setSessionBackend } from '../../src/agent/sessions/open_session.ts'
 import { SKELETON_PASS_JSON_KIND } from '../../src/agent/sessions/skeleton_pass.ts'
-import { EXIT_ADMISSION, EXIT_OK, parseArgv, runCli } from '../../src/service/cli.ts'
+import { EXIT_ADMISSION, EXIT_OK, parseArgv, runCli, setBenchDistillForTests } from '../../src/service/cli.ts'
+import { distill } from '../../src/pipeline/orchestrator.ts'
+import { SpanFailure } from '../../src/domain/span_violation.ts'
 import { LIVE_TOOL_NAMES, get_cut_progress, list_jobs, resetLiveState } from '../../src/service/live.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -28,6 +30,7 @@ function tmp(): string {
 describe('cli', { concurrency: 1 }, () => {
   afterEach(() => {
     setSessionBackend(undefined)
+    setBenchDistillForTests(undefined)
     resetLiveState()
   })
 
@@ -765,4 +768,84 @@ describe('cli', { concurrency: 1 }, () => {
     const noteBlob = (report.bins.short.samples[0]?.notes ?? []).join(' ')
     assert.match(noteBlob, /l4 skipped: pass --with-l4/)
   })
+
+  it('bench survives SpanFailure on one sample and still writes scoreboard', async () => {
+    const datasets = tmp()
+    const outDir = tmp()
+    mkdirSync(join(datasets, 'short'), { recursive: true })
+    mkdirSync(join(datasets, 'long'), { recursive: true })
+    mkdirSync(join(datasets, 'multi_dead_end'), { recursive: true })
+    const src = join(repoRoot, 'benchmark/datasets/short/add-fix.jsonl')
+    copyFileSync(src, join(datasets, 'short', 'ok-sample.jsonl'))
+    copyFileSync(src, join(datasets, 'short', 'span-boom.jsonl'))
+
+    let thrown = false
+    setBenchDistillForTests(async (input) => {
+      if (!thrown) {
+        thrown = true
+        throw new SpanFailure(
+          {
+            trace_id: input.raw.meta.trace_id,
+            profile_id: 'default',
+            warrant_ref: 'w',
+            kept: ['s0001', 's0009'],
+            collapsed: [],
+            dropped: ['s0002', 's0003', 's0004', 's0005', 's0006'],
+            span_ok: false,
+            span_violations: ['span:s0001:s0009'],
+          },
+          [
+            {
+              id: 'span:s0001:s0009',
+              left_segment_id: 's0001',
+              right_segment_id: 's0009',
+              gap_segments: 7,
+              reason: 'gap_too_large',
+            },
+          ],
+        )
+      }
+      return distill(input)
+    })
+
+    const origWrite = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((chunk: string | Uint8Array) => true) as typeof process.stdout.write
+    try {
+      const code = await runCli({
+        command: 'bench',
+        input_path: '',
+        datasets_dir: datasets,
+        out_dir: outDir,
+        bins: ['short'],
+        no_llm: true,
+      })
+      assert.equal(code, EXIT_OK)
+    } finally {
+      process.stdout.write = origWrite
+    }
+
+    assert.ok(existsSync(join(outDir, 'scoreboard.json')))
+    assert.ok(existsSync(join(outDir, 'scoreboard.md')))
+    const payload = JSON.parse(readFileSync(join(outDir, 'scoreboard.json'), 'utf8')) as {
+      bins: {
+        short: {
+          n: number
+          samples: Array<{ trace_id: string; composite: number | null; notes?: string[] }>
+        }
+      }
+    }
+    assert.equal(payload.bins.short.n, 2)
+    const failed = payload.bins.short.samples.find((s) =>
+      (s.notes ?? []).some((n) => n.startsWith('span_failure:')),
+    )
+    assert.ok(failed, 'expected a span_failure sample')
+    assert.equal(failed!.composite, 0)
+    const survived = payload.bins.short.samples.find(
+      (s) => !(s.notes ?? []).some((n) => n.startsWith('span_failure:')),
+    )
+    assert.ok(survived, 'expected a surviving sample')
+    const md = readFileSync(join(outDir, 'scoreboard.md'), 'utf8')
+    assert.match(md, /span_failure:/)
+  })
+
 })

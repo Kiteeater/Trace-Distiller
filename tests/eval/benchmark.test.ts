@@ -6,13 +6,17 @@ import { fileURLToPath } from 'node:url'
 import { compressionScore } from '../../src/eval/metrics.ts'
 import {
   aggregateBins,
+  failedBenchSample,
   keyDecisionFileCandidates,
+  noteFromBenchDistillError,
   parseKeyDecisions,
   scoreSample,
   scoredComposite,
   type ScoredSample,
   type ScoreSampleInput,
 } from '../../src/eval/benchmark.ts'
+import { SpanFailure } from '../../src/domain/span_violation.ts'
+import type { CutPlan } from '../../src/types/cut_plan.ts'
 
 const evalDir = join(dirname(fileURLToPath(import.meta.url)), '../../src/eval')
 const pipelineDir = join(dirname(fileURLToPath(import.meta.url)), '../../src/pipeline')
@@ -201,5 +205,47 @@ describe('independent gold', () => {
       const src = readFileSync(join(sessionsDir, name), 'utf8')
       assert.doesNotMatch(src, /key-decisions/)
     }
+  })
+})
+
+describe('failedBenchSample / noteFromBenchDistillError', () => {
+  it('records composite 0 with compression fail and span_failure note', () => {
+    const plan: CutPlan = {
+      trace_id: 't-fail',
+      profile_id: 'default',
+      warrant_ref: 'w',
+      kept: ['a', 'b'],
+      collapsed: [],
+      dropped: ['x'],
+      span_ok: false,
+      span_violations: ['span:a:b'],
+    }
+    const err = new SpanFailure(plan, [
+      {
+        id: 'span:a:b',
+        left_segment_id: 'a',
+        right_segment_id: 'b',
+        gap_segments: 5,
+        reason: 'gap_too_large',
+      },
+    ])
+    const note = noteFromBenchDistillError(err)
+    assert.match(note, /^span_failure:/)
+    assert.match(note, /gap_too_large:a->b:gap=5/)
+    const sample = failedBenchSample({
+      bin: 'long',
+      trace_id: 't-fail',
+      notes: [note],
+    })
+    assert.equal(sample.composite, 0)
+    assert.equal(sample.m1_score, null)
+    assert.equal(sample.metrics.compression_ratio.value, null)
+    assert.equal(sample.metrics.compression_ratio.status, 'fail')
+    assert.equal(sample.gold, 'skipped')
+    assert.deepEqual(sample.notes, [note])
+  })
+
+  it('prefixes other distill errors as distill_error:', () => {
+    assert.equal(noteFromBenchDistillError(new Error('boom')), 'distill_error:boom')
   })
 })
