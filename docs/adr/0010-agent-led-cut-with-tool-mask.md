@@ -36,9 +36,11 @@ ADR-0008 把 Distiller 定为「确定性流水线 + 两个 agent 洞」，并�
 - Bench 防挂：无 `--with-l4` 时默认注入 `FakeSessionBackend`（agent 路径 + 假后端），不再靠 `--no-llm`。
 - **Phase 2（本 follow-up）**：cut-brain ReAct 会话拥有未决议标签；`apply_rules_hint` / `keep_segment` 经 tool_mask；orchestrator 不再静默 `applyRules` 并进最终 decisions。Admission / assemble / span 仍确定性。
 - **洞 A 演进**：固定头/验证点一枪采样由 [ADR-0011](./0011-hole-a-sparse-sampling-intent.md) 锁定为多轮稀疏采样（分层锚点池 + gaps；洞 A 不产出 keep/collapse/drop）。
+- **洞 B / cut-brain 演进**：单槽 + 渐进披露（S0–S3；focus=1；disclose≤2 → collapse_uncertain；预算耗尽禁 keep-all）由 [ADR-0012](./0012-hole-b-single-slot-progressive-disclosure.md) 锁定。
 
 ## TODO / skeleton（follow-up）
 
+- [ ] 洞 B 单槽 + 渐进披露落地：见 [ADR-0012](./0012-hole-b-single-slot-progressive-disclosure.md)（S0–S3；collapse_uncertain；Fake 禁默认 keep）
 - [x] `src/agent/sessions/` 内 cut-brain session loop（propose cut → tool calls → mask → iterate）
 - [x] 将 `applyRules` 暴露为 agent 可调用工具 `apply_rules_hint`（可选 hints；segmenter 仍为预处理，不是工具）
 - [x] Fail-Closed：显式 `keep_segment` + unresolved 直到 agent 决议（编排器 failure policy）

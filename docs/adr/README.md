@@ -17,3 +17,4 @@
 | 0009 | AgentView 卡片流、头尾意图推断（**洞 A 采样见 0011**）、CutWarrant 引用式凭证、盲测 review、CLI + CutProfile |
 | 0010 | **Agent 主编裁剪 + Tool Mask**（现行：删除 `--no-llm`；agent 决定 how to cut；工具只执行；结果掩码回灌） |
 | 0011 | **洞 A 多轮稀疏采样**（意图/场景/骨架；分层锚点池 + gaps 加权；不产出 keep/collapse/drop；硬预算 + 结构化 enough；向量分仅 bench） |
+| 0012 | **洞 B 单槽 + 渐进披露**（cut-brain 优化 v2；S0–S3；focus=1；disclose≤2 → collapse_uncertain；预算耗尽禁 keep-all；Fake 禁默认 keep） |

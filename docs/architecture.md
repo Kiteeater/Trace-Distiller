@@ -22,7 +22,7 @@ Agent-led cut（sessions cut-brain / 洞 A+B；follow-up 完整 ReAct）
 ├─ L1 切段+规则   → 纯代码（亦可作 agent 可选工具/hints）
 │
 ├─ ① 骨架 pass    → 【Agent 洞 A】pi SDK
-├─ ② 逐窗打标     → 【Agent 洞 B】pi SDK（骨架注入；tool mask）
+├─ ② cut-brain    → 【Agent 洞 B】pi SDK（单槽+渐进披露；tool mask；ADR-0012）
 │
 ├─ ③ warrant+assemble → 纯代码校验（span / CutWarrant / 双产物）
 ├─ L3 导出        → 纯代码
@@ -96,10 +96,10 @@ labelWindow(segments, skeleton, skill)      → 四类标签 + 置信度（洞 B
 - 模型档位可高于日常打标  
 - **采样**：多轮稀疏采样（分层锚点池 + gaps），非固定头尾一枪——见 [ADR-0011](./adr/0011-hole-a-sparse-sampling-intent.md)；洞 A 只标 skeleton key points，不产出 keep/collapse/drop；向量效率分仅 bench（`a_eff`），不是在线停机  
 
-### Agent 洞 B — 逐窗打标（pi）
+### Agent 洞 B — cut-brain 打标（pi；单槽 + 渐进披露）
 
-- 编排器读段队，map-reduce 逐窗开会话  
-- 输入：段 + 骨架 context；输出：四类标签 + 置信度  
+- **现行目标**（[ADR-0012](./adr/0012-hole-b-single-slot-progressive-disclosure.md)）：单槽 focus（默认 1）+ S0–S3 分层；证据卡 `structure|headtail|error` 渐进披露；两次 disclose 仍低置信 → `collapse_uncertain`（非 keep）；预算耗尽禁 keep-all  
+- 输入：S1 focus 卡（+ 可选 S2/S3）；输出：decision + confidence + evidence_request；B 只提案标签  
 - 全局重组时的**衔接检查**也走洞 B 会话（一次 LLM，不是再开编排 agent）  
 
 ### ③ `assembler.ts` — 全局重组
