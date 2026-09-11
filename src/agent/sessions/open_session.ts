@@ -11,7 +11,7 @@ import {
 import { L4_REPLAY_CODING_TOOLS, resolvePiToolRegistration } from './hole_tools.ts'
 import type { AgentRole } from '../../enums/agent_role.ts'
 import { LABELS, type Label } from '../../enums/label.ts'
-import { SKELETON_PASS_JSON_KIND, type TokenUsage } from './skeleton_pass.ts'
+import { type TokenUsage } from './skeleton_pass.ts'
 import { formatMaskedForPrompt, maskToolResult } from './tool_mask.ts'
 
 /** 按 AgentRole 选模型档。模型名本身不进 constant。 */
@@ -689,23 +689,21 @@ function defaultFakeJsonForRole(input: SessionPromptInput, role: AgentRole): unk
   return defaultSpikeLabelJsonFromPrompt(input)
 }
 
-/** Minimal skeleton_pass_v0 so FakeSessionBackend can drive agent-path distill (ADR-0010). */
-export function defaultFakeSkeletonJson(input?: SessionPromptInput): {
-  kind: typeof SKELETON_PASS_JSON_KIND
-  intent: { text: string }
-  scenario: string
-  skeleton: { nodes: unknown[] }
-} {
+/** Minimal sparse_intent_v0 so FakeSessionBackend can drive agent-path distill (ADR-0011). */
+export function defaultFakeSkeletonJson(input?: SessionPromptInput): Record<string, unknown> {
   const text = input?.text ?? ''
   const intent =
+    text.match(/intent_v0["\s:\]\[]*"([^"]+)"/)?.[1] ??
     text.match(/"text"\s*:\s*"([^"]+)"/)?.[1] ??
     text.match(/Fix [^\n]{0,80}/)?.[0] ??
     'fake intent'
   return {
-    kind: SKELETON_PASS_JSON_KIND,
-    intent: { text: intent.slice(0, 200) },
+    kind: 'sparse_intent_v0',
+    enough: true,
+    intent_v0: intent.slice(0, 200),
     scenario: 'implement',
-    skeleton: { nodes: [] },
+    skeleton_points: [],
+    uncertainty: 0.25,
   }
 }
 

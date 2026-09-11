@@ -94,7 +94,7 @@ labelWindow(segments, skeleton, skill)      → 四类标签 + 置信度（洞 B
 - 对整条（或规约后的）Trace 抽出**因果骨架**：关键转折、主路径假设  
 - 产出写入 SQLite / 工作区，供洞 B / cut-brain 注入 context  
 - 模型档位可高于日常打标  
-- **采样**：目标为多轮稀疏采样（分层锚点池 + gaps），非固定头尾一枪——见 [ADR-0011](./adr/0011-hole-a-sparse-sampling-intent.md)；洞 A 只标 skeleton key points，不产出 keep/collapse/drop  
+- **采样**：多轮稀疏采样（分层锚点池 + gaps），非固定头尾一枪——见 [ADR-0011](./adr/0011-hole-a-sparse-sampling-intent.md)；洞 A 只标 skeleton key points，不产出 keep/collapse/drop  
 
 ### Agent 洞 B — 逐窗打标（pi）
 

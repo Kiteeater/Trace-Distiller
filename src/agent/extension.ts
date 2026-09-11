@@ -30,6 +30,10 @@ export const HOLE_TOOL_NAMES = [
 /** cut-brain / 洞 B 共用的全量工具名。 */
 export const CUT_BRAIN_TOOL_NAMES = HOLE_TOOL_NAMES
 
+/** 洞 A 稀疏采样仅允许 read_segment（ADR-0011）；禁止 keep/label/drop。 */
+export const HOLE_A_TOOL_NAMES = ['read_segment'] as const
+
+
 export type HoleJudgmentToolName = (typeof HOLE_JUDGMENT_TOOL_NAMES)[number]
 export type HoleFetchToolName = (typeof HOLE_FETCH_TOOL_NAMES)[number]
 export type HoleToolName = (typeof HOLE_TOOL_NAMES)[number]

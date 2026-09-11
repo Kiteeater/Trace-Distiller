@@ -35,6 +35,11 @@ import {
   SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD,
   SKELETON_TURN_CONTENT_MAX_CHARS,
   SPAN_MAX_GAP_SEGMENTS,
+  SPARSE_INTENT_FORCE_STOP_UNCERTAINTY,
+  SPARSE_INTENT_MAX_ROUNDS,
+  SPARSE_INTENT_MAX_SEGMENTS_READ,
+  SPARSE_INTENT_MAX_TOKENS,
+  SPARSE_INTENT_ROUND_SAMPLE_SIZE,
 } from '../../src/constant/window.ts'
 import { SCENARIOS } from '../../src/enums/scenario.ts'
 
@@ -42,6 +47,11 @@ describe('locked defaults', () => {
   it('locks window, span, jaccard, head, dead-end, review, and retry numbers', () => {
     assert.equal(LABEL_WINDOW_SIZE, 8)
     assert.equal(CUT_BRAIN_MAX_ROUNDS, 4)
+    assert.equal(SPARSE_INTENT_MAX_ROUNDS, 3)
+    assert.equal(SPARSE_INTENT_MAX_SEGMENTS_READ, 12)
+    assert.equal(SPARSE_INTENT_MAX_TOKENS, 8_000)
+    assert.equal(SPARSE_INTENT_ROUND_SAMPLE_SIZE, 4)
+    assert.equal(SPARSE_INTENT_FORCE_STOP_UNCERTAINTY, 0.85)
     assert.equal(SPAN_MAX_GAP_SEGMENTS, 3)
     assert.equal(SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD, 0.8)
     assert.equal(SEGMENT_HEAD_MAX_CHARS, 120)
