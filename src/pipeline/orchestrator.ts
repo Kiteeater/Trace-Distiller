@@ -7,9 +7,15 @@ import {
 } from '../agent/sessions/skeleton_pass.ts'
 import { writeWarrant } from '../agent/sessions/write_warrant.ts'
 import { resolveSkillRoute } from '../constant/skill_route.ts'
+import {
+  KEEP_FLOOR_MIN_ORIGINAL_TOKENS,
+  KEEP_RATIO_FLOOR,
+  KEEP_RATIO_SOFT_CAP,
+} from '../constant/compression.ts'
 import { LABEL_WINDOW_SIZE, REVIEW_MAX_ROUNDS } from '../constant/window.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../domain/cut_decision.ts'
 import type { LabelDecision } from '../domain/label_decision.ts'
+import { compressionRatio } from '../eval/metrics.ts'
 import { reviewAgainstPlan } from '../eval/review_fill.ts'
 import type { AgentView, Skeleton } from '../types/agent_view.ts'
 import type { CutPlan, PlaybackCut, TrainingCut } from '../types/cut_plan.ts'
@@ -86,18 +92,23 @@ export async function distill(input: DistillInput): Promise<DistillResult> {
   const ruled = applyRules({ view: segmented, raw })
 
   if (mode === 'no_llm') {
-    const warrant = writeWarrant({
+    const warrant0 = writeWarrant({
       skeleton: ruled.view.skeleton,
       labels: ruled.decisions,
       view: ruled.view,
       profile,
     })
-    const assembled = assemble({ raw, view: ruled.view, warrant, profile })
+    const floored = enforceKeepRatioFloor({
+      raw,
+      view: ruled.view,
+      warrant: warrant0,
+      profile,
+    })
     return packResult({
       raw,
       view: ruled.view,
-      warrant,
-      assembled,
+      warrant: floored.warrant,
+      assembled: floored.assembled,
       decisions: ruled.decisions,
       unresolved_ids: ruled.unresolved_ids,
     })
@@ -176,13 +187,19 @@ async function runWithLlm(input: {
     profile,
   })
   const reviewed = runBlindReviewFillIn({ raw, view, warrant, profile })
-  warrant = reviewed.warrant
+  const floored = enforceKeepRatioFloor({
+    raw,
+    view,
+    warrant: reviewed.warrant,
+    profile,
+  })
+  warrant = floored.warrant
 
   return packResult({
     raw,
     view,
     warrant,
-    assembled: reviewed.assembled,
+    assembled: floored.assembled,
     decisions,
     unresolved_ids: stillUnresolved,
     hole_a_plus_b_tokens: holeTokens,
@@ -284,6 +301,123 @@ export function runBlindReviewFillIn(input: {
   }
   return { warrant, assembled, rounds }
 }
+
+
+/**
+ * Soft keep floor: avoid crushing cut_tokens/original below KEEP_RATIO_FLOOR (~8%).
+ * Promotes dropped segments that best shrink large keep↔keep gaps (coherence-friendly).
+ * Does not drop gold; only adds keep. Blind-review key fill-in runs first.
+ */
+export function enforceKeepRatioFloor(input: {
+  raw: RawTrace
+  view: AgentView
+  warrant: CutWarrant
+  profile: CutProfile
+  min_ratio?: number
+}): { warrant: CutWarrant; assembled: AssembleOutput; filled_ids: string[] } {
+  const minRatio = input.min_ratio ?? KEEP_RATIO_FLOOR
+  let warrant = input.warrant
+  let assembled = assemble({
+    raw: input.raw,
+    view: input.view,
+    warrant,
+    profile: input.profile,
+  })
+  const original = input.raw.meta.total_tokens
+  const filled_ids: string[] = []
+  if (original <= 0) return { warrant, assembled, filled_ids }
+  // Short traces: skip floor — one large segment can leap past compression_ratio_max.
+  if (original < KEEP_FLOOR_MIN_ORIGINAL_TOKENS) return { warrant, assembled, filled_ids }
+
+  const cutTokens = (): number =>
+    assembled.training.turns.reduce((sum, t) => sum + t.tokens, 0)
+  const ratioOf = (): number =>
+    compressionRatio({
+      original_tokens: original,
+      cut_tokens: cutTokens(),
+    })
+  const segmentTokens = (id: string): number => {
+    const seg = input.view.segments.find((s) => s.id === id)
+    return seg?.tokens ?? 0
+  }
+
+  let guard = 0
+  while (ratioOf() < minRatio && guard < input.view.segments.length) {
+    guard += 1
+    const next = pickDroppedForKeepFloor(assembled.plan, input.view.segments)
+    if (next === undefined) break
+    const projected = compressionRatio({
+      original_tokens: original,
+      cut_tokens: cutTokens() + segmentTokens(next),
+    })
+    // Stay inside ~8–15% band when possible; do not blow past soft cap.
+    if (projected > KEEP_RATIO_SOFT_CAP) break
+    filled_ids.push(next)
+    warrant = fillInKeepWarrant(warrant, [next])
+    assembled = assemble({
+      raw: input.raw,
+      view: input.view,
+      warrant,
+      profile: input.profile,
+    })
+  }
+  return { warrant, assembled, filled_ids }
+}
+
+/** Prefer a dropped segment inside the largest gap between kept/collapsed steps. */
+export function pickDroppedForKeepFloor(
+  plan: CutPlan,
+  segments: AgentView['segments'],
+): string | undefined {
+  const dropped = new Set(plan.dropped)
+  if (dropped.size === 0) return undefined
+  const indexOf = new Map(segments.map((seg, i) => [seg.id, i]))
+  const stepIds = [
+    ...plan.kept,
+    ...plan.collapsed.map((c) => c.segment_id),
+  ].sort((a, b) => (indexOf.get(a) ?? 0) - (indexOf.get(b) ?? 0))
+
+  let bestId: string | undefined
+  let bestGap = -1
+  const considerGap = (fromIdx: number, toIdx: number): void => {
+    const gap = toIdx - fromIdx - 1
+    if (gap <= 0 || gap < bestGap) return
+    const mid = fromIdx + Math.ceil(gap / 2)
+    for (let dist = 0; dist <= gap; dist += 1) {
+      for (const idx of [mid + dist, mid - dist]) {
+        if (idx <= fromIdx || idx >= toIdx) continue
+        const seg = segments[idx]
+        if (seg === undefined || !dropped.has(seg.id)) continue
+        bestGap = gap
+        bestId = seg.id
+        return
+      }
+    }
+  }
+
+  if (stepIds.length === 0) {
+    // Nothing kept: take a mid segment.
+    const mid = segments[Math.floor(segments.length / 2)]
+    return mid !== undefined && dropped.has(mid.id) ? mid.id : [...dropped][0]
+  }
+
+  const firstIdx = indexOf.get(stepIds[0]!)
+  if (firstIdx !== undefined && firstIdx > 0) considerGap(-1, firstIdx)
+  for (let i = 0; i + 1 < stepIds.length; i += 1) {
+    const li = indexOf.get(stepIds[i]!)
+    const ri = indexOf.get(stepIds[i + 1]!)
+    if (li === undefined || ri === undefined) continue
+    considerGap(li, ri)
+  }
+  const lastIdx = indexOf.get(stepIds[stepIds.length - 1]!)
+  if (lastIdx !== undefined && lastIdx + 1 < segments.length) {
+    considerGap(lastIdx, segments.length)
+  }
+
+  if (bestId !== undefined) return bestId
+  return plan.dropped[0]
+}
+
 
 function packResult(input: {
   raw: RawTrace

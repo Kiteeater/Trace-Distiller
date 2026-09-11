@@ -32,7 +32,7 @@ export {
  * 盲测协议（已拍板）：
  * - review 会话输入只有 intent + playback；禁止 warrant / skeleton。
  * - 答卷结构化：turning_point_segment_ids + evidence_segment_ids。
- * - 缺骨架节点由代码回填 keep（`reviewFillInIds`），不是模型点名。
+ * - 缺 **关键**骨架节点（turning_point / verification_anchor）由代码回填 keep（每节点一段）；不复活 main_path / 例行死胡同。
  * - 最多 `REVIEW_MAX_ROUNDS`（2）轮。
  * - 编排器只调 `reviewAgainstPlan`（纯代码），不 import L4 会话。
  */

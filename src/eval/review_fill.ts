@@ -1,13 +1,27 @@
-import type { Skeleton } from '../types/agent_view.ts'
+import type { Skeleton, SkeletonNodeKind } from '../types/agent_view.ts'
 import type { CutPlan, PlaybackCut } from '../types/cut_plan.ts'
 
 /**
  * 纯代码盲测对照。编排器只依赖本文件，不 import L4 会话。
+ *
+ * 回填只补 **关键骨架**（turning_point / verification_anchor）缺口：
+ * 不把 main_path_hypothesis 整段复活成 keep，避免例行/死胡同被盲测抬回导致压缩率爆掉。
+ * 每个缺失关键节点只回填 **一个** 代表段（segment_ids[0]）。
  */
 export interface ReviewFillResult {
   passed: boolean
   missing_skeleton_nodes: string[]
   fill_in_segment_ids: string[]
+}
+
+/** 盲测回填认的关键骨架种类（与 skeletonWeakGoldIds 对齐）。 */
+export const KEY_SKELETON_KINDS: ReadonlySet<SkeletonNodeKind> = new Set([
+  'turning_point',
+  'verification_anchor',
+])
+
+function isKeySkeletonNode(kind: SkeletonNodeKind): boolean {
+  return KEY_SKELETON_KINDS.has(kind)
 }
 
 export function reviewFillInIdsForVisible(
@@ -17,13 +31,13 @@ export function reviewFillInIdsForVisible(
   const fill: string[] = []
   const seen = new Set<string>()
   for (const node of skeleton.nodes) {
+    if (!isKeySkeletonNode(node.kind)) continue
     if (node.segment_ids.length === 0) continue
     if (node.segment_ids.some((id) => visibleIds.has(id))) continue
-    for (const id of node.segment_ids) {
-      if (seen.has(id)) continue
-      seen.add(id)
-      fill.push(id)
-    }
+    const id = node.segment_ids[0]
+    if (id === undefined || seen.has(id)) continue
+    seen.add(id)
+    fill.push(id)
   }
   return fill
 }
@@ -46,7 +60,9 @@ export function missingSkeletonNodeIds(
   return skeleton.nodes
     .filter(
       (node) =>
-        node.segment_ids.length > 0 && !node.segment_ids.some((id) => visibleIds.has(id)),
+        isKeySkeletonNode(node.kind) &&
+        node.segment_ids.length > 0 &&
+        !node.segment_ids.some((id) => visibleIds.has(id)),
     )
     .map((node) => node.id)
 }

@@ -34,7 +34,7 @@ bun run bench:m1          # 同上；看 m1_score / scoreboard 的 m1 列
 
 | 能力 | 风险 | 建议 |
 |------|------|------|
-| **短样 `with_llm`（真洞 A/B）** | mint token 成本；短 trace 的 `distill_cost_ratio≤0.3` 仍可能被 pi/工具固定开销顶穿 → composite=0 | 只跑 1 条短样；看 `m1_score` 判断压缩+召回；不要把过夜默认改成 `--with-l4` |
+| **短样 `with_llm`（真洞 A/B）** | mint token 成本；洞 A+B ~6–10k 固定开销会顶穿 0.3 | **short / original_tokens≤25k：cost 只报不分**（仍不计 L4）；看 `m1_score` + 软 cost 后的 composite；不要把过夜默认改成 `--with-l4` |
 | **真 mint L4 QA / replay / review** | 会话超时、模型波动、缺 workspace 时 replay 只能测接口 | 显式 `--with-l4`；CI 继续 `--fake-l4` |
 | **可选 live Unix socket** | 默认关闭；命令结束即 unlink | 日常仍用 `--live-dump` / `file://` |
 
@@ -45,7 +45,7 @@ bun run bench:m1          # 同上；看 m1_score / scoreboard 的 m1 列
 | 能力 | 状态 | 别做什么 |
 |------|------|----------|
 | **Training Cut → SFT 导出** | **M2**。当前只有中间 `TrainingCut`（RawTurn[]）与 `*-training.json`。聊天模板 / messages 角色映射 / 训练集打包 **未定型**（见 [milestones.md](../milestones.md)、[TODO.md](../TODO.md) M2、ADR-0003） | 不要写假 trainer、不要把中间 JSON 改名成 `*.sft.jsonl` 假装完成 |
-| **真实 GT 语料池** | `examples/` 与 `benchmark/datasets/` 多为脱敏合成 / 小样；真实带 Ground Truth 的 3–5 条成功 Trace 仍待接入 | 不要把合成小样当 M1「搞原料」勾完 |
+| **真实 GT 语料池** | `benchmark/datasets/long/` 已接入公开 MIMO Claude Code-style 长会话（MIT，显式 GT 适配）；本地私有 3–5 条成功 Trace 仍待接入 | 不要把合成小样当私有原料勾完；公开适配样见 `long/SOURCES.md` |
 | **盲测调 L4 `blindReview`** | 纯代码对照骨架与 plan 已通；调模型的盲测会话未接通 | 不要在报告里写「已过盲测门禁」 |
 | **训练有效性对比 / 批量入口** | M3+ | — |
 

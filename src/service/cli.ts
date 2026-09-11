@@ -496,6 +496,7 @@ async function runBench(args: CliArgs): Promise<number> {
             trace_id: raw.meta.trace_id,
             compression_ratio: computed.compression_ratio,
             distill_cost_ratio: computed.distill_cost_ratio,
+            original_tokens: raw.meta.total_tokens,
             kept: result.plan.kept,
             gold_segment_ids: gold,
             replay,

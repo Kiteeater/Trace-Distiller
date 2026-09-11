@@ -186,6 +186,40 @@ describe('blind review protocol helpers', () => {
     assert.deepEqual(result.missing_skeleton_nodes, ['n2'])
     assert.deepEqual(result.fill_in_segment_ids, ['s0009'])
   })
+
+  it('does not resurrect main_path_hypothesis or multi-segment routine bags', () => {
+    const result = reviewAgainstPlan(
+      {
+        version: 1,
+        nodes: [
+          {
+            id: 'n-main',
+            kind: 'main_path_hypothesis',
+            segment_ids: ['s0003', 's0004', 's0005'],
+            note: 'routine bag — must not fill',
+          },
+          {
+            id: 'n-key',
+            kind: 'turning_point',
+            segment_ids: ['s0008', 's0009'],
+            note: 'only first id',
+          },
+        ],
+      },
+      {
+        trace_id: 't',
+        profile_id: 'default',
+        warrant_ref: 'w',
+        kept: ['s0001'],
+        collapsed: [],
+        dropped: ['s0003', 's0004', 's0005', 's0008', 's0009'],
+        span_ok: true,
+        span_violations: [],
+      },
+    )
+    assert.deepEqual(result.missing_skeleton_nodes, ['n-key'])
+    assert.deepEqual(result.fill_in_segment_ids, ['s0008'])
+  })
 })
 
 describe('six-metric pure functions', () => {
@@ -196,6 +230,11 @@ describe('six-metric pure functions', () => {
     assert.equal(compressionScore(0), 0)
     assert.ok(compressionScore(0.2) > 60)
     assert.ok(compressionScore(0.2) < 90)
+  })
+
+  it('qaRatio treats 0/0 as skipped null', () => {
+    assert.equal(qaRatio({ answered: 0, correct: 0 }), null)
+    assert.equal(qaRatio({ answered: 2, correct: 1 }), 0.5)
   })
 
   it('keyStepRecall is kept/gold and empty gold is 0', () => {

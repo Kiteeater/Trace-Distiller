@@ -3,6 +3,8 @@ import { BENCHMARK_PASS } from '../constant/compression.ts'
 import {
   coherencePass,
   compressionScore,
+  costGateApplies,
+  costGatePass,
   keyStepRecall,
   m1Score,
   type BenchmarkParts,
@@ -24,6 +26,8 @@ export interface ScoreSampleInput {
   trace_id: string
   compression_ratio: number
   distill_cost_ratio: number
+  /** RawTrace 原文 token；短样 / 小体积 soft cost gate 用。 */
+  original_tokens?: number
   kept: readonly string[]
   /** null = 无独立金标（M1 skipped，不算硬挂）。禁止用流水线自己的标签当金标。 */
   gold_segment_ids: readonly string[] | null
@@ -121,7 +125,7 @@ export function parseKeyDecisions(text: string): KeyDecisionsGold {
 /**
  * 六项门槛：缺项 skipped（M1 不硬挂）；任一项 fail → 总分 0。
  * 全过：Score = 压缩率得分 × 召回 × 重放（召回/重放 0–1）。
- * 完整 composite 含 cost 门槛；勿静默去掉。
+ * 完整 composite 含 cost 门槛（short/small soft：只报不分）；勿静默去掉 L4 外成本。
  */
 export function scoredComposite(parts: BenchmarkParts): number | null {
   const statuses = metricStatuses(parts)
@@ -157,11 +161,22 @@ export function metricStatuses(parts: BenchmarkParts): {
         : coherencePass(parts.coherence_scores)
           ? 'pass'
           : 'fail',
-    distill_cost_ratio:
-      Number.isFinite(parts.distill_cost_ratio) &&
-      parts.distill_cost_ratio <= BENCHMARK_PASS.distill_cost_ratio_max
+    distill_cost_ratio: (() => {
+      if (!Number.isFinite(parts.distill_cost_ratio)) return 'fail'
+      // short / small original: report value but do not fail composite
+      const gateOpts = {
+        ...(parts.bin !== undefined ? { bin: parts.bin } : {}),
+        ...(parts.original_tokens !== undefined
+          ? { original_tokens: parts.original_tokens }
+          : {}),
+      }
+      if (!costGateApplies(gateOpts)) {
+        return 'pass'
+      }
+      return costGatePass(parts.distill_cost_ratio, gateOpts)
         ? 'pass'
-        : 'fail',
+        : 'fail'
+    })(),
   }
 }
 
@@ -178,6 +193,10 @@ export function scoreSample(input: ScoreSampleInput): ScoredSample {
     qa: input.qa,
     coherence_scores: input.coherence_scores,
     distill_cost_ratio: input.distill_cost_ratio,
+    bin: input.bin,
+    ...(input.original_tokens !== undefined
+      ? { original_tokens: input.original_tokens }
+      : {}),
   }
   const statuses = metricStatuses(parts)
   const coherenceValue =

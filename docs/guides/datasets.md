@@ -31,6 +31,10 @@ Ground Truth = 可独立验证的完成标记（测试通过 / 任务产出被�
 
 一条 Trace = **一个任务**。Claude Code 一条 session 常含多个任务；**session ≠ trace**。切分默认已在 ingest 收口：按下一条「像新任务」的 user 指令轮切；置信度不够返回 `multi_task_ambiguous`，**不按 git commit 切**。
 
+### 公开长会话（benchmark/datasets/long）
+
+已适配 [choucsan/mimo-claude-code-traces-1k](https://huggingface.co/datasets/choucsan/mimo-claude-code-traces-1k)（MIT）：见 `benchmark/datasets/long/SOURCES.md`。HF 上的 session JSONL；本库注入显式 GT 以便 Admission Gate。无密钥。
+
 ### 来源优先级（M1）
 
 | 来源 | M1 | 备注 |

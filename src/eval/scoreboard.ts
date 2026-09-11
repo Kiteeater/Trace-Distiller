@@ -16,7 +16,7 @@ export function renderScoreboardMarkdown(input: {
     '',
     'Tracks are scored separately and **never averaged**.',
     '',
-    '> **M1 vs composite:** `m1_score` = 压缩率得分 × 关键步召回（M1 硬门禁）。`composite` 仍要求六项全过（含 cost≤0.3）。短 trace 真 mint 常因处理成本比偏高使 `composite=0`；compress+recall 过时看 `m1_score` 判断 M1 是否成功。',
+    '> **M1 vs composite:** `m1_score` = 压缩率得分 × 关键步召回（M1 硬门禁）。`composite` 六项门槛中，**short 档或 original_tokens≤25k 的 cost 只报不分**（洞 A+B 固定开销会顶穿 0.3；仍不计 L4）。QA 0/0 视为 skipped。compress+recall 过时看 `m1_score`。',
     '',
   ]
 
