@@ -172,4 +172,5 @@ Harness / 状态机对 B 提案有最终校验权：
 - ADR-0010 的 tool mask / agent 主编仍成立；本 ADR 细化 cut-brain 上下文契约与不确定默认。
 - ADR-0009 的 AgentView 拉取式放大仍成立；洞 B 侧默认分辨率收成 S1，主动披露才见 S2。
 - 与 ADR-0010「agent/tool failure → Fail-Closed Keep」的边界：**仅**传输/会话/编排器硬失败且无可用 B 输出时 Keep；**schema 非法重试耗尽 / 披露触帽仍低置信 / 预算耗尽 / 非法 keep 被驳回** 一律走本 ADR 的 `collapse_uncertain`（或既有谓词下的 `drop_by_policy`），**禁止 keep-all**。
+- **骨架硬保护**（非 revert 本 ADR）：洞 A 骨架段（`in_skeleton` / `skeleton_hit` / `skeletonSegmentIds`）在 illegal keep / disclose-cap / schema-exhaust / 预算耗尽四条路径上 **不得**落 `collapse_uncertain`；harness force keep（`skeleton_protect`，`key_decision`，confidence ≥ 0.5）或带 keep bit 重试。非骨架段仍走上表 collapse_uncertain 默认。
 - 实现另开 PR：本 ADR 为 docs-only 锁定；不在此改 `src/` 生产代码。

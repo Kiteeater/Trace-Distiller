@@ -18,7 +18,11 @@ import {
   type EvidenceCardKind,
   type KeepEvidenceBit,
 } from '../../constant/window.ts'
-import { COLLAPSE_UNCERTAIN_RULE, DROP_BY_POLICY_RULE } from '../../domain/cut_decision.ts'
+import {
+  COLLAPSE_UNCERTAIN_RULE,
+  DROP_BY_POLICY_RULE,
+  SKELETON_PROTECT_RULE,
+} from '../../domain/cut_decision.ts'
 import type { LabelDecision } from '../../domain/label_decision.ts'
 import { LABELS, type Label } from '../../enums/label.ts'
 import type { Scenario } from '../../enums/scenario.ts'
@@ -135,12 +139,15 @@ export function isWriteOutlier(card: SegmentCard, median: number): boolean {
   return card.tokens >= floor
 }
 
+/**
+ * Focus priority: skeleton write-outlier > write-outlier > skeleton error > error > skeleton normal > normal.
+ * Among write-outliers of the same rank, the largest token count wins; otherwise unresolved order.
+ */
 export function pickFocus(
   unresolved: readonly string[],
   cards: readonly SegmentCard[],
   skeletonIds: ReadonlySet<string>,
 ): FocusPick | undefined {
-  void skeletonIds
   const byId = new Map(cards.map((c) => [c.id, c]))
   const unresolvedCards: SegmentCard[] = []
   for (const id of unresolved) {
@@ -149,16 +156,30 @@ export function pickFocus(
   }
   if (unresolvedCards.length === 0) return undefined
   const median = tokenMedian(cards)
-  let bestOutlier: SegmentCard | undefined
-  for (const card of unresolvedCards) {
-    if (!isWriteOutlier(card, median)) continue
-    if (bestOutlier === undefined || card.tokens > bestOutlier.tokens) bestOutlier = card
+  const outlierOf = (card: SegmentCard): boolean => isWriteOutlier(card, median)
+  const rankOf = (card: SegmentCard): number => {
+    const sk = skeletonIds.has(card.id)
+    if (outlierOf(card)) return sk ? 0 : 1
+    if (card.outcome === 'error') return sk ? 2 : 3
+    return sk ? 4 : 5
   }
-  const chosen = bestOutlier ?? unresolvedCards.find((c) => c.outcome === 'error') ?? unresolvedCards[0]
-  if (chosen === undefined) return undefined
+  let chosen = unresolvedCards[0]!
+  let best = rankOf(chosen)
+  for (let i = 1; i < unresolvedCards.length; i += 1) {
+    const card = unresolvedCards[i]!
+    const rank = rankOf(card)
+    if (rank < best) {
+      chosen = card
+      best = rank
+      continue
+    }
+    if (rank === best && outlierOf(card) && outlierOf(chosen) && card.tokens > chosen.tokens) {
+      chosen = card
+    }
+  }
   return {
     card: chosen,
-    outlier: isWriteOutlier(chosen, median),
+    outlier: outlierOf(chosen),
     in_skeleton: skeletonIds.has(chosen.id),
   }
 }
@@ -531,6 +552,27 @@ export function collapseUncertainDecision(
     source: { kind: 'rule', name: sourceName },
     confidence,
   }
+}
+
+/** Legal keep for a Hole A skeleton segment (skeleton_hit conceptually; never collapse_uncertain). */
+export function forceSkeletonKeep(segment_id: string): LabelDecision {
+  return {
+    segment_id,
+    label: 'key_decision',
+    source: { kind: 'rule', name: SKELETON_PROTECT_RULE },
+    confidence: 1,
+    rule_name: SKELETON_PROTECT_RULE,
+  }
+}
+
+/** ADR-0012 collapse_uncertain, unless the id is Hole A skeleton — then force keep. */
+export function resolveUncertainOrProtect(
+  segment_id: string,
+  confidence: number,
+  skeletonIds: ReadonlySet<string>,
+): LabelDecision {
+  if (skeletonIds.has(segment_id)) return forceSkeletonKeep(segment_id)
+  return collapseUncertainDecision(segment_id, confidence)
 }
 
 export function dropByPolicyDecision(segment_id: string, rule_name: string): LabelDecision {
