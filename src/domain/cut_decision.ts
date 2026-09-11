@@ -7,6 +7,12 @@ import type { LabelDecision } from './label_decision.ts'
 
 export const FAIL_CLOSED_KEEP_RULE = 'fail_closed_keep'
 
+/** Harness override / budget exhaust / disclose-cap 低置信（ADR-0012）。 */
+export const COLLAPSE_UNCERTAIN_RULE = 'collapse_uncertain'
+
+/** 预算耗尽且已匹配既有确定性 drop 谓词（ADR-0012）。 */
+export const DROP_BY_POLICY_RULE = 'drop_by_policy'
+
 export interface CutDecision {
   segment_id: string
   action: CutAction

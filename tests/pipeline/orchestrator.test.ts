@@ -7,13 +7,15 @@ import { parse } from '../../src/adapters/claude_code.ts'
 import { SKELETON_PASS_JSON_KIND } from '../../src/agent/sessions/skeleton_pass.ts'
 import {
   FakeSessionBackend,
+  readMarkedJson,
   setSessionBackend,
   type SessionPromptInput,
   type SessionPromptResult,
   type ResolvedSessionOpts,
 } from '../../src/agent/sessions/open_session.ts'
 import { DEFAULT_CUT_PROFILE } from '../../src/constant/compression.ts'
-import { LABEL_WINDOW_SIZE, REVIEW_MAX_ROUNDS } from '../../src/constant/window.ts'
+import { REVIEW_MAX_ROUNDS } from '../../src/constant/window.ts'
+import { COLLAPSE_UNCERTAIN_RULE } from '../../src/domain/cut_decision.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../../src/domain/cut_decision.ts'
 import {
   assembleRepairingSpan,
@@ -151,10 +153,22 @@ function fakeResult(
   }
 }
 
-function parseWindowIds(text: string): string[] {
-  const match = text.match(/window_segment_ids:\s*(\[[^\]]*\])/)
-  if (match?.[1] === undefined) return []
-  return JSON.parse(match[1]) as string[]
+function parseFocusId(text: string): string | undefined {
+  const marked = readMarkedJson(text, 'FOCUS_CARD')
+  if (typeof marked === 'object' && marked !== null && !Array.isArray(marked)) {
+    const id = (marked as { id?: unknown }).id
+    if (typeof id === 'string' && id.length > 0) return id
+  }
+  const match = text.match(/focus_id:\s*"?([A-Za-z0-9_-]+)"?/)
+  return match?.[1]
+}
+
+function focusInSkeleton(text: string): boolean {
+  const marked = readMarkedJson(text, 'FOCUS_CARD')
+  if (typeof marked === 'object' && marked !== null && !Array.isArray(marked)) {
+    return (marked as { in_skeleton?: unknown }).in_skeleton === true
+  }
+  return false
 }
 
 function skeletonPayload(nodes: Skeleton['nodes'], scenario = 'test_fix'): Record<string, unknown> {
@@ -197,13 +211,39 @@ function labelingBackend(opts: {
     if (opts.holeB === 'no_calls') {
       return fakeResult({ role: session.role, tool_calls: [] })
     }
-    const ids = parseWindowIds(input.text)
+    const id = parseFocusId(input.text)
+    if (id === undefined) {
+      return fakeResult({ role: session.role, tool_calls: [] })
+    }
+    if (focusInSkeleton(input.text)) {
+      return fakeResult({
+        role: session.role,
+        tool_calls: [
+          {
+            name: 'label_segment',
+            arguments: {
+              segment_id: id,
+              label: 'key_decision',
+              confidence: 0.86,
+              keep_bits: ['skeleton_hit'],
+            },
+          },
+        ],
+      })
+    }
     return fakeResult({
       role: session.role,
-      tool_calls: ids.map((segment_id) => ({
-        name: 'label_segment',
-        arguments: { segment_id, label: 'useful_exploration', confidence: 0.72 },
-      })),
+      tool_calls: [
+        {
+          name: 'label_segment',
+          arguments: {
+            segment_id: id,
+            label: 'key_decision',
+            confidence: 0.8,
+            keep_bits: ['key_decision_flag'],
+          },
+        },
+      ],
     })
   })
 }
@@ -247,13 +287,15 @@ describe('orchestrator with_llm', () => {
     const llmLabeled = out.decisions.filter((d) => d.source.kind === 'llm')
     assert.equal(llmLabeled.length, ruled.unresolved_ids.length)
     for (const d of llmLabeled) {
-      assert.equal(d.label, 'useful_exploration')
+      assert.notEqual(d.label, 'useful_exploration')
       assert.equal(d.source.name, 'test_fix')
-      assert.equal(out.plan.kept.includes(d.segment_id), true, d.segment_id)
       const entry = out.warrant.entries.find((e) => e.segment_id === d.segment_id)
+      assert.equal(d.label, 'key_decision')
+      assert.equal(out.plan.kept.includes(d.segment_id), true, d.segment_id)
       assert.equal(entry?.action, 'keep')
       assert.equal(entry?.source.kind, 'llm')
     }
+    assert.equal(out.plan.kept.includes(keepId), true)
 
     for (const d of ruled.decisions) {
       if (d.label === 'routine') {
@@ -273,8 +315,8 @@ describe('orchestrator with_llm', () => {
     const holeBCalls = backend.calls.filter((c) => c.role === 'hole_b_label')
     assert.ok(holeBCalls.length >= 1)
     assert.ok(holeBCalls.some((c) => c.input.text.includes('apply_rules_hint') || (c.input.system ?? '').includes('apply_rules_hint')))
-    // 1 hint round + remaining unresolved windows
-    assert.ok(holeBCalls.length >= 1 + Math.ceil(ruled.unresolved_ids.length / LABEL_WINDOW_SIZE) - 1)
+    // 1 hint round + at least one single-slot turn per remaining id
+    assert.ok(holeBCalls.length >= 1 + ruled.unresolved_ids.length)
     assert.deepEqual(out.unresolved_ids, [])
     assert.ok((out.hole_a_plus_b_tokens ?? 0) > 0)
 
@@ -330,10 +372,20 @@ describe('orchestrator with_llm', () => {
       mode: 'with_llm',
       opts: { sessionBackend: silent },
     })
+    // Schema-empty is ADR-0012 exhaust/schema path, not 0010 Keep.
     for (const id of ruled.unresolved_ids) {
       const entry = silentOut.warrant.entries.find((e) => e.segment_id === id)
-      assert.equal(entry?.action, 'keep')
-      assert.equal(entry?.source.name, FAIL_CLOSED_KEEP_RULE)
+      assert.notEqual(entry?.source.name, FAIL_CLOSED_KEEP_RULE)
+      const labeled = silentOut.decisions.find((d) => d.segment_id === id)
+      assert.ok(labeled)
+      assert.ok(
+        labeled!.label === 'collapse_uncertain' || labeled!.label === 'routine',
+        labeled!.label,
+      )
+      if (labeled!.label === 'collapse_uncertain') {
+        assert.equal(labeled!.source.name, COLLAPSE_UNCERTAIN_RULE)
+        assert.ok(entry?.action === 'collapse' || entry?.action === 'drop')
+      }
     }
   })
 

@@ -1,3 +1,9 @@
+import {
+  EVIDENCE_CARD_KINDS,
+  KEEP_EVIDENCE_BITS,
+  type EvidenceCardKind,
+  type KeepEvidenceBit,
+} from '../constant/window.ts'
 import { LABELS, type Label } from '../enums/label.ts'
 import type { RawTrace } from '../types/raw_trace.ts'
 import type { SegmentCard } from '../types/segment.ts'
@@ -56,6 +62,7 @@ export interface LabelSegmentAccepted {
   segment_id: string
   label: Label
   confidence: number
+  keep_bits: KeepEvidenceBit[]
 }
 
 export interface ContinuityAccepted {
@@ -76,6 +83,7 @@ export interface KeepSegmentAccepted {
   segment_id: string
   /** Explicit agent keep (ADR-0010); maps to a keep Label for writeWarrant. */
   confidence: number
+  keep_bits: KeepEvidenceBit[]
 }
 
 export interface ApplyRulesHintAccepted {
@@ -96,13 +104,15 @@ export function handleLabelSegment(
   }
   const label = rec.label
   if (typeof label !== 'string' || !(LABELS as readonly string[]).includes(label)) {
-    return err('label_segment label must be one of the four Labels')
+    return err('label_segment label must be one of LABELS')
   }
   const confidence = rec.confidence
   if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
     return err('label_segment confidence must be a finite number in [0, 1]')
   }
-  return { ok: true, segment_id, label: label as Label, confidence }
+  const bits = parseKeepBits(rec.keep_bits)
+  if (!bits.ok) return bits
+  return { ok: true, segment_id, label: label as Label, confidence, keep_bits: bits.keep_bits }
 }
 
 export function handleCheckContinuity(args: unknown): HoleToolResult<ContinuityAccepted> {
@@ -168,7 +178,9 @@ export function handleKeepSegment(
     typeof confidence === 'number' && Number.isFinite(confidence) && confidence >= 0 && confidence <= 1
       ? confidence
       : 1
-  return { ok: true, segment_id, confidence: conf }
+  const bits = parseKeepBits(rec.keep_bits)
+  if (!bits.ok) return bits
+  return { ok: true, segment_id, confidence: conf, keep_bits: bits.keep_bits }
 }
 
 /** Args are optional/empty; validates shape only. applyRules runs in cut_brain. */
@@ -199,4 +211,23 @@ function isContinuityScore(value: unknown): value is ContinuityScore {
     value >= CONTINUITY_SCORE_MIN &&
     value <= CONTINUITY_SCORE_MAX
   )
+}
+
+function parseKeepBits(value: unknown): HoleToolResult<{ keep_bits: KeepEvidenceBit[] }> {
+  if (value === undefined) return { ok: true, keep_bits: [] }
+  if (!Array.isArray(value)) return err('keep_bits must be an array')
+  const keep_bits: KeepEvidenceBit[] = []
+  for (const item of value) {
+    if (typeof item !== 'string' || !(KEEP_EVIDENCE_BITS as readonly string[]).includes(item)) {
+      return err('keep_bits must be skeleton_hit|key_decision_flag')
+    }
+    if (!keep_bits.includes(item as KeepEvidenceBit)) keep_bits.push(item as KeepEvidenceBit)
+  }
+  return { ok: true, keep_bits }
+}
+
+export function parseEvidenceKind(value: unknown): EvidenceCardKind | undefined {
+  if (typeof value !== 'string') return undefined
+  if ((EVIDENCE_CARD_KINDS as readonly string[]).includes(value)) return value as EvidenceCardKind
+  return undefined
 }

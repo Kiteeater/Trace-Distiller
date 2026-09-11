@@ -78,7 +78,7 @@ export const LONG_LABEL_WINDOW_SIZE = 6
 function sharedLabels(): Pick<CutProfile, 'keep_labels' | 'collapse_labels' | 'drop_labels' | 'compression_ratio'> {
   return {
     keep_labels: ['key_decision', 'useful_exploration'],
-    collapse_labels: ['dead_end'],
+    collapse_labels: ['dead_end', 'collapse_uncertain'],
     drop_labels: ['routine'],
     compression_ratio: { ...COMPRESSION_RATIO_TARGET },
   }

@@ -459,15 +459,24 @@ describe('cli', { concurrency: 1 }, () => {
             usage: { role: opts.role, input_tokens: 2, output_tokens: 2 },
           }
         }
-        const match = input.text.match(/window_segment_ids:\s*(\[[^\]]*\])/)
-        const ids = match?.[1] !== undefined ? (JSON.parse(match[1]) as string[]) : []
+        const focusMatch = input.text.match(/focus_id:\s*"?([A-Za-z0-9_-]+)"?/)
+        const segment_id = focusMatch?.[1]
         return {
           text: '',
           json: null,
-          tool_calls: ids.map((segment_id) => ({
-            name: 'label_segment',
-            arguments: { segment_id, label: 'key_decision', confidence: 0.8 },
-          })),
+          tool_calls:
+            segment_id === undefined
+              ? []
+              : [
+                  {
+                    name: 'label_segment',
+                    arguments: {
+                      segment_id,
+                      label: 'collapse_uncertain',
+                      confidence: 0.6,
+                    },
+                  },
+                ],
           usage: { role: opts.role, input_tokens: 2, output_tokens: 2 },
         }
       }),

@@ -4,12 +4,13 @@ import { fileURLToPath } from 'node:url'
 import {
   CUT_BRAIN_TOOL_NAMES,
   handleApplyRulesHint,
-  handleKeepSegment,
-  handleLabelSegment,
-  handleReadSegment,
-  type HoleReadContext,
 } from '../extension.ts'
-import { CUT_BRAIN_MAX_ROUNDS, LABEL_WINDOW_SIZE } from '../../constant/window.ts'
+import {
+  CUT_BRAIN_FOCUS_SLOT,
+  CUT_BRAIN_ROUNDS_PER_UNRESOLVED,
+  S2_EVIDENCE_CARD_TOKEN_CAP,
+} from '../../constant/window.ts'
+import { COLLAPSE_UNCERTAIN_RULE, DROP_BY_POLICY_RULE } from '../../domain/cut_decision.ts'
 import type { LabelDecision } from '../../domain/label_decision.ts'
 import { applyRules, type RulesOutput } from '../../pipeline/rules.ts'
 import type { AgentView, IntentHypothesis, Skeleton } from '../../types/agent_view.ts'
@@ -17,9 +18,27 @@ import type { RawTrace } from '../../types/raw_trace.ts'
 import type { SegmentCard } from '../../types/segment.ts'
 import {
   TRACE_DATA_NOTICE,
-  cardIndexPayload,
   type TokenUsage,
 } from './skeleton_pass.ts'
+import {
+  composeSingleSlotText,
+  collapseUncertainDecision,
+  discloseCap,
+  dropByPolicyDecision,
+  emptyMetrics,
+  evidenceCardWithinCap,
+  isKeepProposalLabel,
+  keepIsLegal,
+  materializeEvidenceCard,
+  parseHoleBTurn,
+  pickFocus,
+  roundBudget,
+  schemaRetryCap,
+  skeletonSegmentIds,
+  type CutBrainMetrics,
+  type EvidenceCard,
+  type FocusPick,
+} from './cut_brain_harness.ts'
 import {
   openSession,
   type SessionBackend,
@@ -27,7 +46,6 @@ import {
   type SessionPromptResult,
   type SessionToolCall,
 } from './open_session.ts'
-import { formatMaskedForPrompt, maskToolResult } from './tool_mask.ts'
 
 export interface CutBrainInput {
   /** Open segment ids the agent may label/keep (usually all view.segments). */
@@ -52,23 +70,25 @@ export interface CutBrainOutput {
   notes?: string[]
   /** True when agent called apply_rules_hint and rules were adopted. */
   rules_hint_applied: boolean
+  metrics: CutBrainMetrics
 }
 
 /**
- * ADR-0010 cut-brain：洞 A 之后的 editor-in-chief 打标会话。
- * ReAct：propose → tool_calls → mask → iterate（最多 CUT_BRAIN_MAX_ROUNDS）。
- * 规则仅当 agent 调用 apply_rules_hint 时采纳；未决须 label_segment 或 keep_segment。
- * 不强制 rules-first 合并进最终 decisions。
+ * ADR-0012 cut-brain：单槽 focus=1 + 渐进披露 + collapse_uncertain。
+ * S0 永不整包进 prompt；工具 execute = ACK + card_id。
+ * 规则仅当 agent 调用 apply_rules_hint 时采纳（预算耗尽 drop_by_policy 除外）。
  */
 export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
   if (input.segment_ids.length === 0) {
     throw new Error('cutBrain: segment_ids is empty')
   }
 
-  const skill_text = loadSkillText(input)
+  loadSkillText(input)
   const skill = skillSourceName(input.skill_path)
-  const maxRounds = input.max_rounds ?? CUT_BRAIN_MAX_ROUNDS
+  const unresolved0 = input.segment_ids.length
+  const budget = roundBudget(unresolved0, input.max_rounds)
   const openIds = new Set(input.segment_ids)
+  const skeletonIds = skeletonSegmentIds(input.skeleton)
   const session = openSession({
     role: 'hole_b_label',
     tools: CUT_BRAIN_TOOL_NAMES,
@@ -80,47 +100,75 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
   let rulesCache: RulesOutput | undefined
   const decisions = new Map<string, LabelDecision>()
   const notes: string[] = []
+  const metrics = emptyMetrics()
+  const discloseCount = new Map<string, number>()
+  const schemaRetries = new Map<string, number>()
+  const countedOutliers = new Set<string>()
+  let pendingEvidence: EvidenceCard | undefined
+  let hardFailed = false
   let usage: TokenUsage = {
     role: session.role,
     input_tokens: 0,
     output_tokens: 0,
   }
-  const messages: SessionMessage[] = []
+  let lastAck: string | undefined
+
+  const cardsFor = (): SegmentCard[] => view.segments.filter((c) => openIds.has(c.id))
 
   try {
-    for (let round = 0; round < maxRounds; round += 1) {
+    for (let round = 0; round < budget; round += 1) {
       const unresolved = input.segment_ids.filter((id) => !decisions.has(id))
       if (unresolved.length === 0) break
 
-      const windowIds = unresolved.slice(0, LABEL_WINDOW_SIZE)
-      const cards = view.segments.filter((c) => openIds.has(c.id))
+      const focus = pickFocus(unresolved, cardsFor(), skeletonIds)
+      if (focus === undefined) break
+      metrics.rounds += 1
+      if (focus.outlier && !countedOutliers.has(focus.card.id)) {
+        countedOutliers.add(focus.card.id)
+        metrics.over_threshold_count += 1
+      }
+
+      let visibleS2: EvidenceCard | undefined
+      if (pendingEvidence !== undefined && pendingEvidence.segment_id === focus.card.id) {
+        visibleS2 = pendingEvidence
+      }
+      pendingEvidence = undefined
+
+      const discloseLeft = Math.max(0, discloseCap() - (discloseCount.get(focus.card.id) ?? 0))
+      const messages: SessionMessage[] =
+        lastAck !== undefined ? [{ role: 'user', content: lastAck }] : []
+
       let result: SessionPromptResult
       try {
         result = await session.prompt({
           system: [
-            'You are the cut-brain editor-in-chief (ADR-0010).',
-            'Decide how to cut by calling tools; do not invent labels in prose.',
+            'You are the cut-brain editor-in-chief (ADR-0012).',
+            `Single-slot: focus_slot is always ${String(CUT_BRAIN_FOCUS_SLOT)}; decide only focus_id.`,
+            'Do not label multiple ids. Do not request full segment text.',
+            'keep requires keep_bits skeleton_hit|key_decision_flag and confidence ≥ 0.5.',
+            'If disclose cap is hit and you are still unsure, label collapse_uncertain (never keep).',
             'Optional: call apply_rules_hint once to endorse deterministic L1 rule labels.',
-            'Then call label_segment or keep_segment for each unresolved id.',
-            'Call read_segment only when WINDOW_CARDS are not enough; results are masked.',
-            'Call check_continuity only for adjacent keep-path questions.',
             TRACE_DATA_NOTICE,
           ].join(' '),
-          skill_text,
-          skeleton_text: JSON.stringify(input.skeleton),
           messages,
-          text: composeCutBrainText({
+          text: composeSingleSlotText({
             intent: input.intent,
-            unresolved,
-            windowIds,
-            cards,
+            skeleton: input.skeleton,
+            skill_id: skill,
+            focus,
+            decided_n: decisions.size,
+            unresolved_n: unresolved.length,
+            defer_n: 0,
+            rounds_left: budget - round,
+            disclose_left: discloseLeft,
+            ...(visibleS2 !== undefined ? { evidence: visibleS2 } : {}),
             rulesHintApplied,
-            round,
           }),
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         notes.push(`cut_brain_round_${String(round)}_failed:${message}`)
+        hardFailed = true
         break
       }
 
@@ -130,19 +178,9 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
         output_tokens: usage.output_tokens + result.usage.output_tokens,
       }
 
-      if (result.tool_calls.length === 0) {
-        notes.push(`cut_brain_round_${String(round)}_no_tool_calls`)
-        break
-      }
-
-      const maskedLines: string[] = []
-      const readCtx: HoleReadContext = { cards, raw: input.raw }
-
-      for (const call of result.tool_calls) {
-        const handled = interpretToolCall(call, {
-          openIds,
-          readCtx,
-          skill,
+      const hintCall = result.tool_calls.find((c) => c.name === 'apply_rules_hint')
+      if (hintCall !== undefined && !rulesHintApplied) {
+        const handled = applyRulesHintCall(hintCall, {
           view,
           raw: input.raw,
           rulesHintApplied,
@@ -159,30 +197,115 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
             decisions.set(d.segment_id, d)
           }
         }
-        for (const d of handled.decisions) {
-          if (!decisions.has(d.segment_id)) decisions.set(d.segment_id, d)
-        }
-        maskedLines.push(
-          formatMaskedForPrompt(maskToolResult(handled.maskPayload, { toolName: call.name })),
-        )
+        lastAck = `ACK apply_rules_hint resolved=${String(handled.rules?.decisions.length ?? 0)} unresolved=${String(handled.rules?.unresolved_ids.length ?? 0)}`
+        const onlyHint = result.tool_calls.every((c) => c.name === 'apply_rules_hint')
+        if (onlyHint) continue
       }
 
-      messages.push({
-        role: 'assistant',
-        content: `tool_calls: ${result.tool_calls.map((c) => c.name).join(', ')}`,
+      const restCalls = result.tool_calls.filter((c) => c.name !== 'apply_rules_hint')
+      const parsed = parseHoleBTurn({ json: result.json, tool_calls: restCalls }, focus.card.id)
+
+      if (parsed.ok === false) {
+        if (parsed.single_slot_violation) metrics.single_slot_violations += 1
+        if (parsed.evidence_card_violation) metrics.evidence_card_violations += 1
+        notes.push(`cut_brain_round_${String(round)}_schema:${parsed.error}`)
+        const used = (schemaRetries.get(focus.card.id) ?? 0) + 1
+        schemaRetries.set(focus.card.id, used)
+        if (used > schemaRetryCap()) {
+          commit(
+            decisions,
+            collapseUncertainDecision(focus.card.id, 0, COLLAPSE_UNCERTAIN_RULE),
+            focus,
+            metrics,
+          )
+          lastAck = `ACK card_id=none segment_id=${focus.card.id} label=collapse_uncertain`
+        } else if (visibleS2 !== undefined) {
+          pendingEvidence = visibleS2
+        }
+        continue
+      }
+
+      if (parsed.action === 'apply_rules_hint') {
+        lastAck = lastAck ?? 'ACK apply_rules_hint'
+        continue
+      }
+
+      if (parsed.action === 'evidence_request') {
+        const used = discloseCount.get(focus.card.id) ?? 0
+        if (used >= discloseCap()) {
+          commit(
+            decisions,
+            collapseUncertainDecision(focus.card.id, parsed.confidence, COLLAPSE_UNCERTAIN_RULE),
+            focus,
+            metrics,
+          )
+          lastAck = `ACK card_id=none segment_id=${focus.card.id} label=collapse_uncertain`
+          continue
+        }
+        const card = materializeEvidenceCard({
+          card: focus.card,
+          raw: input.raw,
+          kind: parsed.evidence_kind,
+          disclose_index: used + 1,
+          cap: S2_EVIDENCE_CARD_TOKEN_CAP,
+        })
+        if (!evidenceCardWithinCap(card)) metrics.evidence_card_violations += 1
+        discloseCount.set(focus.card.id, used + 1)
+        pendingEvidence = card
+        lastAck = `ACK card_id=${card.card_id}`
+        continue
+      }
+
+      const legal = keepIsLegal({
+        label: parsed.label,
+        confidence: parsed.confidence,
+        keep_bits: parsed.keep_bits,
+        segment_id: parsed.segment_id,
+        skeletonIds,
+        from_keep_segment: parsed.from_keep_segment,
       })
-      messages.push({
-        role: 'user',
-        content: [
-          'MASKED_TOOL_RESULTS (ADR-0010; full payloads not re-injected):',
-          ...maskedLines,
-          rulesHintApplied ? 'RULES_HINT_APPLIED=true' : 'RULES_HINT_APPLIED=false',
-          `still_unresolved: ${JSON.stringify(input.segment_ids.filter((id) => !decisions.has(id)))}`,
-        ].join('\n'),
-      })
+
+      if (isKeepProposalLabel(parsed.label) || parsed.from_keep_segment) {
+        if (!legal.legal) {
+          metrics.illegal_keep_overrides += 1
+          commit(
+            decisions,
+            collapseUncertainDecision(focus.card.id, parsed.confidence, COLLAPSE_UNCERTAIN_RULE),
+            focus,
+            metrics,
+          )
+          lastAck = `ACK card_id=none segment_id=${focus.card.id} label=collapse_uncertain`
+          continue
+        }
+      }
+
+      const sourceName = parsed.from_keep_segment ? 'keep_segment' : skill
+      const decision: LabelDecision = {
+        segment_id: parsed.segment_id,
+        label: parsed.label,
+        source: { kind: 'llm', name: sourceName },
+        confidence: parsed.confidence,
+      }
+      commit(decisions, decision, focus, metrics)
+      lastAck = `ACK card_id=none segment_id=${parsed.segment_id} label=${parsed.label}`
     }
   } finally {
     session.dispose()
+  }
+
+  const leftover = input.segment_ids.filter((id) => !decisions.has(id))
+  if (leftover.length > 0 && !hardFailed) {
+    const operational = unresolved0 * CUT_BRAIN_ROUNDS_PER_UNRESOLVED
+    const testCapped = input.max_rounds !== undefined && input.max_rounds < operational
+    if (!testCapped) {
+      exhaustRemaining(leftover, {
+        view,
+        raw: input.raw,
+        decisions,
+        rulesCache,
+        notes,
+      })
+    }
   }
 
   const still_unresolved = input.segment_ids.filter((id) => !decisions.has(id))
@@ -192,177 +315,69 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
     view,
     usage,
     rules_hint_applied: rulesHintApplied,
+    metrics,
   }
   if (notes.length > 0) output.notes = notes
   return output
 }
 
-function composeCutBrainText(input: {
-  intent: IntentHypothesis
-  unresolved: readonly string[]
-  windowIds: readonly string[]
-  cards: readonly SegmentCard[]
-  rulesHintApplied: boolean
-  round: number
-}): string {
-  const lines = [
-    `intent: ${input.intent.text}`,
-    `round: ${String(input.round)}`,
-    `RULES_HINT_APPLIED=${String(input.rulesHintApplied)}`,
-    `unresolved_ids: ${JSON.stringify(input.unresolved)}`,
-    `window_segment_ids: ${JSON.stringify(input.windowIds)}`,
-    `WINDOW_CARDS:\n${cardIndexPayload(input.cards.filter((c) => input.unresolved.includes(c.id) || input.windowIds.includes(c.id)))}`,
-  ]
-  if (!input.rulesHintApplied) {
-    lines.push(
-      'First you may call apply_rules_hint() to endorse L1 rules (masked summary + unresolved).',
-    )
+function commit(
+  decisions: Map<string, LabelDecision>,
+  decision: LabelDecision,
+  focus: FocusPick,
+  metrics: CutBrainMetrics,
+): void {
+  if (decisions.has(decision.segment_id)) return
+  decisions.set(decision.segment_id, decision)
+  if (focus.outlier && isKeepProposalLabel(decision.label)) {
+    metrics.over_threshold_keep_count += 1
   }
-  lines.push(
-    'For each unresolved id in window_segment_ids, call label_segment({segment_id,label,confidence}) or keep_segment({segment_id}).',
-    'Do not invent ids. Unresolved stay unresolved until you label or keep.',
-  )
-  return lines.join('\n\n')
 }
 
-function interpretToolCall(
+function exhaustRemaining(
+  leftover: readonly string[],
+  ctx: {
+    view: AgentView
+    raw: RawTrace
+    decisions: Map<string, LabelDecision>
+    rulesCache: RulesOutput | undefined
+    notes: string[]
+  },
+): void {
+  const rules = ctx.rulesCache ?? applyRules({ view: ctx.view, raw: ctx.raw })
+  const byId = new Map(rules.decisions.map((d) => [d.segment_id, d]))
+  for (const id of leftover) {
+    if (ctx.decisions.has(id)) continue
+    const ruled = byId.get(id)
+    if (ruled !== undefined && ruled.label === 'routine') {
+      ctx.decisions.set(id, dropByPolicyDecision(id, ruled.rule_name ?? DROP_BY_POLICY_RULE))
+      continue
+    }
+    ctx.decisions.set(id, collapseUncertainDecision(id, 0, COLLAPSE_UNCERTAIN_RULE))
+  }
+  ctx.notes.push(`cut_brain_budget_exhaust:${String(leftover.length)}`)
+}
+
+function applyRulesHintCall(
   call: SessionToolCall,
   ctx: {
-    openIds: ReadonlySet<string>
-    readCtx: HoleReadContext
-    skill: string
     view: AgentView
     raw: RawTrace
     rulesHintApplied: boolean
     rulesCache: RulesOutput | undefined
   },
 ): {
-  decisions: LabelDecision[]
   rules?: RulesOutput
-  maskPayload: unknown
   note?: string
 } {
-  if (call.name === 'apply_rules_hint') {
-    const accepted = handleApplyRulesHint(call.arguments)
-    if (!accepted.ok) {
-      return {
-        decisions: [],
-        maskPayload: { kind: 'apply_rules_hint', error: accepted.error },
-        note: `apply_rules_hint_rejected:${accepted.error}`,
-      }
-    }
-    if (ctx.rulesHintApplied && ctx.rulesCache !== undefined) {
-      const unresolved = ctx.rulesCache.unresolved_ids
-      return {
-        decisions: [],
-        maskPayload: {
-          kind: 'apply_rules_hint',
-          applied: true,
-          resolved_count: ctx.rulesCache.decisions.length,
-          unresolved_ids: unresolved,
-          summary: 'rules already applied this session',
-        },
-      }
-    }
-    const rules = applyRules({ view: ctx.view, raw: ctx.raw })
-    return {
-      decisions: [],
-      rules,
-      maskPayload: {
-        kind: 'apply_rules_hint',
-        applied: true,
-        resolved_count: rules.decisions.length,
-        unresolved_ids: rules.unresolved_ids,
-        summary: `rules resolved ${String(rules.decisions.length)}; unresolved ${String(rules.unresolved_ids.length)}`,
-      },
-    }
+  const accepted = handleApplyRulesHint(call.arguments)
+  if (!accepted.ok) {
+    return { note: `apply_rules_hint_rejected:${accepted.error}` }
   }
-
-  if (call.name === 'label_segment') {
-    const accepted = handleLabelSegment(call.arguments, ctx.openIds)
-    if (!accepted.ok) {
-      return {
-        decisions: [],
-        maskPayload: { segment_id: null, label: null, confidence: null, error: accepted.error },
-        note: `label_segment_rejected:${accepted.error}`,
-      }
-    }
-    return {
-      decisions: [
-        {
-          segment_id: accepted.segment_id,
-          label: accepted.label,
-          source: { kind: 'llm', name: ctx.skill },
-          confidence: accepted.confidence,
-        },
-      ],
-      maskPayload: {
-        segment_id: accepted.segment_id,
-        label: accepted.label,
-        confidence: accepted.confidence,
-      },
-    }
+  if (ctx.rulesHintApplied && ctx.rulesCache !== undefined) {
+    return { rules: ctx.rulesCache }
   }
-
-  if (call.name === 'keep_segment') {
-    const accepted = handleKeepSegment(call.arguments, ctx.openIds)
-    if (!accepted.ok) {
-      return {
-        decisions: [],
-        maskPayload: { kind: 'keep_segment', error: accepted.error },
-        note: `keep_segment_rejected:${accepted.error}`,
-      }
-    }
-    // Explicit keep → key_decision so writeWarrant / profile maps to keep.
-    return {
-      decisions: [
-        {
-          segment_id: accepted.segment_id,
-          label: 'key_decision',
-          source: { kind: 'llm', name: 'keep_segment' },
-          confidence: accepted.confidence,
-        },
-      ],
-      maskPayload: {
-        kind: 'keep_segment',
-        segment_id: accepted.segment_id,
-        confidence: accepted.confidence,
-      },
-    }
-  }
-
-  if (call.name === 'read_segment') {
-    const accepted = handleReadSegment(ctx.readCtx, call.arguments)
-    if (!accepted.ok) {
-      return {
-        decisions: [],
-        maskPayload: { segment_id: null, focus: 'full', text: '', error: accepted.error },
-        note: `read_segment_rejected:${accepted.error}`,
-      }
-    }
-    return {
-      decisions: [],
-      maskPayload: {
-        segment_id: accepted.segment_id,
-        focus: accepted.focus,
-        text: accepted.text,
-      },
-    }
-  }
-
-  if (call.name === 'check_continuity') {
-    // Continuity scores are observational for cut-brain v0; mask ack only.
-    return {
-      decisions: [],
-      maskPayload: call.arguments,
-    }
-  }
-
-  return {
-    decisions: [],
-    maskPayload: { ignored: call.name },
-    note: `cut_brain_ignored_tool:${call.name}`,
-  }
+  return { rules: applyRules({ view: ctx.view, raw: ctx.raw }) }
 }
 
 function loadSkillText(input: CutBrainInput): string {
@@ -393,9 +408,9 @@ function skillSourceName(skill_path: string): string {
 
 /** Test helper: expose prompt shape without running a session. */
 export function previewCutBrainPromptText(
-  input: Parameters<typeof composeCutBrainText>[0],
+  input: Parameters<typeof composeSingleSlotText>[0],
 ): string {
-  return composeCutBrainText(input)
+  return composeSingleSlotText(input)
 }
 
-export type { SessionPromptResult }
+export type { SessionPromptResult, CutBrainMetrics, EvidenceCard }

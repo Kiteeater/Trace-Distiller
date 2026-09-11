@@ -205,6 +205,7 @@ describe('independent gold', () => {
     }
     for (const name of [
       'cut_brain.ts',
+      'cut_brain_harness.ts',
       'label_window.ts',
       'skeleton_pass.ts',
       'write_warrant.ts',

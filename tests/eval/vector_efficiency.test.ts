@@ -209,8 +209,8 @@ describe('resolveEmbeddingProvider', () => {
 })
 
 describe('ADR-0011 (b) isolation', () => {
-  it('sparse_intent / candidate_pool / cut_brain do not import vector_efficiency (not a stop signal)', () => {
-    for (const name of ['sparse_intent.ts', 'candidate_pool.ts', 'cut_brain.ts', 'skeleton_pass.ts']) {
+  it('sparse_intent / candidate_pool / cut_brain / cut_brain_harness do not import vector_efficiency (not a stop signal)', () => {
+    for (const name of ['sparse_intent.ts', 'candidate_pool.ts', 'cut_brain.ts', 'cut_brain_harness.ts', 'skeleton_pass.ts']) {
       const src = readFileSync(join(sessionsDir, name), 'utf8')
       assert.doesNotMatch(src, /vector_efficiency/)
     }

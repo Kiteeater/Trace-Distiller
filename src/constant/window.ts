@@ -62,10 +62,47 @@ export const SESSION_CALL_TIMEOUT_MS = 120_000
 export const SESSION_TIMEOUT_ENV = 'TRACE_DISTILLER_SESSION_TIMEOUT_MS'
 
 /**
- * cut-brain ReAct 最大轮数（ADR-0010）：propose → tool → mask → iterate。
- * 禁止在 sessions 另写魔数。
+ * cut-brain 绝对轮数安全帽（ADR-0012）。
+ * 运营预算是 unresolved × CUT_BRAIN_ROUNDS_PER_UNRESOLVED；禁止在 sessions 另写魔数。
  */
-export const CUT_BRAIN_MAX_ROUNDS = 4
+export const CUT_BRAIN_MAX_ROUNDS = 256
+
+/** 轮数 ≤ 未决 × 此值（ADR-0012）。 */
+export const CUT_BRAIN_ROUNDS_PER_UNRESOLVED = 2
+
+/** 每段最多披露证据卡次数（ADR-0012）。 */
+export const CUT_BRAIN_PER_SEGMENT_DISCLOSE_CAP = 2
+
+/** v1 单槽：focus 恒为 1（ADR-0012）。禁止 focus=2。 */
+export const CUT_BRAIN_FOCUS_SLOT = 1
+
+/**
+ * S2 证据卡硬 token 帽（ADR-0012）。
+ * Fake 与真路径必须 import 同一常量、同一数值。
+ */
+export const S2_EVIDENCE_CARD_TOKEN_CAP = 256
+
+/** confidence < 此值 → 低置信，不得落到 keep（ADR-0012）。 */
+export const CUT_BRAIN_LOW_CONFIDENCE = 0.5
+
+/** schema 非法时每段额外重试次数；耗尽 → collapse_uncertain（不是 0010 Keep）。 */
+export const CUT_BRAIN_SCHEMA_RETRIES = 1
+
+/** Write 超阈：tokens ≥ max(median × 此倍数, WRITE_OUTLIER_TOKEN_FLOOR)。 */
+export const WRITE_OUTLIER_TOKEN_MULTIPLIER = 2
+
+/** Write 超阈 token 下限，避免短样 median=0 时永不触发。 */
+export const WRITE_OUTLIER_TOKEN_FLOOR = 64
+
+/** keep 正向证据闭集（ADR-0012）。禁止实现侧私加。 */
+export const KEEP_EVIDENCE_BITS = ['skeleton_hit', 'key_decision_flag'] as const
+
+export type KeepEvidenceBit = (typeof KEEP_EVIDENCE_BITS)[number]
+
+/** S2 证据卡种类闭集（ADR-0012）。 */
+export const EVIDENCE_CARD_KINDS = ['structure', 'headtail', 'error'] as const
+
+export type EvidenceCardKind = (typeof EVIDENCE_CARD_KINDS)[number]
 
 /**
  * 洞 A 多轮稀疏采样硬预算（ADR-0011）。
