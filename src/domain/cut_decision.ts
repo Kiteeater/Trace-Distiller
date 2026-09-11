@@ -13,6 +13,9 @@ export const COLLAPSE_UNCERTAIN_RULE = 'collapse_uncertain'
 /** 预算耗尽且已匹配既有确定性 drop 谓词（ADR-0012）。 */
 export const DROP_BY_POLICY_RULE = 'drop_by_policy'
 
+/** 洞 A 骨架段硬保护：禁止 collapse_uncertain，force keep（ADR-0012 Consequences）。 */
+export const SKELETON_PROTECT_RULE = 'skeleton_protect'
+
 export interface CutDecision {
   segment_id: string
   action: CutAction

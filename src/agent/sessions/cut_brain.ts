@@ -10,7 +10,7 @@ import {
   CUT_BRAIN_ROUNDS_PER_UNRESOLVED,
   S2_EVIDENCE_CARD_TOKEN_CAP,
 } from '../../constant/window.ts'
-import { COLLAPSE_UNCERTAIN_RULE, DROP_BY_POLICY_RULE } from '../../domain/cut_decision.ts'
+import { DROP_BY_POLICY_RULE } from '../../domain/cut_decision.ts'
 import type { LabelDecision } from '../../domain/label_decision.ts'
 import { applyRules, type RulesOutput } from '../../pipeline/rules.ts'
 import type { AgentView, IntentHypothesis, Skeleton } from '../../types/agent_view.ts'
@@ -22,7 +22,6 @@ import {
 } from './skeleton_pass.ts'
 import {
   composeSingleSlotText,
-  collapseUncertainDecision,
   discloseCap,
   dropByPolicyDecision,
   emptyMetrics,
@@ -32,6 +31,7 @@ import {
   materializeEvidenceCard,
   parseHoleBTurn,
   pickFocus,
+  resolveUncertainOrProtect,
   roundBudget,
   schemaRetryCap,
   skeletonSegmentIds,
@@ -212,13 +212,9 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
         const used = (schemaRetries.get(focus.card.id) ?? 0) + 1
         schemaRetries.set(focus.card.id, used)
         if (used > schemaRetryCap()) {
-          commit(
-            decisions,
-            collapseUncertainDecision(focus.card.id, 0, COLLAPSE_UNCERTAIN_RULE),
-            focus,
-            metrics,
-          )
-          lastAck = `ACK card_id=none segment_id=${focus.card.id} label=collapse_uncertain`
+          const decision = resolveUncertainOrProtect(focus.card.id, 0, skeletonIds)
+          commit(decisions, decision, focus, metrics)
+          lastAck = `ACK card_id=none segment_id=${focus.card.id} label=${decision.label}`
         } else if (visibleS2 !== undefined) {
           pendingEvidence = visibleS2
         }
@@ -233,13 +229,9 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
       if (parsed.action === 'evidence_request') {
         const used = discloseCount.get(focus.card.id) ?? 0
         if (used >= discloseCap()) {
-          commit(
-            decisions,
-            collapseUncertainDecision(focus.card.id, parsed.confidence, COLLAPSE_UNCERTAIN_RULE),
-            focus,
-            metrics,
-          )
-          lastAck = `ACK card_id=none segment_id=${focus.card.id} label=collapse_uncertain`
+          const decision = resolveUncertainOrProtect(focus.card.id, parsed.confidence, skeletonIds)
+          commit(decisions, decision, focus, metrics)
+          lastAck = `ACK card_id=none segment_id=${focus.card.id} label=${decision.label}`
           continue
         }
         const card = materializeEvidenceCard({
@@ -268,13 +260,9 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
       if (isKeepProposalLabel(parsed.label) || parsed.from_keep_segment) {
         if (!legal.legal) {
           metrics.illegal_keep_overrides += 1
-          commit(
-            decisions,
-            collapseUncertainDecision(focus.card.id, parsed.confidence, COLLAPSE_UNCERTAIN_RULE),
-            focus,
-            metrics,
-          )
-          lastAck = `ACK card_id=none segment_id=${focus.card.id} label=collapse_uncertain`
+          const decision = resolveUncertainOrProtect(focus.card.id, parsed.confidence, skeletonIds)
+          commit(decisions, decision, focus, metrics)
+          lastAck = `ACK card_id=none segment_id=${focus.card.id} label=${decision.label}`
           continue
         }
       }
@@ -304,6 +292,7 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
         decisions,
         rulesCache,
         notes,
+        skeletonIds,
       })
     }
   }
@@ -342,6 +331,7 @@ function exhaustRemaining(
     decisions: Map<string, LabelDecision>
     rulesCache: RulesOutput | undefined
     notes: string[]
+    skeletonIds: ReadonlySet<string>
   },
 ): void {
   const rules = ctx.rulesCache ?? applyRules({ view: ctx.view, raw: ctx.raw })
@@ -353,7 +343,7 @@ function exhaustRemaining(
       ctx.decisions.set(id, dropByPolicyDecision(id, ruled.rule_name ?? DROP_BY_POLICY_RULE))
       continue
     }
-    ctx.decisions.set(id, collapseUncertainDecision(id, 0, COLLAPSE_UNCERTAIN_RULE))
+    ctx.decisions.set(id, resolveUncertainOrProtect(id, 0, ctx.skeletonIds))
   }
   ctx.notes.push(`cut_brain_budget_exhaust:${String(leftover.length)}`)
 }

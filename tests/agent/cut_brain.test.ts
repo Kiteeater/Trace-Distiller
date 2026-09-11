@@ -18,7 +18,7 @@ import {
   CUT_BRAIN_LOW_CONFIDENCE,
   S2_EVIDENCE_CARD_TOKEN_CAP,
 } from '../../src/constant/window.ts'
-import { COLLAPSE_UNCERTAIN_RULE, DROP_BY_POLICY_RULE } from '../../src/domain/cut_decision.ts'
+import { COLLAPSE_UNCERTAIN_RULE, DROP_BY_POLICY_RULE, SKELETON_PROTECT_RULE } from '../../src/domain/cut_decision.ts'
 import { applyRules } from '../../src/pipeline/rules.ts'
 import { segment } from '../../src/pipeline/segmenter.ts'
 import type { IntentHypothesis, Skeleton } from '../../src/types/agent_view.ts'
@@ -460,10 +460,7 @@ describe('cutBrain ADR-0012 decision table', () => {
   })
 
   it('low-confidence keep never lands on keep', async () => {
-    const { raw, view } = synthWorld([synthCard('s0001')], {
-      version: 0,
-      nodes: [{ id: 'n1', kind: 'turning_point', segment_ids: ['s0001'], note: '' }],
-    })
+    const { raw, view } = synthWorld([synthCard('s0001')])
     const backend = new FakeSessionBackend((input: SessionPromptInput) => {
       const id = parseFocusId(input.text) ?? 's0001'
       return fakeResult({
@@ -474,7 +471,7 @@ describe('cutBrain ADR-0012 decision table', () => {
               segment_id: id,
               label: 'key_decision',
               confidence: 0.49,
-              keep_bits: ['skeleton_hit'],
+              keep_bits: ['key_decision_flag'],
             },
           },
         ],
@@ -565,6 +562,138 @@ describe('cutBrain ADR-0012 decision table', () => {
     const evidencePrompts = backend.calls.filter((c) => c.input.text.includes('EVIDENCE_CARD'))
     assert.ok(evidencePrompts.length >= 1)
     assert.ok(evidencePrompts.length <= 2)
+  })
+
+  it('skeleton illegal keep is force-kept, never collapse_uncertain', async () => {
+    const skeleton: Skeleton = {
+      version: 0,
+      nodes: [{ id: 'n1', kind: 'turning_point', segment_ids: ['s0001'], note: '' }],
+    }
+    const { raw, view } = synthWorld([synthCard('s0001'), synthCard('s0002')], skeleton)
+    const backend = new FakeSessionBackend((input: SessionPromptInput) => {
+      const id = parseFocusId(input.text) ?? 's0001'
+      if (id === 's0001') {
+        return fakeResult({
+          tool_calls: [
+            {
+              name: 'label_segment',
+              arguments: { segment_id: id, label: 'key_decision', confidence: 0.49 },
+            },
+          ],
+        })
+      }
+      return fakeResult({
+        tool_calls: [
+          { name: 'label_segment', arguments: { segment_id: id, label: 'dead_end', confidence: 0.8 } },
+        ],
+      })
+    })
+    const out = await cutBrain({
+      segment_ids: ['s0001', 's0002'],
+      view,
+      raw,
+      skeleton,
+      intent: intent(),
+      skill_path: skillPath,
+      backend,
+    })
+    const sk = out.decisions.find((d) => d.segment_id === 's0001')
+    const other = out.decisions.find((d) => d.segment_id === 's0002')
+    assert.ok(sk)
+    assert.notEqual(sk!.label, 'collapse_uncertain')
+    assert.equal(sk!.label, 'key_decision')
+    assert.equal(sk!.source.name, SKELETON_PROTECT_RULE)
+    assert.ok(sk!.confidence >= CUT_BRAIN_LOW_CONFIDENCE)
+    assert.equal(other?.label, 'dead_end')
+  })
+
+  it('skeleton schema-exhaust is force-kept, never collapse_uncertain', async () => {
+    const skeleton: Skeleton = {
+      version: 0,
+      nodes: [{ id: 'n1', kind: 'turning_point', segment_ids: ['s0001'], note: '' }],
+    }
+    const { raw, view } = synthWorld([synthCard('s0001')], skeleton)
+    const backend = new FakeSessionBackend(() => fakeResult({ tool_calls: [] }))
+    const out = await cutBrain({
+      segment_ids: ['s0001'],
+      view,
+      raw,
+      skeleton,
+      intent: intent(),
+      skill_path: skillPath,
+      backend,
+    })
+    assert.equal(out.decisions.length, 1)
+    assert.notEqual(out.decisions[0]!.label, 'collapse_uncertain')
+    assert.equal(out.decisions[0]!.label, 'key_decision')
+    assert.equal(out.decisions[0]!.source.name, SKELETON_PROTECT_RULE)
+  })
+
+  it('skeleton disclose-cap is force-kept, never collapse_uncertain', async () => {
+    const skeleton: Skeleton = {
+      version: 0,
+      nodes: [{ id: 'n1', kind: 'turning_point', segment_ids: ['s0001'], note: '' }],
+    }
+    const cards = [synthCard('s0001', { outcome: 'error', tokens: 40 }), synthCard('s0002')]
+    const { raw, view } = synthWorld(cards, skeleton)
+    const backend = new FakeSessionBackend((input: SessionPromptInput) => {
+      const id = parseFocusId(input.text) ?? 's0001'
+      return fakeResult({
+        json: {
+          kind: 'hole_b_turn_v1',
+          segment_id: id,
+          decision: null,
+          confidence: 0.2,
+          evidence_request: 'error',
+        },
+        tool_calls: [{ name: 'read_segment', arguments: { segment_id: id, kind: 'error' } }],
+      })
+    })
+    const out = await cutBrain({
+      segment_ids: cards.map((c) => c.id),
+      view,
+      raw,
+      skeleton,
+      intent: intent(),
+      skill_path: skillPath,
+      backend,
+    })
+    const sk = out.decisions.find((d) => d.segment_id === 's0001')
+    assert.ok(sk)
+    assert.notEqual(sk!.label, 'collapse_uncertain')
+    assert.equal(sk!.label, 'key_decision')
+    assert.equal(sk!.source.name, SKELETON_PROTECT_RULE)
+    const other = out.decisions.find((d) => d.segment_id === 's0002')
+    assert.ok(other)
+    assert.ok(other!.label === 'collapse_uncertain' || other!.label === 'routine')
+  })
+
+  it('skeleton budget-exhaust is force-kept, never collapse_uncertain', async () => {
+    const skeleton: Skeleton = {
+      version: 0,
+      nodes: [{ id: 'n1', kind: 'turning_point', segment_ids: ['s0001'], note: '' }],
+    }
+    const { raw, view } = synthWorld([synthCard('s0001')], skeleton)
+    const backend = new FakeSessionBackend((input: SessionPromptInput) => {
+      const id = parseFocusId(input.text) ?? 's0001'
+      return fakeResult({
+        tool_calls: [{ name: 'read_segment', arguments: { segment_id: id, kind: 'structure' } }],
+      })
+    })
+    const out = await cutBrain({
+      segment_ids: ['s0001'],
+      view,
+      raw,
+      skeleton,
+      intent: intent(),
+      skill_path: skillPath,
+      backend,
+    })
+    assert.equal(out.decisions.length, 1)
+    assert.notEqual(out.decisions[0]!.label, 'collapse_uncertain')
+    assert.equal(out.decisions[0]!.label, 'key_decision')
+    assert.equal(out.decisions[0]!.source.name, SKELETON_PROTECT_RULE)
+    assert.ok(out.notes?.some((n) => n.startsWith('cut_brain_budget_exhaust:')))
   })
 
   it('same-turn multi-id is a single-slot violation and does not keep', async () => {

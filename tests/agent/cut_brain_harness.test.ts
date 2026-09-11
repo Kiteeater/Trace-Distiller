@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import {
   composeSingleSlotText,
   evidenceCardWithinCap,
+  forceSkeletonKeep,
   isLowConfidence,
   isWriteOutlier,
   keepIsLegal,
@@ -13,9 +14,11 @@ import {
   overThresholdKeepRate,
   parseHoleBTurn,
   pickFocus,
+  resolveUncertainOrProtect,
   s2TokenCap,
   tokenMedian,
 } from '../../src/agent/sessions/cut_brain_harness.ts'
+import { COLLAPSE_UNCERTAIN_RULE, SKELETON_PROTECT_RULE } from '../../src/domain/cut_decision.ts'
 import {
   CUT_BRAIN_FOCUS_SLOT,
   CUT_BRAIN_LOW_CONFIDENCE,
@@ -137,6 +140,65 @@ describe('cut-brain harness predicates', () => {
     assert.equal(noWrite?.card.id, 's0002')
     const normal = pickFocus(['s0001'], [cards[0]!], new Set())
     assert.equal(normal?.card.id, 's0001')
+  })
+
+  it('pickFocus prefers skeleton within each tier (outlier > error > normal)', () => {
+    const sameTier = [
+      card('s0001', { tokens: 8 }),
+      card('s0002', { tokens: 8 }),
+    ]
+    const skeletonNormal = pickFocus(['s0001', 's0002'], sameTier, new Set(['s0002']))
+    assert.equal(skeletonNormal?.card.id, 's0002')
+    assert.equal(skeletonNormal?.in_skeleton, true)
+
+    const errors = [
+      card('s0001', { outcome: 'error', tokens: 10 }),
+      card('s0002', { outcome: 'error', tokens: 10 }),
+    ]
+    const skeletonError = pickFocus(['s0001', 's0002'], errors, new Set(['s0002']))
+    assert.equal(skeletonError?.card.id, 's0002')
+
+    const mixed = [
+      card('s0001', { tool: 'Write', writes: ['a.ts'], tokens: 400 }),
+      card('s0002', { tokens: 8 }),
+      card('s0003', { tokens: 8 }),
+    ]
+    // Non-skeleton write-outlier still outranks skeleton normal.
+    const outlierWins = pickFocus(['s0001', 's0002', 's0003'], mixed, new Set(['s0002']))
+    assert.equal(outlierWins?.card.id, 's0001')
+    assert.equal(outlierWins?.outlier, true)
+
+    const outliers = [
+      card('s0001', { tool: 'Write', writes: ['a.ts'], tokens: 800 }),
+      card('s0002', { tool: 'Write', writes: ['b.ts'], tokens: 500 }),
+      card('s0003', { tokens: 8 }),
+      card('s0004', { tokens: 8 }),
+      card('s0005', { tokens: 8 }),
+      card('s0006', { tokens: 8 }),
+    ]
+    const skeletonOutlier = pickFocus(
+      ['s0001', 's0002', 's0003', 's0004', 's0005', 's0006'],
+      outliers,
+      new Set(['s0002']),
+    )
+    assert.equal(skeletonOutlier?.card.id, 's0002')
+    assert.equal(skeletonOutlier?.in_skeleton, true)
+    assert.equal(skeletonOutlier?.outlier, true)
+  })
+
+  it('resolveUncertainOrProtect force-keeps skeleton ids and collapses others', () => {
+    const skeleton = new Set(['s-sk'])
+    const kept = resolveUncertainOrProtect('s-sk', 0.1, skeleton)
+    assert.equal(kept.label, 'key_decision')
+    assert.equal(kept.source.name, SKELETON_PROTECT_RULE)
+    assert.ok(kept.confidence >= CUT_BRAIN_LOW_CONFIDENCE)
+    assert.notEqual(kept.label, 'collapse_uncertain')
+    const collapsed = resolveUncertainOrProtect('s-other', 0.1, skeleton)
+    assert.equal(collapsed.label, 'collapse_uncertain')
+    assert.equal(collapsed.source.name, COLLAPSE_UNCERTAIN_RULE)
+    const forced = forceSkeletonKeep('s-sk')
+    assert.equal(forced.label, 'key_decision')
+    assert.equal(forced.source.name, SKELETON_PROTECT_RULE)
   })
 
   it('S2 evidence cards stay within the shared token cap (Fake=real constant)', () => {

@@ -362,8 +362,9 @@ describe('orchestrator with_llm', () => {
     assert.match(out.hole_notes.join('\n'), /window boom/)
     assert.ok((out.hole_a_plus_b_tokens ?? 0) > 0)
 
+    const silentSkeletonId = ruled.unresolved_ids[0] ?? ''
     const silent = labelingBackend({
-      nodes: [{ id: 'n1', kind: 'main_path_hypothesis', segment_ids: [ruled.unresolved_ids[0] ?? ''], note: '' }],
+      nodes: [{ id: 'n1', kind: 'main_path_hypothesis', segment_ids: [silentSkeletonId], note: '' }],
       holeB: 'no_calls',
     })
     const silentOut = await distill({
@@ -373,11 +374,18 @@ describe('orchestrator with_llm', () => {
       opts: { sessionBackend: silent },
     })
     // Schema-empty is ADR-0012 exhaust/schema path, not 0010 Keep.
+    // Skeleton ids are hard-protected from collapse_uncertain (force keep).
     for (const id of ruled.unresolved_ids) {
       const entry = silentOut.warrant.entries.find((e) => e.segment_id === id)
       assert.notEqual(entry?.source.name, FAIL_CLOSED_KEEP_RULE)
       const labeled = silentOut.decisions.find((d) => d.segment_id === id)
       assert.ok(labeled)
+      if (id === silentSkeletonId) {
+        assert.notEqual(labeled!.label, 'collapse_uncertain')
+        assert.equal(labeled!.label, 'key_decision')
+        assert.equal(entry?.action, 'keep')
+        continue
+      }
       assert.ok(
         labeled!.label === 'collapse_uncertain' || labeled!.label === 'routine',
         labeled!.label,
