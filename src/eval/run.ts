@@ -21,7 +21,7 @@ export const L4_METRICS_ONLY_NOTE =
   'eval reads distill metrics from SQLite. Pass --qa / --replay to run L4 when a backend is available. L4 tokens are not distill cost'
 
 export const L4_REPLAY_NO_WORKSPACE_NOTE =
-  'replay failed: no mapped workspace under benchmark/workspaces (see manifest.json). Real mint needs a fixture repo + TRACE_DISTILLER_MODEL_L4 + coding tools'
+  'replay skipped: no mapped workspace under benchmark/workspaces (see manifest.json). Real replay needs a mapped fixture + TRACE_DISTILLER_MODEL_L4 + coding tools; imported MIMO traces without a fixture are skipped (null), not fail=0'
 
 export interface OptionalL4Input {
   intent: IntentHypothesis
@@ -42,7 +42,9 @@ export interface OptionalL4Result {
 /**
  * CLI eval 的 L4 开关。无后端则跳过并注明，不假装跑过。
  * Replay：若 manifest 映射到真实小仓，则物化临时 cwd 再跑 runReplay。
- * QA 0/0 → skipped；replay 解析失败但 workspace verify 通过则可恢复 success。
+ * 无 mapped workspace → replay skipped (null)，不因缺 fixture 把 composite 归零。
+ * QA 0/0 → skipped；QA 重试后仍无合法 pairs → skipped（不是 fail=0）。
+ * replay 解析失败但 workspace verify 通过则可恢复 success。
  * 有 verify[] 时成功后硬跑闸门；失败则 replay=0。
  */
 export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4Result> {
@@ -70,8 +72,15 @@ export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4R
           notes.push(`qa partial: correct=${out.score.correct}/${out.score.answered}`)
         }
       } catch (err) {
-        qa = 0
-        notes.push(`qa failed: ${errMessage(err)}`)
+        const msg = errMessage(err)
+        // Zero valid pairs after retries → skip (null), do not zero composite.
+        if (isQaUnparseableOrEmpty(msg)) {
+          qa = null
+          notes.push(`qa skipped: unparseable after retries (${msg})`)
+        } else {
+          qa = 0
+          notes.push(`qa failed: ${msg}`)
+        }
       }
     }
   }
@@ -87,7 +96,7 @@ export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4R
       })
       if (resolved === null) {
         notes.push(L4_REPLAY_NO_WORKSPACE_NOTE)
-        replayScore = 0
+        replayScore = null
       } else if (!workspaceReady(resolved.abs_dir, resolved.entry.required_files)) {
         notes.push(`replay failed: workspace not ready at ${resolved.abs_dir}`)
         replayScore = 0
@@ -154,4 +163,14 @@ export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4R
 
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/** Parse/empty failures with zero valid QA pairs — prefer skip over fail=0. */
+function isQaUnparseableOrEmpty(message: string): boolean {
+  return (
+    /failed to parse structured JSON/i.test(message) ||
+    /items\[\] is empty/i.test(message) ||
+    /items\[\] is required/i.test(message) ||
+    /expected a JSON object/i.test(message)
+  )
 }

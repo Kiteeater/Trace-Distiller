@@ -16,3 +16,9 @@
 - Adaptation: prepend explicit `ground_truth` (`task_confirmed`) + `distiller_meta` so Admission Gate accepts sessions that lack a test-tool exit; remap `sessionId`; do **not** invent tool transcripts. Key-decision gold is rough / optional (see `*.key-decisions.json`).
 - Cost / L4 tokens: unchanged — distill cost still excludes L4.
 - Prefer traces with failed tool/tests then recovery for long-context dead-end coverage.
+
+## Replay fixtures
+
+These MIMO imports are **not** mapped in `benchmark/workspaces/manifest.json` by default.
+Bench treats unmapped replay as **skipped** (`null`), not fail=0 — real replay still needs a mapped fixture (e.g. add-fix / mul-fix) when intent matches.
+

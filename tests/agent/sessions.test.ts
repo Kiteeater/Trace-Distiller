@@ -927,5 +927,31 @@ describe('parseStructuredJson prose extract', () => {
     const obj = parseStructuredJson('The bug is fixed. Here is JSON:\n{"kind":"l4_replay_v0","success":true,"note":"ok"}')
     assert.equal((obj as { success: boolean }).success, true)
   })
+
+  it('repairs trailing commas, comments, and truncated objects', async () => {
+    const { parseStructuredJson, repairNearJson, extractJsonFromProse } = await import(
+      '../../src/agent/sessions/open_session.ts'
+    )
+    const trailing = parseStructuredJson(
+      '```json\n{"kind":"l4_qa_v0","items":[{"id":"q1","question":"q","answer":"a","correct":true},],}\n```',
+    ) as { kind: string; items: unknown[] }
+    assert.equal(trailing.kind, 'l4_qa_v0')
+    assert.equal(trailing.items.length, 1)
+
+    const commented = parseStructuredJson(
+      '{ /* mint noise */ "kind":"l4_replay_v0", // ok\n"success": true, }',
+    ) as { success: boolean }
+    assert.equal(commented.success, true)
+
+    const truncatedRaw =
+      'Sure.\n{"kind":"l4_qa_v0","items":[{"id":"q1","question":"task?","answer":"fix add","correct":true},{"id":"q2","question":"edit?","answer":"a+b"'
+    assert.ok(extractJsonFromProse(truncatedRaw)?.startsWith('{'))
+    const repaired = repairNearJson(extractJsonFromProse(truncatedRaw)!)
+    const salvaged = parseStructuredJson(truncatedRaw) as {
+      items: Array<{ id: string; correct?: boolean }>
+    }
+    assert.ok(salvaged.items.length >= 1, repaired)
+    assert.equal(salvaged.items[0]?.id, 'q1')
+  })
 })
 

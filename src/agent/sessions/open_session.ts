@@ -284,26 +284,176 @@ export function composeSessionPrompt(input: SessionPromptInput): string {
   return chunks.join('\n\n')
 }
 
+/**
+ * Parse model JSON that may be fenced, wrapped in prose, near-JSON
+ * (trailing commas, comments), or truncated. Prefer salvage over throw.
+ */
 export function parseStructuredJson(text: string): unknown {
   const trimmed = text.trim()
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
   const candidate = (fenced?.[1] ?? trimmed).trim()
-  try {
-    return JSON.parse(candidate) as unknown
-  } catch (first) {
-    const extracted = extractJsonFromProse(candidate)
-    if (extracted !== undefined) {
+  const attempts: string[] = [candidate]
+  const extracted = extractJsonFromProse(candidate)
+  if (extracted !== undefined && extracted !== candidate) attempts.push(extracted)
+  // Also try the first fenced block even when outer prose remains (multi-fence).
+  if (fenced?.[1] !== undefined) {
+    const innerExtract = extractJsonFromProse(fenced[1].trim())
+    if (innerExtract !== undefined) attempts.push(innerExtract)
+  }
+
+  let lastErr: unknown
+  const seen = new Set<string>()
+  for (const raw of attempts) {
+    for (const variant of [raw, repairNearJson(raw)]) {
+      if (seen.has(variant)) continue
+      seen.add(variant)
       try {
-        return JSON.parse(extracted) as unknown
-      } catch {
-        // fall through to original error
+        return JSON.parse(variant) as unknown
+      } catch (err) {
+        lastErr = err
       }
     }
-    throw first
   }
+  throw lastErr instanceof Error ? lastErr : new Error('invalid JSON')
 }
 
-/** Pull the first balanced `{…}` / `[…]` from prose (L4 models often wrap JSON). */
+/**
+ * Soft repairs for mint near-JSON: strip comments, trailing commas,
+ * and close truncated braces/brackets/strings when the model cut off mid-object.
+ */
+export function repairNearJson(text: string): string {
+  let s = text.trim()
+  // Drop a leading "json" label some models emit after a fence strip.
+  if (/^json\b/i.test(s)) s = s.replace(/^json\b\s*/i, '')
+  s = stripJsonComments(s)
+  s = stripTrailingCommas(s)
+  s = closeTruncatedJson(s)
+  s = stripTrailingCommas(s)
+  return s.trim()
+}
+
+function stripJsonComments(text: string): string {
+  let out = ''
+  let inString = false
+  let escape = false
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!
+    const next = text[i + 1]
+    if (inString) {
+      out += ch
+      if (escape) {
+        escape = false
+        continue
+      }
+      if (ch === '\\') {
+        escape = true
+        continue
+      }
+      if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      out += ch
+      continue
+    }
+    if (ch === '/' && next === '/') {
+      i += 2
+      while (i < text.length && text[i] !== '\n') i += 1
+      if (i < text.length) out += '\n'
+      continue
+    }
+    if (ch === '/' && next === '*') {
+      i += 2
+      while (i + 1 < text.length && !(text[i] === '*' && text[i + 1] === '/')) i += 1
+      i += 1 // skip closing /
+      continue
+    }
+    out += ch
+  }
+  return out
+}
+
+/** Remove `,` that sit before `}` / `]` (common mint failure). */
+function stripTrailingCommas(text: string): string {
+  let out = ''
+  let inString = false
+  let escape = false
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!
+    if (inString) {
+      out += ch
+      if (escape) {
+        escape = false
+        continue
+      }
+      if (ch === '\\') {
+        escape = true
+        continue
+      }
+      if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      out += ch
+      continue
+    }
+    if (ch === ',') {
+      let j = i + 1
+      while (j < text.length && /[\s\n\r\t]/.test(text[j]!)) j += 1
+      if (j < text.length && (text[j] === '}' || text[j] === ']')) {
+        continue // drop trailing comma
+      }
+    }
+    out += ch
+  }
+  return out
+}
+
+/**
+ * If the model truncated mid-JSON, close open strings then push missing
+ * `]` / `}` in LIFO order. No-op when already balanced.
+ */
+function closeTruncatedJson(text: string): string {
+  const stack: string[] = []
+  let inString = false
+  let escape = false
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!
+    if (inString) {
+      if (escape) {
+        escape = false
+        continue
+      }
+      if (ch === '\\') {
+        escape = true
+        continue
+      }
+      if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch === '{') stack.push('}')
+    else if (ch === '[') stack.push(']')
+    else if (ch === '}' || ch === ']') {
+      if (stack.length > 0 && stack[stack.length - 1] === ch) stack.pop()
+    }
+  }
+  let out = text
+  if (inString) out += '"'
+  while (stack.length > 0) out += stack.pop()!
+  return out
+}
+
+/**
+ * Pull the first `{…}` / `[…]` from prose (L4 models often wrap JSON).
+ * If truncated (depth never returns to 0), still return the slice so
+ * repairNearJson can close it.
+ */
 export function extractJsonFromProse(text: string): string | undefined {
   const startObj = text.indexOf('{')
   const startArr = text.indexOf('[')
@@ -348,6 +498,8 @@ export function extractJsonFromProse(text: string): string | undefined {
       if (depth === 0) return text.slice(start, i + 1)
     }
   }
+  // Truncated: hand the open slice to repairNearJson.
+  if (depth > 0) return text.slice(start)
   return undefined
 }
 
