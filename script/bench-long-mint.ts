@@ -16,6 +16,11 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgv, runCli } from '../src/service/cli.ts'
+import { loadLocalEnvFile } from '../src/utils/env.ts'
+
+// Same as run-distill.ts: load cwd .env so --with-l4 sees MODEL_* / API_*.
+// Never log values.
+loadLocalEnvFile()
 
 const ROOT = process.cwd()
 const TIMEOUT_ENV = 'TRACE_DISTILLER_SESSION_TIMEOUT_MS'
