@@ -10,6 +10,14 @@ import {
   KEEP_RATIO_FLOOR,
   KEEP_FLOOR_MIN_ORIGINAL_TOKENS,
   KEEP_RATIO_SOFT_CAP,
+  LONG_CUT_PROFILE,
+  LONG_DEAD_END_MAX_REPRESENTATIVE,
+  LONG_LABEL_WINDOW_SIZE,
+  MULTI_DEAD_END_CUT_PROFILE,
+  SHORT_CUT_PROFILE,
+  SHORT_DEAD_END_MAX_REPRESENTATIVE,
+  SHORT_LABEL_WINDOW_SIZE,
+  cutProfileForBin,
 } from '../../src/constant/compression.ts'
 import { DEFAULT_SCENARIO, resolveSkillRoute, SKILL_ROUTE } from '../../src/constant/skill_route.ts'
 import {
@@ -52,6 +60,18 @@ describe('locked defaults', () => {
     assert.equal(DEFAULT_CUT_PROFILE.span.max_gap_segments, 3)
     assert.equal(DEFAULT_CUT_PROFILE.dead_end.max_representative, 3)
     assert.equal(DEFAULT_CUT_PROFILE.dead_end.summary_max_chars, 80)
+    assert.equal(SHORT_DEAD_END_MAX_REPRESENTATIVE, 5)
+    assert.equal(LONG_DEAD_END_MAX_REPRESENTATIVE, 2)
+    assert.equal(SHORT_LABEL_WINDOW_SIZE, 8)
+    assert.equal(LONG_LABEL_WINDOW_SIZE, 6)
+    assert.equal(SHORT_CUT_PROFILE.dead_end.max_representative, 5)
+    assert.equal(SHORT_CUT_PROFILE.keep_ratio_floor, null)
+    assert.equal(LONG_CUT_PROFILE.dead_end.max_representative, 2)
+    assert.equal(LONG_CUT_PROFILE.keep_ratio_floor, 0.08)
+    assert.equal(MULTI_DEAD_END_CUT_PROFILE.dead_end.max_representative, 3)
+    assert.equal(cutProfileForBin('short').id, 'bin:short')
+    assert.equal(cutProfileForBin('long').id, 'bin:long')
+    assert.equal(cutProfileForBin('multi_dead_end').id, 'bin:multi_dead_end')
     assert.equal(BENCHMARK_PASS.compression_ratio_max, 0.3)
     assert.equal(BENCHMARK_PASS.key_step_recall_min, 0.95)
     assert.equal(BENCHMARK_PASS.replay_min, 0.9)

@@ -54,18 +54,36 @@ export const LLM_LABEL_FRACTION_HINT = 0.3
 
 export const DEFAULT_PROFILE_ID = 'default'
 
-/** 代表性死胡同最多留几条。已拍板：3。 */
+/** 代表性死胡同最多留几条。已拍板：3（default / multi）。 */
 export const DEAD_END_MAX_REPRESENTATIVE = 3
+
+/** Short valve: less aggressive dead_end collapse (keep more reps visible). */
+export const SHORT_DEAD_END_MAX_REPRESENTATIVE = 5
+
+/** Long valve: stronger dead_end collapse. */
+export const LONG_DEAD_END_MAX_REPRESENTATIVE = 2
 
 /** 死胡同一句话摘要最大字符数。已拍板：80。 */
 export const DEAD_END_SUMMARY_MAX_CHARS = 80
 
+/** Short valve: default window (less aggressive than long's smaller windows). */
+export const SHORT_LABEL_WINDOW_SIZE = 8
+
+/** Long / multi valve: smaller window → more aggressive labeling. */
+export const LONG_LABEL_WINDOW_SIZE = 6
+
+function sharedLabels(): Pick<CutProfile, 'keep_labels' | 'collapse_labels' | 'drop_labels' | 'compression_ratio'> {
+  return {
+    keep_labels: ['key_decision', 'useful_exploration'],
+    collapse_labels: ['dead_end'],
+    drop_labels: ['routine'],
+    compression_ratio: { ...COMPRESSION_RATIO_TARGET },
+  }
+}
+
 export const DEFAULT_CUT_PROFILE: CutProfile = {
   id: DEFAULT_PROFILE_ID,
-  keep_labels: ['key_decision', 'useful_exploration'],
-  collapse_labels: ['dead_end'],
-  drop_labels: ['routine'],
-  compression_ratio: COMPRESSION_RATIO_TARGET,
+  ...sharedLabels(),
   span: {
     max_gap_segments: SPAN_MAX_GAP_SEGMENTS,
     fill_with_representative_dead_end: true,
@@ -74,4 +92,75 @@ export const DEFAULT_CUT_PROFILE: CutProfile = {
     max_representative: DEAD_END_MAX_REPRESENTATIVE,
     summary_max_chars: DEAD_END_SUMMARY_MAX_CHARS,
   },
+}
+
+/**
+ * Short-bin CutProfile: soft cost (via costGateApplies), less aggressive cut —
+ * more dead_end representatives kept as collapse, larger label window, no keep floor.
+ */
+export const SHORT_CUT_PROFILE: CutProfile = {
+  id: 'bin:short',
+  ...sharedLabels(),
+  span: {
+    max_gap_segments: SPAN_MAX_GAP_SEGMENTS,
+    fill_with_representative_dead_end: true,
+  },
+  dead_end: {
+    max_representative: SHORT_DEAD_END_MAX_REPRESENTATIVE,
+    summary_max_chars: DEAD_END_SUMMARY_MAX_CHARS,
+  },
+  label_window_size: SHORT_LABEL_WINDOW_SIZE,
+  keep_ratio_floor: null,
+}
+
+/**
+ * Long-bin CutProfile: stronger dead_end collapse, aggressive hole windows,
+ * keep floor ~8–15%.
+ */
+export const LONG_CUT_PROFILE: CutProfile = {
+  id: 'bin:long',
+  ...sharedLabels(),
+  span: {
+    max_gap_segments: SPAN_MAX_GAP_SEGMENTS,
+    fill_with_representative_dead_end: true,
+  },
+  dead_end: {
+    max_representative: LONG_DEAD_END_MAX_REPRESENTATIVE,
+    summary_max_chars: DEAD_END_SUMMARY_MAX_CHARS,
+  },
+  label_window_size: LONG_LABEL_WINDOW_SIZE,
+  keep_ratio_floor: KEEP_RATIO_FLOOR,
+}
+
+/**
+ * Multi-dead-end bin: strong collapse but retain up to DEAD_END_MAX_REPRESENTATIVE
+ * reps (track needs visible retries); same keep floor / window as long.
+ */
+export const MULTI_DEAD_END_CUT_PROFILE: CutProfile = {
+  id: 'bin:multi_dead_end',
+  ...sharedLabels(),
+  span: {
+    max_gap_segments: SPAN_MAX_GAP_SEGMENTS,
+    fill_with_representative_dead_end: true,
+  },
+  dead_end: {
+    max_representative: DEAD_END_MAX_REPRESENTATIVE,
+    summary_max_chars: DEAD_END_SUMMARY_MAX_CHARS,
+  },
+  label_window_size: LONG_LABEL_WINDOW_SIZE,
+  keep_ratio_floor: KEEP_RATIO_FLOOR,
+}
+
+export type ProfileBin = 'short' | 'long' | 'multi_dead_end'
+
+/** Bin-aware CutProfile defaults (the short/long valve). */
+export function cutProfileForBin(bin: ProfileBin): CutProfile {
+  switch (bin) {
+    case 'short':
+      return SHORT_CUT_PROFILE
+    case 'long':
+      return LONG_CUT_PROFILE
+    case 'multi_dead_end':
+      return MULTI_DEAD_END_CUT_PROFILE
+  }
 }

@@ -81,6 +81,7 @@ Score = 压缩率得分 × 关键步召回率 × 重放成功率
 - **成本只计洞 A + 洞 B**，不含 L4（QA / 重放 / review）token。
 - **Cost soft gate（真 mint）**：`short` 档，或 `original_tokens ≤ 25_000`（`COST_SOFT_ORIGINAL_TOKENS`）时，`distill_cost_ratio` **照常写入记分板**，但 **不因 >0.3 判 fail / 不拖垮 composite**——洞 A+B 固定开销在短样上几乎必然 >0.3。更大 long 样仍用硬门槛 0.3。
 - **Keep 地板**：`original_tokens≥5k` 时 `KEEP_RATIO_FLOOR=0.08`（软顶 `KEEP_RATIO_SOFT_CAP=0.15`），避免 long/multi 被剪到 <5%；短样不强制抬 keep，以免单段跳过 0.3。
+- **短 / 长阀门（CutProfile bin valve）**：`cutProfileForBin(bin)` 为三档提供默认 CutProfile——**short**：`max_representative=5`、更大/默认洞窗、`keep_ratio_floor=null`（少剪 + 已有 soft cost）；**long**：`max_representative=2`、更小洞窗（更积极）、`keep_ratio_floor≈0.08`（目标带 8–15%）；**multi_dead_end**：代表上限 3 + 同 long 的地板/洞窗。`bench --bin short|long|multi_dead_end` 或 `--bins a,b` 只跑所选赛道，避免短长混跑挂起。长 mint 建议 `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`；快捷：`bun run bench:long:mint`。
 - **QA 0/0**：视为 skipped（不是 fail）。
 - **L4 JSON**：`parseStructuredJson` 会从 prose 抽 JSON；replay 解析失败时若 workspace `verify[]` 已过可恢复 success。
 
@@ -131,7 +132,7 @@ M2：六项齐全，复合分当发布门禁，短 / 长分开报。M3+：多死
 ```text
 node script/run-distill.ts distill <trace.jsonl> [--report out.html]
 node script/run-distill.ts eval <trace_id>
-node script/run-distill.ts bench [--dir benchmark/datasets]
+node script/run-distill.ts bench [--dir benchmark/datasets] [--bin long] [--bins short,long] [--with-l4]
 ```
 
 M1 可以 `distill` 顺带盲测；分档报分走 `bench`。不强求满数据集。

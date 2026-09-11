@@ -12,7 +12,9 @@
     "distill": "node --experimental-strip-types script/run-distill.ts",
     "distill:example": "node --experimental-strip-types script/run-distill.ts distill examples/add-fix.jsonl --no-llm --sqlite /tmp/distiller.sqlite --report /tmp/add-fix.report.html --live-dump /tmp/distiller-live",
     "bench:fake": "node --experimental-strip-types script/run-distill.ts bench --no-llm --fake-l4",
-    "bench:m1": "node --experimental-strip-types script/run-distill.ts bench --no-llm --fake-l4"
+    "bench:m1": "node --experimental-strip-types script/run-distill.ts bench --no-llm --fake-l4",
+    "bench:long": "node --experimental-strip-types script/run-distill.ts bench --no-llm --fake-l4 --bin long --out-dir benchmark/out-long",
+    "bench:long:mint": "node --experimental-strip-types script/bench-long-mint.ts"
   },
   "dependencies": {
     "@mariozechner/pi-ai": "^0.73.1",
