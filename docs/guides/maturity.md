@@ -24,7 +24,7 @@ bun run bench:long:mint   # 真 mint long-only；默认 SESSION_TIMEOUT_MS=30000
 
 | 能力 | 怎么跑 | 说明 |
 |------|--------|------|
-| **离线蒸馏（假后端 agent 路径）** | `bun run distill:example` 或 `node script/run-distill.ts distill … --fake-l4` | ADR-0010：无 `--no-llm`；FakeSessionBackend 走洞 A/B；写出 Training/Playback、HTML 报告、可选 live dump |
+| **离线蒸馏（假后端 agent 路径）** | `bun run distill:example` 或 `node script/run-distill.ts distill … --fake-l4` | ADR-0010 Phase 2：无 `--no-llm`；FakeSessionBackend 走洞 A + cut-brain（可选 `apply_rules_hint`）；写出 Training/Playback、HTML 报告、可选 live dump |
 | **假 L4 记分板 + m1** | `bun run bench:fake` / `bun run bench:m1` | `bench --fake-l4`；stdout JSON + `benchmark/out/scoreboard.md`；有 `m1` 列（压缩率得分 × 关键步召回；cost 失败不归零 m1） |
 | **真 mint 重放 + 校验（接口）** | `bench --with-l4`（需本机 `.env`）+ workspace fixture | L4 会话硬超时；mapped workspace 有 `verify[]` 时门禁重放；密钥不进仓库 |
 

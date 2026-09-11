@@ -34,11 +34,11 @@ ADR-0008 把 Distiller 定为「确定性流水线 + 两个 agent 洞」，并�
 - 文档与 `AGENTS.md` 不再写「这不是一个 agent / 编排永远不用 LLM / `--no-llm` 一等公民」。
 - `resolveDistillMode` 拒绝 `--no-llm`；无后端且无洞模型 env 时要求 agent 路径（报错），不静默退回规则-only。
 - Bench 防挂：无 `--with-l4` 时默认注入 `FakeSessionBackend`（agent 路径 + 假后端），不再靠 `--no-llm`。
-- **Follow-up PR（本 PR 不重写）**：把 orchestrator 收成完整 agent-led ReAct / cut-brain 会话循环（agent 调规则工具 → mask → 再决策 → 确定性 assemble/span）。本 PR 只落地 ADR、移除 no_llm、tool_mask + 接线骨架与文档。
+- **Phase 2（本 follow-up）**：cut-brain ReAct 会话拥有未决议标签；`apply_rules_hint` / `keep_segment` 经 tool_mask；orchestrator 不再静默 `applyRules` 并进最终 decisions。Admission / assemble / span 仍确定性。
 
 ## TODO / skeleton（follow-up）
 
-- [ ] `src/agent/sessions/` 内 cut-brain session loop（propose cut → tool calls → mask → iterate）
-- [ ] 将 `applyRules` / segmenter 暴露为 agent 可调用工具（可选 hints）
-- [ ] Fail-Closed：显式 `keep` 工具 + unresolved 直到 agent 决议
-- [ ] warrant/training store 存 full tool payloads；prompt 只吃 masked
+- [x] `src/agent/sessions/` 内 cut-brain session loop（propose cut → tool calls → mask → iterate）
+- [x] 将 `applyRules` 暴露为 agent 可调用工具 `apply_rules_hint`（可选 hints；segmenter 仍为预处理，不是工具）
+- [x] Fail-Closed：显式 `keep_segment` + unresolved 直到 agent 决议（编排器 failure policy）
+- [ ] warrant/training store 存 full tool payloads；prompt 只吃 masked（store 仍 M2+）

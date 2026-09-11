@@ -82,6 +82,32 @@ export function buildHoleCustomTools(
     )
   }
 
+  if (want.has('keep_segment')) {
+    out.push(
+      defineTool({
+        name: 'keep_segment',
+        label: 'Keep segment',
+        description:
+          'Explicitly keep one unresolved segment_id (ADR-0010). Prefer when you are sure the step must stay without assigning a four-class exploration label.',
+        promptSnippet: 'Explicit keep for one window segment_id',
+        promptGuidelines: [
+          'Call keep_segment for ids you want Fail-Closed-style keep without inventing a drop/collapse label.',
+          'Do not invent segment ids outside the open set.',
+        ],
+        parameters: Type.Object({
+          segment_id: Type.String({ description: 'Segment id to keep' }),
+          confidence: Type.Optional(Type.Number({ description: 'Confidence in [0, 1]; default 1' })),
+        }),
+        async execute(_toolCallId, params) {
+          return ack('keep_segment', {
+            segment_id: params.segment_id,
+            confidence: params.confidence ?? 1,
+          })
+        },
+      }),
+    )
+  }
+
   if (want.has('read_segment')) {
     out.push(
       defineTool({
@@ -100,6 +126,33 @@ export function buildHoleCustomTools(
             segment_id: params.segment_id,
             focus: 'full',
             text: '',
+          })
+        },
+      }),
+    )
+  }
+
+  if (want.has('apply_rules_hint')) {
+    out.push(
+      defineTool({
+        name: 'apply_rules_hint',
+        label: 'Apply rules hint',
+        description:
+          'Run deterministic L1 rules as an optional hint (ADR-0010). Returns a masked summary + unresolved ids. Calling this endorses adopting rule labels for resolved ids; unresolved still need label_segment or keep_segment.',
+        promptSnippet: 'Optional rules hint → masked summary + unresolved ids',
+        promptGuidelines: [
+          'Call at most once early if you want rule heuristics applied.',
+          'Do not treat rules as a silent product path; unresolved must still be labeled or kept explicitly.',
+        ],
+        parameters: Type.Object({}),
+        async execute(_toolCallId, _params) {
+          // Real applyRules runs in cut_brain when interpreting the tool call.
+          return ack('apply_rules_hint', {
+            kind: 'apply_rules_hint',
+            applied: false,
+            resolved_count: 0,
+            unresolved_ids: [] as string[],
+            summary: 'pending: cut-brain will apply rules',
           })
         },
       }),

@@ -90,9 +90,12 @@ describe('data sqlite', () => {
       assert.deepEqual(segs[0]?.reads, out.view.segments[0]?.reads)
 
       const coverage = ruleCoverage(db, raw.meta.trace_id)
+      const ruledN = out.decisions.filter((d) => d.source.kind === 'rule').length
+      const llmN = out.decisions.filter((d) => d.source.kind === 'llm').length
       assert.equal(coverage.total, out.view.segments.length)
-      assert.equal(coverage.ruled, out.decisions.length)
-      assert.equal(coverage.llm, 0)
+      assert.equal(coverage.ruled, ruledN)
+      assert.equal(coverage.llm, llmN)
+      assert.ok(ruledN > 0)
       assert.equal(coverage.fail_closed, out.unresolved_ids.length)
     } finally {
       db.close()

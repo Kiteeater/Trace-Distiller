@@ -10,7 +10,7 @@
 
 **目的**
 
-- 按固定顺序跑完：准入后的 RawTrace → 切段 → 规则 → 洞 A → 洞 B 逐窗 → 凭证 → assembler →（可选）盲测回填 → 交给 service 去导出/出报告。
+- 按固定顺序跑完：准入后的 RawTrace → 切段 → 洞 A → cut-brain（可选 `apply_rules_hint`）→ 凭证 → assembler →（可选）盲测回填 → 交给 service 去导出/出报告。
 - 决定：切多少窗、失败怎么重试、何时 Fail-Closed Keep、review 回填哪几段。这些全是代码。
 - 查 `SKILL_ROUTE`，把 skill 路径传给洞 B，不让 LLM 选策略文件。
 
@@ -29,7 +29,7 @@
 
 ```text
 ① 洞 A skeletonPass：头 1–2 turn + 验证点附近 → 意图 v0 + 场景码 + 骨架 v0
-② 洞 B labelWindow：未决段按窗打标；窗可回报骨架补丁 → 代码 merge 成 v1
+② cut-brain（洞 B 角色）：agent 可调 `apply_rules_hint`；未决 `label_segment` / `keep_segment`；工具结果 mask 后迭代
 ③ 凭证：基于骨架 v1 + 全部 LabelDecision 写出 CutWarrant
      （建议：洞 A 二次调用 writeWarrant；若实现选择纯代码汇总，也必须仍走本步骤的数据形状）
 ④ assembler：执行凭证 + span；必要时洞 B check_continuity
@@ -66,8 +66,8 @@ orchestrator 是 async 的唯一原因：洞 A/B 是 IO。它自己的分支逻�
 **做**
 
 - 调 adapters 之外的 biz 函数（adapter 也可由 service 先调再传入；两种都可以，但 GT 检查必须已发生）。
-- 把规则已决议段跳过洞 B。
-- 窗口切分：`unresolved_ids` 按 `LABEL_WINDOW_SIZE` 切，串行或有限并行（并行不得打乱 merge 的确定性；建议先串行）。
+- 不把 `applyRules` 静默并进最终 decisions；规则仅当 cut-brain 调用 `apply_rules_hint`。
+- cut-brain 内部按 `LABEL_WINDOW_SIZE` / `CUT_BRAIN_MAX_ROUNDS` 迭代未决 id。
 - 窗失败：解析失败或超 token → 该窗 `failClosedKeep`，记入 warrant source=`fail_closed_keep`。
 - 场景码 → skill：查表，查不到按 constant 规定失败或默认 skill。
 - review 回填循环：最多 `REVIEW_MAX_ROUNDS`；回填名单来自「骨架节点 ∩ 被 drop/collapse 的段」，不是 LLM 指定。

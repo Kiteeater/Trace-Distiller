@@ -3,22 +3,32 @@ import type { RawTrace } from '../types/raw_trace.ts'
 import type { SegmentCard } from '../types/segment.ts'
 
 /**
- * 蒸馏洞工具闭集（已拍板）。
- * 判断力工具只有两个；read_segment 是确定性取数，不是第三个判断力工具。
- * 纯函数 handler：校验枚举 / 取数。不挂 pi、不写 SQLite、不做 keep/drop。
- * rationale 不进凭证。read_segment 只返回本段。一窗一会话。Fail-Closed Keep 在编排器。
+ * 蒸馏洞 / cut-brain 工具闭集已拍板（ADR-0010 扩展 LOCKED）。
+ * 判断力：label_segment / check_continuity / keep_segment。
+ * 取数 / hint：read_segment / apply_rules_hint（规则是可选工具，不是独立 --no-llm 路径）。
+ * 纯函数 handler：校验枚举 / 取数。不挂 pi、不写 SQLite、不做 keep/drop 落地。
+ * rationale 不进凭证。read_segment 只返回本段。Fail-Closed Keep 在编排器（agent/tool failure policy）。
  */
 export const HOLE_TOOL_STATUS = 'LOCKED' as const
 
-export const HOLE_JUDGMENT_TOOL_NAMES = ['label_segment', 'check_continuity'] as const
+export const HOLE_JUDGMENT_TOOL_NAMES = [
+  'label_segment',
+  'check_continuity',
+  'keep_segment',
+] as const
 
-export const HOLE_FETCH_TOOL_NAMES = ['read_segment'] as const
+export const HOLE_FETCH_TOOL_NAMES = ['read_segment', 'apply_rules_hint'] as const
 
 export const HOLE_TOOL_NAMES = [
   'label_segment',
   'check_continuity',
+  'keep_segment',
   'read_segment',
+  'apply_rules_hint',
 ] as const
+
+/** cut-brain / 洞 B 共用的全量工具名。 */
+export const CUT_BRAIN_TOOL_NAMES = HOLE_TOOL_NAMES
 
 export type HoleJudgmentToolName = (typeof HOLE_JUDGMENT_TOOL_NAMES)[number]
 export type HoleFetchToolName = (typeof HOLE_FETCH_TOOL_NAMES)[number]
@@ -56,6 +66,17 @@ export interface ReadSegmentAccepted {
   segment_id: string
   focus: 'full'
   text: string
+}
+
+export interface KeepSegmentAccepted {
+  segment_id: string
+  /** Explicit agent keep (ADR-0010); maps to a keep Label for writeWarrant. */
+  confidence: number
+}
+
+export interface ApplyRulesHintAccepted {
+  /** Empty args OK; cut-brain runs applyRules when interpreting the call. */
+  scope: 'all'
 }
 
 export function handleLabelSegment(
@@ -125,6 +146,33 @@ export function handleReadSegment(
     parts.push(turn.content)
   }
   return { ok: true, segment_id, focus: 'full', text: parts.join('\n') }
+}
+
+export function handleKeepSegment(
+  args: unknown,
+  windowIds?: ReadonlySet<string>,
+): HoleToolResult<KeepSegmentAccepted> {
+  const rec = asRecord(args)
+  if (rec === undefined) return err('keep_segment args must be an object')
+  const segment_id = requiredId(rec.segment_id)
+  if (segment_id === undefined) return err('keep_segment requires segment_id')
+  if (windowIds !== undefined && !windowIds.has(segment_id)) {
+    return err('keep_segment unknown segment_id')
+  }
+  const confidence = rec.confidence
+  const conf =
+    typeof confidence === 'number' && Number.isFinite(confidence) && confidence >= 0 && confidence <= 1
+      ? confidence
+      : 1
+  return { ok: true, segment_id, confidence: conf }
+}
+
+/** Args are optional/empty; validates shape only. applyRules runs in cut_brain. */
+export function handleApplyRulesHint(args: unknown): HoleToolResult<ApplyRulesHintAccepted> {
+  if (args === undefined || args === null) return { ok: true, scope: 'all' }
+  const rec = asRecord(args)
+  if (rec === undefined) return err('apply_rules_hint args must be an object or empty')
+  return { ok: true, scope: 'all' }
 }
 
 function err(error: string): HoleToolErr {

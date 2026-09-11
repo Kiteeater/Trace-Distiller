@@ -32,14 +32,14 @@
 
 # 一、蒸馏洞工具
 
-> **状态：已拍板闭集。** 判断力工具两个 + 确定性取数 `read_segment`。handler 是纯函数（校验枚举 / 取数），不接 pi。
+> **状态：LOCKED 闭集（ADR-0010 Phase 2）。** 判断力：`label_segment` / `check_continuity` / `keep_segment`。取数 / hint：`read_segment` / `apply_rules_hint`。handler 是纯函数，不接 pi。ACK 经 `tool_mask`。
 
 流水线里唯一允许 LLM 动手的地方是两个 **Agent 洞**（[ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)）。洞里的模型不能「写一篇我认为该删什么」，只能通过工具交结构化判断。判断力工具只有两个；另有一个确定性取数通道。
 
 ## 已定结论
 
-1. **判断力工具只有两个**（[architecture.md](../architecture.md)）：`label_segment`、`check_continuity`。不加第三个判断力工具。工具越多，洞里的模型越分心，成本卖点就没了。
-2. **`read_segment` 不是判断力工具**。它是确定性取数：按 segment id 把 RawTrace 原文拉上来，把注意力从卡片升到 `full`。由 extension 提供、sessions 接到 RawTrace。架构要的「两个判断工具」仍然成立。
+1. **判断力工具**：`label_segment`、`check_continuity`，外加 ADR-0010 显式 `keep_segment`（不是 assembler 执行 keep）。不加批量 label / 自动 drop。
+2. **`read_segment` 不是判断力工具**。确定性取数：按 segment id 拉 RawTrace 原文。`apply_rules_hint` 同样是确定性 hint（包装 `applyRules`），只有 agent 调用才采纳规则标签。
 3. **LLM 只产出结构化判断，裁剪由代码执行**（ADR-0009）。没有 `edit_trace`、没有 `drop_segment`、没有 `set_profile`。去留写在 CutWarrant 里，assembler 落地。
 4. **注意力是拉取式，不是推送式**。默认给卡片（规则已决议的噪音段只给 line）；模型对某段没把握才 `read_segment`。token 花在它主动关心的段上。禁止 orchestrator 预塞全量原文。
 5. **衔接检查复用洞 B，不是第三洞**。`check_continuity` 挂在洞 B 会话上；编排器在 assembler 需要时调用。
@@ -51,19 +51,21 @@
 
 ## 怎么用 / 怎么跑（洞内）
 
-洞里实际能调用的就这三件事：
+洞 / cut-brain 里实际能调用的：
 
 | 名字 | 性质 | 谁用 | 交什么 |
 |------|------|------|--------|
-| `label_segment` | 判断 | 洞 B 逐窗打标 | 这一段的四类 Label + 置信度（可选短理由，给调试 / 报告，不是改写段内容） |
-| `check_continuity` | 判断 | 重组时的衔接检查（洞 B 会话） | 相邻两段是否够得着、分数、理由。对齐「从前一步能否自然推出后一步」，不是文笔 |
-| `read_segment` | 确定性取数 | 洞 B 需要看原文时 | 只返回**这一段**的 RawTrace 原文。想看邻段就再调一次 |
+| `label_segment` | 判断 | cut-brain / 洞 B | 这一段的四类 Label + 置信度 |
+| `check_continuity` | 判断 | 衔接检查（洞 B 会话） | 相邻两段是否够得着、分数、理由 |
+| `keep_segment` | 判断 | cut-brain 显式 keep | 未决议段明确 keep（ADR-0010）；不跑 assembler |
+| `read_segment` | 确定性取数 | 需要看原文时 | 只返回**这一段**的 RawTrace 原文 |
+| `apply_rules_hint` | 确定性 hint | cut-brain 可选 | 掩码摘要 + unresolved ids；调用即采纳规则已决议标签 |
 
 ### 为什么是这个闭集
 
 洞的工作只有两类判断：这段是什么标签；剪完相邻步能不能接上。取数是为了让判断不必一上来吞全文。再加任何「执行类」工具，都会把裁剪权从代码抢回到模型——那正是 ADR-0009 要堵的。
 
-规则层已经标死的段**根本不进洞 B**（见 [ingest-and-preprocess.md](./ingest-and-preprocess.md)）。模型在卡片索引上也许能看见 line 级噪音，skill 应写明：忽略，不要再标一遍。
+规则层不再静默抢先打标。agent 可调用 `apply_rules_hint` 采纳 L1 规则；未调用则全部保持 unresolved，直到 `label_segment` / `keep_segment`。
 
 模型没调 `label_segment` 就结束、或输出解析失败 / 超 token：编排器 **Fail-Closed Keep**（宁多勿漏），而不是 extension 填一个默认死胡同。漏关键决策会打穿关键步召回。
 
@@ -86,7 +88,7 @@
 | 出现位置 | pi 会话的 extension | RawTrace 的 tool_call / tool_result |
 | 调用者 | 洞 A/B 里的打标 / 衔接模型 | 当时干活的那个 coding agent |
 | 作用 | 交 Label / 交连贯性 / 拉本段原文 | 读文件、改代码、跑测试…… |
-| Distiller 会不会再跑一遍 | 会（仅上表三个） | **不会** |
+| Distiller 会不会再跑一遍 | 会（仅上表闭集） | **不会** |
 
 对方工具的名字、参数、返回，是切段和规则的输入（失败调用、重复读、读写路径）。我们把它们当成日志来读，不把 Distiller 洞变成「原 agent 的运行时」。评测重放（L4）若按剪后路径重做任务，那是**干净会话里的新 agent** 自己去调工具，仍然不是 Distiller 代理对方当时的那次调用。
 
@@ -96,8 +98,8 @@
 
 明确不加：
 
-- **第三个判断力工具**（包括「一窗打完返回」的批量 label、自动 keep/drop）。
-- **`edit_trace` / `drop_segment` / `keep_segment` / `set_profile`**。裁剪权和 profile 在代码 / CLI。
+- **批量 label / 自动 drop**（一次不给 id 打完整窗）。
+- **`edit_trace` / `drop_segment` / `set_profile`**。裁剪落地和 profile 在代码 / CLI。`keep_segment` 只交结构化 keep 判断。
 - **`rewrite_skill`**。目录可以先在，工具 M3+ 再说。
 - **Bash / 读用户仓库 / 联网 / 跑测试**。洞里的模型没有这些。
 - **代理或重放对方工具**（Read、Edit、Bash、SWE-bench 评测脚本等）。

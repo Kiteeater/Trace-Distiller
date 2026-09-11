@@ -106,4 +106,28 @@ describe('tool_mask', () => {
     assert.equal(readDetails.masked, true)
     assert.equal(labelDetails.masked, true)
   })
+
+  it('masks keep_segment and apply_rules_hint without dumping ids dump as full payload', () => {
+    const keep = maskToolResult(
+      { kind: 'keep_segment', segment_id: 's0002', confidence: 0.95 },
+      { toolName: 'keep_segment' },
+    )
+    assert.match(keep.summary, /keep_segment s0002/)
+    assert.equal(keep.structure.kind, 'keep_segment')
+
+    const hint = maskToolResult(
+      {
+        kind: 'apply_rules_hint',
+        applied: true,
+        resolved_count: 3,
+        unresolved_ids: ['s0004', 's0005'],
+        summary: 'x'.repeat(800),
+      },
+      { toolName: 'apply_rules_hint' },
+    )
+    assert.equal(hint.structure.kind, 'apply_rules_hint')
+    assert.equal(hint.structure.resolved_count, 3)
+    assert.ok(hint.summary.length <= TOOL_MASK_DEFAULT_MAX_CHARS)
+    assert.match(hint.summary, /apply_rules_hint/)
+  })
 })

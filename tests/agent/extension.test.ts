@@ -8,7 +8,9 @@ import {
   HOLE_JUDGMENT_TOOL_NAMES,
   HOLE_TOOL_NAMES,
   HOLE_TOOL_STATUS,
+  handleApplyRulesHint,
   handleCheckContinuity,
+  handleKeepSegment,
   handleLabelSegment,
   handleReadSegment,
 } from '../../src/agent/extension.ts'
@@ -50,19 +52,27 @@ function raw(turns: RawTrace['turns']): RawTrace {
 describe('extension hole tool names', () => {
   it('exports LOCKED closed set without pi', () => {
     assert.equal(HOLE_TOOL_STATUS, 'LOCKED')
-    assert.deepEqual([...HOLE_JUDGMENT_TOOL_NAMES], ['label_segment', 'check_continuity'])
-    assert.deepEqual([...HOLE_FETCH_TOOL_NAMES], ['read_segment'])
+    assert.deepEqual([...HOLE_JUDGMENT_TOOL_NAMES], [
+      'label_segment',
+      'check_continuity',
+      'keep_segment',
+    ])
+    assert.deepEqual([...HOLE_FETCH_TOOL_NAMES], ['read_segment', 'apply_rules_hint'])
     assert.deepEqual([...HOLE_TOOL_NAMES], [
       'label_segment',
       'check_continuity',
+      'keep_segment',
       'read_segment',
+      'apply_rules_hint',
     ])
 
     const src = readFileSync(srcPath, 'utf8')
     assert.match(src, /已拍板/)
     assert.doesNotMatch(src, /createAgentSession/)
     assert.doesNotMatch(src, /@mariozechner\/pi/)
-    assert.doesNotMatch(src, /edit_trace|drop_segment|keep_segment/)
+    assert.doesNotMatch(src, /edit_trace|drop_segment/)
+    assert.match(src, /keep_segment/)
+    assert.match(src, /apply_rules_hint/)
   })
 })
 
@@ -140,5 +150,16 @@ describe('hole tool handlers', () => {
       assert.match(miss.error, /unknown segment_id/)
       assert.equal(miss.error.includes('secret B'), false)
     }
+  })
+
+  it('keep_segment accepts window ids; apply_rules_hint accepts empty args', () => {
+    const ok = handleKeepSegment({ segment_id: 's0001' }, new Set(['s0001']))
+    assert.deepEqual(ok, { ok: true, segment_id: 's0001', confidence: 1 })
+    const miss = handleKeepSegment({ segment_id: 's0009' }, new Set(['s0001']))
+    assert.equal(miss.ok, false)
+    const hint = handleApplyRulesHint({})
+    assert.equal(hint.ok, true)
+    const empty = handleApplyRulesHint(undefined)
+    assert.equal(empty.ok, true)
   })
 })

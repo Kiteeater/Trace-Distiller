@@ -23,7 +23,7 @@ export interface MaskToolResultOpts {
 /**
  * 将任意工具原始结果掩码为 agent 可读摘要。
  * - 长字符串截断并标注 truncated
- * - 已知洞工具形状（read_segment / label_segment / check_continuity）只保留 id / 标签 / 分数等，不回传全文
+ * - 已知洞工具形状（read_segment / label_segment / check_continuity / keep_segment / apply_rules_hint）只保留 id / 标签 / 分数 / 未决预览等，不回传全文
  * - 未知对象保留浅层标量键，嵌套大字段替换为长度提示
  */
 export function maskToolResult(raw: unknown, opts: MaskToolResultOpts = {}): MaskedToolResult {
@@ -39,6 +39,12 @@ export function maskToolResult(raw: unknown, opts: MaskToolResultOpts = {}): Mas
   }
   if (toolName === 'check_continuity' || isContinuityShape(raw)) {
     return maskContinuity(raw, raw_byte_len)
+  }
+  if (toolName === 'keep_segment' || isKeepSegmentShape(raw)) {
+    return maskKeepSegment(raw, raw_byte_len)
+  }
+  if (toolName === 'apply_rules_hint' || isApplyRulesHintShape(raw)) {
+    return maskApplyRulesHint(raw, maxChars, raw_byte_len)
   }
 
   if (typeof raw === 'string') {
@@ -156,6 +162,33 @@ function maskContinuity(raw: unknown, raw_byte_len: number): MaskedToolResult {
   return { summary, truncated: typeof rec.reason === 'string' && rec.reason.length > 120, raw_byte_len, structure }
 }
 
+function maskKeepSegment(raw: unknown, raw_byte_len: number): MaskedToolResult {
+  const rec = asRecord(raw) ?? {}
+  const structure: Record<string, unknown> = {
+    kind: 'keep_segment',
+    segment_id: rec.segment_id,
+    confidence: rec.confidence,
+  }
+  const summary = `keep_segment ${String(rec.segment_id)}@${String(rec.confidence ?? 1)}`
+  return { summary, truncated: false, raw_byte_len, structure }
+}
+
+function maskApplyRulesHint(raw: unknown, maxChars: number, raw_byte_len: number): MaskedToolResult {
+  const rec = asRecord(raw) ?? {}
+  const unresolved = Array.isArray(rec.unresolved_ids)
+    ? rec.unresolved_ids.filter((id): id is string => typeof id === 'string').slice(0, 24)
+    : []
+  const structure: Record<string, unknown> = {
+    kind: 'apply_rules_hint',
+    applied: rec.applied === true,
+    resolved_count: typeof rec.resolved_count === 'number' ? rec.resolved_count : 0,
+    unresolved_count: unresolved.length,
+    unresolved_ids_preview: unresolved,
+  }
+  const summaryBase = `apply_rules_hint applied=${String(structure.applied)} resolved=${String(structure.resolved_count)} unresolved=${String(unresolved.length)} ids=${JSON.stringify(unresolved)}`
+  return finalizeSummary(summaryBase, maxChars, raw_byte_len, structure)
+}
+
 function maskString(raw: string, maxChars: number, raw_byte_len: number): MaskedToolResult {
   const { text, truncated } = truncate(raw, maxChars)
   return {
@@ -224,6 +257,28 @@ function isContinuityShape(raw: unknown): boolean {
     typeof rec.left_id === 'string' &&
     typeof rec.right_id === 'string' &&
     typeof rec.score === 'number'
+  )
+}
+
+function isKeepSegmentShape(raw: unknown): boolean {
+  const rec = asRecord(raw)
+  if (rec === undefined) return false
+  if (rec.kind === 'keep_segment' && typeof rec.segment_id === 'string') return true
+  // ACK shape from keep_segment execute: segment_id + optional confidence, no label/text.
+  if (typeof rec.segment_id !== 'string') return false
+  if (typeof rec.label === 'string') return false
+  if (typeof rec.text === 'string') return false
+  if (typeof rec.left_id === 'string') return false
+  if (Array.isArray(rec.unresolved_ids)) return false
+  return typeof rec.confidence === 'number' || rec.confidence === undefined
+}
+
+function isApplyRulesHintShape(raw: unknown): boolean {
+  const rec = asRecord(raw)
+  return (
+    rec !== undefined &&
+    (rec.kind === 'apply_rules_hint' ||
+      (typeof rec.resolved_count === 'number' && Array.isArray(rec.unresolved_ids)))
   )
 }
 

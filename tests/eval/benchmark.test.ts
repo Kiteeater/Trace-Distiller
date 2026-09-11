@@ -197,6 +197,7 @@ describe('independent gold', () => {
       assert.doesNotMatch(src, /key-decisions/)
     }
     for (const name of [
+      'cut_brain.ts',
       'label_window.ts',
       'skeleton_pass.ts',
       'write_warrant.ts',
