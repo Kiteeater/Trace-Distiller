@@ -14,6 +14,7 @@ import {
 } from '../constant/compression.ts'
 import { LABEL_WINDOW_SIZE, REVIEW_MAX_ROUNDS } from '../constant/window.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../domain/cut_decision.ts'
+import { isSpanFailure } from '../domain/span_violation.ts'
 import type { LabelDecision } from '../domain/label_decision.ts'
 import { compressionRatio } from '../eval/metrics.ts'
 import { reviewAgainstPlan } from '../eval/review_fill.ts'
@@ -286,24 +287,28 @@ export function runBlindReviewFillIn(input: {
   profile: CutProfile
 }): { warrant: CutWarrant; assembled: AssembleOutput; rounds: number } {
   let warrant = input.warrant
-  let assembled = assemble({
+  let repaired = assembleRepairingSpan({
     raw: input.raw,
     view: input.view,
     warrant,
     profile: input.profile,
   })
+  warrant = repaired.warrant
+  let assembled = repaired.assembled
   let rounds = 0
   while (rounds < REVIEW_MAX_ROUNDS) {
     const review = reviewAgainstPlan(input.view.skeleton, assembled.plan)
     if (review.fill_in_segment_ids.length === 0) break
     rounds += 1
     warrant = fillInKeepWarrant(warrant, review.fill_in_segment_ids)
-    assembled = assemble({
+    repaired = assembleRepairingSpan({
       raw: input.raw,
       view: input.view,
       warrant,
       profile: input.profile,
     })
+    warrant = repaired.warrant
+    assembled = repaired.assembled
   }
   return { warrant, assembled, rounds }
 }
@@ -314,6 +319,52 @@ export function runBlindReviewFillIn(input: {
  * Promotes dropped segments that best shrink large keep↔keep gaps (coherence-friendly).
  * Does not drop gold; only adds keep. Blind-review key fill-in runs first.
  */
+/**
+ * Assemble; on SpanFailure promote dropped segments in the largest gap (same
+ * picker as keep floor) until span is ok or no candidates remain.
+ * Softens nearly-uncut MIMO paths where write_warrant dead_end fill cannot
+ * bridge routine drops before keep-floor runs.
+ */
+export function assembleRepairingSpan(input: {
+  raw: RawTrace
+  view: AgentView
+  warrant: CutWarrant
+  profile: CutProfile
+}): { warrant: CutWarrant; assembled: AssembleOutput; filled_ids: string[] } {
+  let warrant = input.warrant
+  const filled_ids: string[] = []
+  let guard = 0
+  while (guard <= input.view.segments.length) {
+    guard += 1
+    try {
+      const assembled = assemble({
+        raw: input.raw,
+        view: input.view,
+        warrant,
+        profile: input.profile,
+      })
+      return { warrant, assembled, filled_ids }
+    } catch (error) {
+      if (!isSpanFailure(error)) throw error
+      const next = pickDroppedForKeepFloor(error.plan, input.view.segments)
+      if (next === undefined) throw error
+      filled_ids.push(next)
+      warrant = fillInKeepWarrant(warrant, [next])
+      logWarn(
+        `span_repair:keep:${next}:violations=${String(error.violations.length)}`,
+      )
+    }
+  }
+  // Exhausted — surface the last assemble attempt.
+  const assembled = assemble({
+    raw: input.raw,
+    view: input.view,
+    warrant,
+    profile: input.profile,
+  })
+  return { warrant, assembled, filled_ids }
+}
+
 export function enforceKeepRatioFloor(input: {
   raw: RawTrace
   view: AgentView
@@ -322,26 +373,26 @@ export function enforceKeepRatioFloor(input: {
   min_ratio?: number
 }): { warrant: CutWarrant; assembled: AssembleOutput; filled_ids: string[] } {
   const profileFloor = input.profile.keep_ratio_floor
-  // Explicit null on profile (short valve) → skip keep floor.
+  // Explicit null on profile (short valve) → skip keep floor (still repair span).
   if (profileFloor === null && input.min_ratio === undefined) {
-    const assembled0 = assemble({
+    return assembleRepairingSpan({
       raw: input.raw,
       view: input.view,
       warrant: input.warrant,
       profile: input.profile,
     })
-    return { warrant: input.warrant, assembled: assembled0, filled_ids: [] }
   }
   const minRatio = input.min_ratio ?? (typeof profileFloor === 'number' ? profileFloor : KEEP_RATIO_FLOOR)
-  let warrant = input.warrant
-  let assembled = assemble({
+  const repaired = assembleRepairingSpan({
     raw: input.raw,
     view: input.view,
-    warrant,
+    warrant: input.warrant,
     profile: input.profile,
   })
+  let warrant = repaired.warrant
+  let assembled = repaired.assembled
+  const filled_ids = [...repaired.filled_ids]
   const original = input.raw.meta.total_tokens
-  const filled_ids: string[] = []
   if (original <= 0) return { warrant, assembled, filled_ids }
   // Short / small traces: skip floor — one large segment can leap past compression_ratio_max.
   if (original < KEEP_FLOOR_MIN_ORIGINAL_TOKENS) return { warrant, assembled, filled_ids }
@@ -371,12 +422,15 @@ export function enforceKeepRatioFloor(input: {
     if (projected > KEEP_RATIO_SOFT_CAP) break
     filled_ids.push(next)
     warrant = fillInKeepWarrant(warrant, [next])
-    assembled = assemble({
+    const again = assembleRepairingSpan({
       raw: input.raw,
       view: input.view,
       warrant,
       profile: input.profile,
     })
+    warrant = again.warrant
+    assembled = again.assembled
+    filled_ids.push(...again.filled_ids)
   }
   return { warrant, assembled, filled_ids }
 }

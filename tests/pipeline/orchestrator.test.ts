@@ -16,11 +16,18 @@ import { DEFAULT_CUT_PROFILE } from '../../src/constant/compression.ts'
 import { LABEL_WINDOW_SIZE, REVIEW_MAX_ROUNDS } from '../../src/constant/window.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../../src/domain/cut_decision.ts'
 import {
+  assembleRepairingSpan,
   distill,
   fillInKeepWarrant,
   resolveDistillMode,
   runBlindReviewFillIn,
 } from '../../src/pipeline/orchestrator.ts'
+import { SPAN_MAX_GAP_SEGMENTS } from '../../src/constant/window.ts'
+import type { CutWarrant, CutWarrantEntry } from '../../src/types/cut_warrant.ts'
+import type { SegmentCard } from '../../src/types/segment.ts'
+import type { RawTrace, RawTurn } from '../../src/types/raw_trace.ts'
+import type { AgentView } from '../../src/types/agent_view.ts'
+import { estimateTokens } from '../../src/utils/tokens.ts'
 import { applyRules } from '../../src/pipeline/rules.ts'
 import { segment } from '../../src/pipeline/segmenter.ts'
 import { writeWarrant } from '../../src/agent/sessions/write_warrant.ts'
@@ -389,3 +396,61 @@ describe('orchestrator with_llm', () => {
   })
 })
 
+describe('assembleRepairingSpan', () => {
+  it('promotes dropped segments until span gap is reachable', () => {
+    const n = SPAN_MAX_GAP_SEGMENTS + 4
+    const turns: RawTurn[] = []
+    const segments: SegmentCard[] = []
+    for (let i = 1; i <= n; i += 1) {
+      const tid = `t${String(i)}`
+      const sid = `s${String(i).padStart(4, '0')}`
+      turns.push({
+        id: tid,
+        role: 'tool_call',
+        content: `body-${sid}`,
+        tokens: estimateTokens(`body-${sid}`),
+      })
+      segments.push({
+        id: sid,
+        tool: 'Read',
+        sig: `Read:${sid}`,
+        outcome: 'ok',
+        rep_of: null,
+        reads: ['f.ts'],
+        writes: [],
+        tokens: 8,
+        focus: 'card',
+        head: `h-${sid}`,
+        raw_refs: [tid],
+      })
+    }
+    const raw: RawTrace = {
+      meta: {
+        trace_id: 'span-repair',
+        source: 'claude-code',
+        ground_truth_ref: 'turn:t1',
+        total_tokens: turns.reduce((s, t) => s + t.tokens, 0),
+      },
+      ground_truth: { kind: 'tests_passed', evidence_ref: 'turn:t1' },
+      turns,
+      anchor_turn_ids: [turns[0]!.id],
+    }
+    const view: AgentView = {
+      meta: raw.meta,
+      intent_hypothesis: { version: 0, text: 'fix span' },
+      segments,
+      skeleton: { version: 0, nodes: [] },
+    }
+    const entries: CutWarrantEntry[] = segments.map((seg, i) => ({
+      segment_id: seg.id,
+      action: i === 0 || i === n - 1 ? 'keep' : 'drop',
+      source: { kind: 'rule', name: 'test' },
+      confidence: 1,
+    }))
+    const warrant: CutWarrant = { trace_id: raw.meta.trace_id, entries }
+    const out = assembleRepairingSpan({ raw, view, warrant, profile: DEFAULT_CUT_PROFILE })
+    assert.equal(out.assembled.plan.span_ok, true)
+    assert.ok(out.filled_ids.length >= 1)
+    assert.ok(out.assembled.plan.kept.length >= 3)
+  })
+})

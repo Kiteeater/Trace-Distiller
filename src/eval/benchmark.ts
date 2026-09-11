@@ -1,4 +1,5 @@
 import { dirname, join } from 'node:path'
+import { isSpanFailure } from '../domain/span_violation.ts'
 import { BENCHMARK_PASS } from '../constant/compression.ts'
 import {
   coherencePass,
@@ -178,6 +179,49 @@ export function metricStatuses(parts: BenchmarkParts): {
         : 'fail'
     })(),
   }
+}
+
+/** Bench sample that failed distill (e.g. SpanFailure): composite 0, compression fail/null. */
+export function failedBenchSample(input: {
+  bin: BenchmarkBin
+  trace_id: string
+  notes: readonly string[]
+}): ScoredSample {
+  const sample: ScoredSample = {
+    trace_id: input.trace_id,
+    bin: input.bin,
+    metrics: {
+      compression_ratio: { value: null, status: 'fail' },
+      key_step_recall: { value: null, status: 'skipped' },
+      replay: { value: null, status: 'skipped' },
+      qa: { value: null, status: 'skipped' },
+      coherence: { value: null, status: 'skipped' },
+      distill_cost_ratio: { value: null, status: 'skipped' },
+    },
+    composite: 0,
+    m1_score: null,
+    gold: 'skipped',
+  }
+  if (input.notes.length > 0) sample.notes = [...input.notes]
+  return sample
+}
+
+/** Stable note prefix for bench when distill throws. */
+export function noteFromBenchDistillError(error: unknown): string {
+  if (isSpanFailure(error)) {
+    const detail =
+      error.violations.length > 0
+        ? error.violations
+            .map(
+              (v) =>
+                `${v.reason}:${v.left_segment_id}->${v.right_segment_id}:gap=${String(v.gap_segments)}`,
+            )
+            .join(';')
+        : error.message
+    return `span_failure:${detail}`
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  return `distill_error:${message}`
 }
 
 export function scoreSample(input: ScoreSampleInput): ScoredSample {
