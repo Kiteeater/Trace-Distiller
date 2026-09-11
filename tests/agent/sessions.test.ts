@@ -298,9 +298,23 @@ function fakeResult(
 }
 
 describe('hole sessions', () => {
-  it('skeletonPass reads only head+verification turns plus card index, not full raw.turns', async () => {
+  it('skeletonPass sparse path: card index + sample batch, not full raw.turns / mid secrets', async () => {
     const { raw, view } = holeFixture()
-    const json = skeletonJson()
+    const json = {
+      kind: 'sparse_intent_v0',
+      enough: true,
+      intent_v0: 'Fix add so 1+1 equals 2',
+      scenario: 'test_fix',
+      skeleton_points: [
+        {
+          id: 'n1',
+          kind: 'turning_point',
+          segment_ids: ['s0002'],
+          note: 'edit add',
+        },
+      ],
+      uncertainty: 0.2,
+    }
     const fake = new FakeSessionBackend((_input, opts) => fakeResult({ json, role: opts.role }))
     const out = await skeletonPass({
       trace_id: raw.meta.trace_id,
@@ -317,17 +331,21 @@ describe('hole sessions', () => {
     assert.equal(out.intent.scenario, 'test_fix')
     assert.equal(out.skeleton.version, 0)
     assert.equal(out.skeleton.nodes[0]?.kind, 'turning_point')
+    assert.equal(out.enough, true)
+    assert.equal(out.force_stopped, false)
     assert.equal(out.usage.role, 'hole_a_skeleton')
     assert.equal(out.usage.input_tokens, 11)
 
     const composed = fake.calls[0]?.composed ?? ''
-    assert.match(composed, /HEAD_TASK_FIX_ADD/)
-    assert.match(composed, /VERIFY_PYTEST_PASSED/)
+    assert.match(composed, /CARD_INDEX/)
+    assert.match(composed, /sample_batch_segment_ids/)
+    assert.match(composed, /sparse_intent_v0/)
     assert.match(composed, /s0002/)
     assert.doesNotMatch(composed, new RegExp(MIDDLE_SECRET))
     assert.doesNotMatch(composed, new RegExp(OTHER_SECRET))
     assert.equal(composed.includes(JSON.stringify(raw.turns)), false)
     assert.equal(fake.calls[0]?.role, 'hole_a_skeleton')
+    assert.deepEqual(fake.calls[0]?.tools, ['read_segment'])
   })
 
 
@@ -434,7 +452,14 @@ describe('hole sessions', () => {
 
   it('skeletonPass falls back illegal scenario to implement', async () => {
     const { raw, view } = holeFixture()
-    const json = skeletonJson('hotfix')
+    const json = {
+      kind: 'sparse_intent_v0',
+      enough: true,
+      intent_v0: 'Fix add so 1+1 equals 2',
+      scenario: 'hotfix',
+      skeleton_points: [],
+      uncertainty: 0.2,
+    }
     const fake = new FakeSessionBackend(() => fakeResult({ json }))
     const out = await skeletonPass({
       trace_id: raw.meta.trace_id,

@@ -39,8 +39,8 @@ ADR-0009 把洞 A 从「全量读」收成「头 1–2 turn + 验证点附近」
 ## Consequences
 
 - 文档与实现叙事从「洞 A = 固定头尾一枪」改为「洞 A = 多轮稀疏采样 → 骨架关键点」；cut-brain 仍独占 how-to-cut。
-- ADR-0009 的 AgentView / CutWarrant / 盲测 review **仍成立**；仅演进其洞 A 采样策略。architecture / AGENTS 对「头/验证点注入」的描述改为指向本 ADR（现行代码可暂仍头+验证点，落地按实现顺序改）。
+- ADR-0009 的 AgentView / CutWarrant / 盲测 review **仍成立**；仅演进其洞 A 采样策略。architecture / AGENTS 对「头/验证点注入」的描述改为指向本 ADR；（a）已落地为多轮稀疏采样。
 - 在线停机只认 `enough` + 硬预算；向量分只进 bench / 报告，不绑进 session loop。
 - **实现顺序**：
-  - (a) 分层候选池 + 多轮循环 + 硬预算 + 结构化 `enough` / `gaps` / `skeleton_points`（本决策的代码落地 PR）
-  - (b) benchmark 向量效率分（cosine / recall / `quality / log(1+tokens)`）——另开 PR，不阻塞 (a)
+  - [x] (a) 分层候选池 + 多轮循环 + 硬预算 + 结构化 `enough` / `gaps` / `skeleton_points`（本决策的代码落地 PR）
+  - [ ] (b) benchmark 向量效率分（cosine / recall / `quality / log(1+tokens)`）——另开 PR，不阻塞 (a)

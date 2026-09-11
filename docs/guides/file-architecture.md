@@ -75,7 +75,10 @@ trace-distiller/
 │  ├─ agent/
 │  │  ├─ sessions/              # 全仓库唯一可 import pi（含 tool_mask.ts）
 │  │  │  ├─ open_session.ts      # 工厂 + SessionBackend；createAgentSession 只在这里
-│  │  │  ├─ skeleton_pass.ts
+│  │  │  ├─ card_index.ts       # CARD_INDEX 紧凑序列化（洞 A/B 共用）
+│  │  │  ├─ candidate_pool.ts   # ADR-0011 分层候选池
+│  │  │  ├─ sparse_intent.ts    # ADR-0011 多轮稀疏采样（洞 A）
+│  │  │  ├─ skeleton_pass.ts    # 洞 A 入口 → sparseIntent；兼容旧类型
 │  │  │  ├─ cut_brain.ts        # ADR-0010 ReAct 打标；洞 B 角色
 │  │  │  ├─ label_window.ts
 │  │  │  ├─ write_warrant.ts    # 可改纯代码，形状不变
