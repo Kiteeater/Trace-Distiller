@@ -2,7 +2,7 @@
 
 > Agent 一次任务可能留下几百步记录。本工具只处理「最终做对了」的那条，把它剪短：训练能用，人也能看懂。
 
-**当前状态**：Agent 主编裁剪 + 确定性护栏（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）。`--no-llm` 已删除；CI 用 `--fake-l4` / FakeSessionBackend。自包含 HTML 报告；SQLite 记段 / 打标 / 凭证 / 指标；只读 live dump 页（`file://`）。可选 Unix domain socket（`--live-socket`）。L4：`--fake-l4` 本地 composite；`--with-l4` 真 mint。
+**当前状态**：Agent 主编裁剪 + 确定性护栏（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）；洞 B 目标见 [ADR-0012](./docs/adr/0012-hole-b-single-slot-progressive-disclosure.md)（单槽 focus=1 + 渐进披露 + collapse_uncertain）。`--no-llm` 已删除；CI 用 `--fake-l4` / FakeSessionBackend。自包含 HTML 报告；SQLite 记段 / 打标 / 凭证 / 指标；只读 live dump 页（`file://`）。可选 Unix domain socket（`--live-socket`）。L4：`--fake-l4` 本地 composite；`--with-l4` 真 mint。
 
 Agent session 决定 how to cut；admission / span / warrant / I/O 仍是确定性 TypeScript。工具结果经 tool mask 回灌。分层见 [docs/architecture.md](./docs/architecture.md)。
 
