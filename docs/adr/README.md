@@ -14,5 +14,6 @@
 | 0006 | Agent 编排（**已被 0008 取代**；决策权见 0010） |
 | 0007 | Brain / Label / Judge 预算分账 |
 | 0008 | 流水线 + 两个 agent 洞（**已被 0010 取代**） |
-| 0009 | AgentView 卡片流、头尾意图推断、CutWarrant 引用式凭证、盲测 review、CLI + CutProfile |
+| 0009 | AgentView 卡片流、头尾意图推断（**洞 A 采样见 0011**）、CutWarrant 引用式凭证、盲测 review、CLI + CutProfile |
 | 0010 | **Agent 主编裁剪 + Tool Mask**（现行：删除 `--no-llm`；agent 决定 how to cut；工具只执行；结果掩码回灌） |
+| 0011 | **洞 A 多轮稀疏采样**（意图/场景/骨架；分层锚点池 + gaps 加权；不产出 keep/collapse/drop；硬预算 + 结构化 enough；向量分仅 bench） |

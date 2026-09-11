@@ -35,6 +35,7 @@ ADR-0008 把 Distiller 定为「确定性流水线 + 两个 agent 洞」，并�
 - `resolveDistillMode` 拒绝 `--no-llm`；无后端且无洞模型 env 时要求 agent 路径（报错），不静默退回规则-only。
 - Bench 防挂：无 `--with-l4` 时默认注入 `FakeSessionBackend`（agent 路径 + 假后端），不再靠 `--no-llm`。
 - **Phase 2（本 follow-up）**：cut-brain ReAct 会话拥有未决议标签；`apply_rules_hint` / `keep_segment` 经 tool_mask；orchestrator 不再静默 `applyRules` 并进最终 decisions。Admission / assemble / span 仍确定性。
+- **洞 A 演进**：固定头/验证点一枪采样由 [ADR-0011](./0011-hole-a-sparse-sampling-intent.md) 锁定为多轮稀疏采样（分层锚点池 + gaps；洞 A 不产出 keep/collapse/drop）。
 
 ## TODO / skeleton（follow-up）
 
@@ -42,3 +43,4 @@ ADR-0008 把 Distiller 定为「确定性流水线 + 两个 agent 洞」，并�
 - [x] 将 `applyRules` 暴露为 agent 可调用工具 `apply_rules_hint`（可选 hints；segmenter 仍为预处理，不是工具）
 - [x] Fail-Closed：显式 `keep_segment` + unresolved 直到 agent 决议（编排器 failure policy）
 - [ ] warrant/training store 存 full tool payloads；prompt 只吃 masked（store 仍 M2+）
+- [ ] 洞 A 多轮稀疏采样落地：见 [ADR-0011](./0011-hole-a-sparse-sampling-intent.md)（先分层池+多轮+硬预算+结构化 enough；向量效率分另 PR）
