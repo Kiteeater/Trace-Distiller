@@ -43,4 +43,4 @@ ADR-0009 把洞 A 从「全量读」收成「头 1–2 turn + 验证点附近」
 - 在线停机只认 `enough` + 硬预算；向量分只进 bench / 报告，不绑进 session loop。
 - **实现顺序**：
   - [x] (a) 分层候选池 + 多轮循环 + 硬预算 + 结构化 `enough` / `gaps` / `skeleton_points`（本决策的代码落地 PR）
-  - [ ] (b) benchmark 向量效率分（cosine / recall / `quality / log(1+tokens)`）——另开 PR，不阻塞 (a)
+  - [x] (b) benchmark 向量效率分（cosine / recall / `quality / log(1+tokens)`）——`src/eval/vector_efficiency.ts`；bench 记分板 `a_eff`；默认确定性 hash embedding；**不是**在线停机信号

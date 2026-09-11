@@ -92,7 +92,7 @@ trace-distiller/
 │  │  ├─ data_label.ts
 │  │  ├─ data_warrant.ts
 │  │  └─ data_metric.ts
-│  ├─ eval/                     # L4 数字 + 分档报分壳（benchmark.ts）；干净会话走 sessions 工厂
+│  ├─ eval/                     # L4 数字 + 分档报分壳（benchmark.ts）+ Hole A 向量效率（vector_efficiency.ts，bench-only）；干净会话走 sessions 工厂
 │  ├─ service/
 │  │  ├─ cli.ts
 │  │  ├─ live.ts                # 只读订阅，不进 pipeline；进程内 job 表
@@ -154,7 +154,7 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 | `src/agent/sessions/` | **唯一 pi 依赖点** | **文件名已定** | `open_session.ts` 工厂；`tool_mask.ts` / `cut_brain.ts`（ADR-0010）；洞 A/B；`write_warrant.ts`；L4 |
 | `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown | **路径已定** | LOCKED：`label_segment` / `check_continuity` / `keep_segment` / `read_segment` / `apply_rules_hint`（[tools.md](./tools.md)） |
 | `src/data/data_*.ts` 四文件 | SQLite：段 / 打标 / 凭证 / 指标 | **文件名已定** | **列级 schema OPEN**（P0） |
-| `src/eval/` | L4 数字 + 分档报分（`benchmark.ts`） | **职责已定** | 盲测协议已拍板（intent + playback；缺骨架回填 keep；最多 2 轮）。QA/replay/review 经 sessions；假后端可测。复合分见 [benchmark.md](./benchmark.md)；禁止跨赛道平均 |
+| `src/eval/` | L4 数字 + 分档报分（`benchmark.ts`）+ Hole A 向量效率（`vector_efficiency.ts`） | **职责已定** | 盲测协议已拍板。QA/replay/review 经 sessions。`a_eff` 仅 bench，非在线停机。复合分见 [benchmark.md](./benchmark.md)；禁止跨赛道平均 |
 | `src/report/` | 结果 JSON → 单个 `.html` | **已定** | 视觉细节非契约 |
 | `src/service/cli.ts` | CLI 薄壳 | **已定** | argv 细节 OPEN |
 | `src/service/live.ts` | 只读订阅 Distiller 裁剪进度 | **已定** | 源 = 进程内 `registerJobFromResult`；禁止 HTTP listen；禁止进 pipeline |

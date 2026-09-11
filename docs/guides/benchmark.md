@@ -86,6 +86,21 @@ Score = 压缩率得分 × 关键步召回率 × 重放成功率
 - **L4 JSON**：`parseStructuredJson` 会从 prose / fence 抽 JSON，并软修复 trailing commas、注释、截断对象；QA 畸形最多再试 2 次。仍无合法 pairs → QA **skipped**（不是 fail=0）。
 - **Replay 无 mapped workspace**：`manifest.json` 未映射的 trace（如多数导入 MIMO）replay **skipped**（null），不因缺 fixture 归零 composite。真重放仍需 mapped fixture + L4 模型 + 可选 `verify[]`。replay 解析失败时若 workspace `verify[]` 已过可恢复 success。
 
+
+### Hole A 向量效率分（ADR-0011 b，仅 bench）
+
+洞 A 多轮稀疏采样的**理解质量 / 读量**指标。**不是**在线停机信号——`sparse_intent` 仍只认结构化 `enough` + 硬预算（轮数 / 已读段 / token）。
+
+| 项 | 口径 |
+|----|------|
+| 质量 | embedding cosine（predicted `intent_v0` [+ skeleton summary] vs 金标 `intent_text`）；可选 skeleton point recall（金标 `skeleton_segment_ids`） |
+| 效率代价 | Hole A `tokens`（优先）；FakeSessionBackend 用量为 0 时退到 `segments_read` |
+| 复合 | `a_eff = quality / log(1 + cost)` —— 同质量多读 token → 更低分（打地鼠） |
+| Embedding | **默认** `DeterministicHashEmbedding`（CI / `--fake-l4`，无密钥、无网络）；可选 `TRACE_DISTILLER_EMBEDDING_PROVIDER=openai|http` + `TRACE_DISTILLER_EMBEDDING_API_KEY`（**不**复用 mint `TRACE_DISTILLER_API_KEY`） |
+| 开关 | bench 默认开；`--no-vector-efficiency` 关。不进 `m1_score` / `composite` 门槛 |
+
+金标旁路可选字段：`intent_text` / `skeleton_segment_ids`（与 `segment_ids` 关键步召回金标同文件，仍不喂洞 A/B）。无 `intent_text` 时 cosine skipped，`a_eff` 记为 skip。
+
 ## 怎么用 / 怎么跑
 
 评分在 `src/eval/benchmark.ts`；CLI 扫盘。不要在报告里另算一套。

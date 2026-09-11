@@ -63,6 +63,8 @@ describe('cli', { concurrency: 1 }, () => {
     assert.match(help, /bench/)
     assert.match(help, /never averaged/)
     assert.match(help, /--fake-l4/)
+    assert.match(help, /vector-efficiency/)
+    assert.match(help, /ADR-0011/)
     assert.match(help, /--with-l4/)
     assert.match(help, /ADR-0010/)
     assert.match(help, /Agent-led/)
@@ -730,6 +732,15 @@ describe('cli', { concurrency: 1 }, () => {
     const args = parseArgv(['bench', '--with-l4', '--dir', 'benchmark/datasets'])
     assert.equal(args.command, 'bench')
     assert.equal(args.with_l4, true)
+  })
+
+  it('parseArgv reads --vector-efficiency / --no-vector-efficiency (ADR-0011 b)', () => {
+    const on = parseArgv(['bench', '--vector-efficiency'])
+    assert.equal(on.vector_efficiency, true)
+    const off = parseArgv(['bench', '--no-vector-efficiency'])
+    assert.equal(off.vector_efficiency, false)
+    const help = parseArgv(['--help'])
+    // help short-circuits; ensure HELP string mentions the flags via another path
   })
 
   it('bench defaults to FakeSessionBackend agent path even when mint env is set (no hang)', async () => {

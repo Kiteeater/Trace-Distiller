@@ -73,6 +73,9 @@ function compositeScore(parts: BenchmarkParts): number
 
 function m1Score(parts: Pick<BenchmarkParts, 'compression_ratio' | 'key_step_recall'>): number | null
 // M1：压缩率得分 × 关键步召回；cost/replay/qa/coherence 不参与
+
+function scoreHoleAVectorEfficiency(input: HoleAVectorInput): Promise<HoleAVectorScore>
+// ADR-0011 b：quality / log(1+tokens)；默认 DeterministicHashEmbedding；bench-only
 ```
 
 M1 最低：`compressionRatio` + 关键步召回（日常亦可用 `blindReview` / `answerQa`）。`m1_score` 已落地；完整 `composite` 仍要求六项。
@@ -143,3 +146,4 @@ eval → types, enums, constant, domain, data
 - [x] 未关闭的 P0 口径不得假装「压缩率已达标」。（数字会算，不宣称落入 10%–30%）
 - [x] replay / QA / review 接口经 sessions（假后端可测；真模型 `TRACE_DISTILLER_MODEL_L4`）。真实重放成功率需仓库+模型，CI 不假装。
 - [x] 分档报分壳：`src/eval/benchmark.ts`；六项门槛；乘法分；一项 fail → 0；无金标 skipped；三档禁止合并平均。
+- [x] Hole A 向量效率（ADR-0011 b）：`src/eval/vector_efficiency.ts`；bench `a_eff`；默认确定性 embedding；不进 m1/composite；不进 sparse_intent 停机。

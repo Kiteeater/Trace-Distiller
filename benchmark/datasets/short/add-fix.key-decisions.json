@@ -1,4 +1,6 @@
 {
   "trace_id": "claude-code:sess-no-llm",
-  "segment_ids": ["s0006", "s0007"]
+  "segment_ids": ["s0006", "s0007"],
+  "intent_text": "Fix the failing test in add.ts so 1+1 equals 2.",
+  "skeleton_segment_ids": ["s0006", "s0007"]
 }
