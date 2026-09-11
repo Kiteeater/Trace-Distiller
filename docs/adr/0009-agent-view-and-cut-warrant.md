@@ -79,4 +79,4 @@ L0 之后物理分成两份：
 
 ## 状态
 
-accepted（2026-08-31）。本 ADR 改了洞 A 定义（全量读 → 头尾读 + 增量修正），architecture.md 的流水线一节以其为准。**洞 A 采样策略已由 [ADR-0011](./0011-hole-a-sparse-sampling-intent.md) 演进**：多轮稀疏采样取代固定头尾一枪；AgentView / CutWarrant / 盲测仍成立。
+accepted（2026-08-31）。本 ADR 改了洞 A 定义（全量读 → 头尾读 + 增量修正），architecture.md 的流水线一节以其为准。**洞 A 采样策略已由 [ADR-0011](./0011-hole-a-sparse-sampling-intent.md) 演进**：多轮稀疏采样取代固定头尾一枪。**洞 B 打标上下文已由 [ADR-0012](./0012-hole-b-single-slot-progressive-disclosure.md) 锁定**：单槽 + 渐进披露 + collapse_uncertain。AgentView / CutWarrant / 盲测仍成立。
