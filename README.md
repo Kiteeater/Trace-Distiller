@@ -49,16 +49,16 @@ node script/run-distill.ts bench --fake-l4
 
 **m1_score（M1 出门分）**：只强制压缩率 + 关键步召回，`压缩率得分 × 关键步召回`。cost / replay / qa / coherence 失败不拖垮 `m1_score`（仍会拖垮 `composite`）。过夜真 mint 短 trace 常因 cost>0.3 使 composite=0；看 `m1_score` 判断 M1 是否成功。记分板有 `m1` 列。
 
-**mint 环境变量（写在 gitignored `.env`，不要提交密钥）：**
+**网关环境变量（写在 gitignored `.env`，不要提交密钥）。Mint/Macaron 是可选配置之一，不是内置默认：**
 
 ```bash
 cp .env.example .env
-# TRACE_DISTILLER_API_BASE=https://mint-alpha.macaron.im/v1
+# TRACE_DISTILLER_API_BASE=https://example.com/v1
 # TRACE_DISTILLER_API_KEY=          # 仅本机
-# TRACE_DISTILLER_PROVIDER=macaron
-# TRACE_DISTILLER_MODEL_HOLE_A=macaron/macaron-v1-coding-venti
-# TRACE_DISTILLER_MODEL_HOLE_B=macaron/macaron-v1-coding-venti
-# TRACE_DISTILLER_MODEL_L4=macaron/macaron-v1-coding-venti
+# TRACE_DISTILLER_PROVIDER=your-provider
+# TRACE_DISTILLER_MODEL_HOLE_A=provider/modelId
+# TRACE_DISTILLER_MODEL_HOLE_B=provider/modelId
+# TRACE_DISTILLER_MODEL_L4=provider/modelId
 # 可选：TRACE_DISTILLER_SESSION_TIMEOUT_MS=120000
 # 长样 mint 建议：TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000
 ```
@@ -124,16 +124,16 @@ node script/run-distill.ts live-dump --sqlite /tmp/distiller.sqlite --out-dir /t
 
 设置洞模型后再跑（或 `--fake-l4`）。`--no-llm` 已删除（ADR-0010）。`node script/run-distill.ts` 启动时会加载本机 `.env`（若存在）；不要提交 `.env`。
 
-接 Macaron mint（OpenAI-compatible 网关）：复制 `.env.example` 为 `.env`，填 `TRACE_DISTILLER_API_KEY`。`PiSessionBackend` 在 `API_BASE`+`API_KEY` 都设时 `registerProvider`，不走内置 `getModel`。密钥永不打进日志。
+接 OpenAI-compatible 网关：复制 `.env.example` 为 `.env`，填 `TRACE_DISTILLER_API_KEY`。Mint/Macaron 是可选配置之一，不是内置默认。`PiSessionBackend` 在 `API_BASE`+`API_KEY` 都设时 `registerProvider`，不走内置 `getModel`。密钥永不打进日志。
 
 ```bash
 # .env（gitignored）
-# TRACE_DISTILLER_API_BASE=https://mint-alpha.macaron.im/v1
+# TRACE_DISTILLER_API_BASE=https://example.com/v1
 # TRACE_DISTILLER_API_KEY=          # 不要把密钥写进仓库
-# TRACE_DISTILLER_PROVIDER=macaron  # 默认 macaron
-export TRACE_DISTILLER_MODEL_HOLE_A=macaron/macaron-v1-coding-venti
-export TRACE_DISTILLER_MODEL_HOLE_B=macaron/macaron-v1-coding-venti
-# 可选：TRACE_DISTILLER_MODEL_L4=macaron/macaron-v1-coding-venti
+# TRACE_DISTILLER_PROVIDER=your-provider
+export TRACE_DISTILLER_MODEL_HOLE_A=provider/modelId
+export TRACE_DISTILLER_MODEL_HOLE_B=provider/modelId
+# 可选：TRACE_DISTILLER_MODEL_L4=provider/modelId
 node script/run-distill.ts distill examples/add-fix.jsonl --sqlite /tmp/distiller.sqlite --report /tmp/holes.html
 ```
 

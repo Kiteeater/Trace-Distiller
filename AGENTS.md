@@ -59,7 +59,7 @@ Agent-led only（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）�
 
 - 真模型 L4 重放成功率：接口已接通（假后端可测；真模型 `TRACE_DISTILLER_MODEL_L4`）。真实重放仍需仓库 + 模型，CI 不假装测到成功率。`distill({ mode: 'with_llm' })` 盲测回填仍只用纯代码对照骨架与 plan，不调 L4。
 - Unix socket 已接通（可选）：默认仍进程内 `registerJobFromResult` + `file://` dump；`--live-socket` 另开只读窗。live 仍禁止 HTTP listen。
-- pi SDK / `createAgentSession`：只允许出现在 `src/agent/sessions/`（现为 `open_session.ts`）。eval 干净会话必须走该目录的工厂。模型档走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`（`provider/modelId`）。OpenAI-compatible 自定义网关（Macaron mint）：`TRACE_DISTILLER_API_BASE` + `TRACE_DISTILLER_API_KEY`（`TRACE_DISTILLER_PROVIDER` 默认 `macaron`）；`PiSessionBackend` 对此 `registerProvider`（`api: openai-completions`）再用 `registry.find`，不走内置 `getModel`。CLI 入口加载本机 `.env`（若存在）。密钥不进代码、不进 git、不 log。失败重试 1 次（`PI_FAILURE_RETRY`）再 Fail-Closed。生产默认 `PiSessionBackend`；`FakeSessionBackend` 仅测试。
+- pi SDK / `createAgentSession`：只允许出现在 `src/agent/sessions/`（现为 `open_session.ts`）。eval 干净会话必须走该目录的工厂。模型档走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`（`provider/modelId`）。OpenAI-compatible 自定义网关：`TRACE_DISTILLER_API_BASE` + `TRACE_DISTILLER_API_KEY`；`TRACE_DISTILLER_PROVIDER` 显式命名，或从上述 `MODEL_*` 的 `provider/modelId` 前缀推导（无内置默认；Mint/Macaron 是可选配置之一，不是内置默认）。`PiSessionBackend` 对此 `registerProvider`（`api: openai-completions`）再用 `registry.find`，不走内置 `getModel`。CLI 入口加载本机 `.env`（若存在）。密钥不进代码、不进 git、不 log。失败重试 1 次（`PI_FAILURE_RETRY`）再 Fail-Closed。生产默认 `PiSessionBackend`；`FakeSessionBackend` 仅测试。
 
 ## TypeScript
 
