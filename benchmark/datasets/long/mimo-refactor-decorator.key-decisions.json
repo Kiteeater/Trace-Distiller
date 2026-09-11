@@ -1,6 +1,8 @@
 {
   "trace_id": "claude-code:mimo-03c7ff2d",
   "segment_ids": [
-    "s0012"
+    "s0002",
+    "s0005",
+    "s0008"
   ]
 }

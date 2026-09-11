@@ -65,25 +65,47 @@ function groupTurns(turns: RawTurn[]): RawTurn[][] {
 
     const cur = turns[i]
     if (cur?.role === 'tool_call') {
-      const unit = [...prefix, cur]
-      i += 1
+      // Claude Code / MIMO often batch N tool_calls then N tool_results.
+      // Pair the batch so each call keeps its return in the same Action Unit
+      // (product definition); otherwise orphan tool_result segments bloat keep.
+      const calls: RawTurn[] = []
+      while (i < turns.length && turns[i]?.role === 'tool_call') {
+        const call = turns[i]
+        if (call !== undefined) calls.push(call)
+        i += 1
+      }
+      // Skip thought/assistant between call batch and result batch (rare).
+      const between: RawTurn[] = []
       while (i < turns.length) {
         const next = turns[i]
         if (next === undefined) break
-        if (next.role === 'tool_result') {
-          unit.push(next)
-          i += 1
-          break
-        }
-        if (next.role === 'tool_call' || next.role === 'user') break
         if (next.role === 'thought' || next.role === 'assistant') {
-          unit.push(next)
+          between.push(next)
           i += 1
           continue
         }
         break
       }
-      groups.push(unit)
+      const results: RawTurn[] = []
+      while (i < turns.length && turns[i]?.role === 'tool_result') {
+        const result = turns[i]
+        if (result !== undefined) results.push(result)
+        i += 1
+      }
+      const used = new Set<number>()
+      for (let c = 0; c < calls.length; c += 1) {
+        const call = calls[c]!
+        const matchIdx = matchResultIndex(call, results, used)
+        const unit: RawTurn[] = c === 0 ? [...prefix, ...between, call] : [call]
+        if (matchIdx >= 0) {
+          unit.push(results[matchIdx]!)
+          used.add(matchIdx)
+        }
+        groups.push(unit)
+      }
+      for (let r = 0; r < results.length; r += 1) {
+        if (!used.has(r)) groups.push([results[r]!])
+      }
       continue
     }
 
@@ -97,6 +119,38 @@ function groupTurns(turns: RawTurn[]): RawTurn[][] {
     i += 1
   }
   return groups
+}
+
+/** Prefer tool_use_id match from result args_json; else FIFO by tool name. */
+function matchResultIndex(
+  call: RawTurn,
+  results: readonly RawTurn[],
+  used: ReadonlySet<number>,
+): number {
+  const callId = toolUseIdOf(call)
+  if (callId !== undefined) {
+    for (let r = 0; r < results.length; r += 1) {
+      if (used.has(r)) continue
+      if (toolUseIdOf(results[r]!) === callId) return r
+    }
+  }
+  const callName = call.tool?.name
+  if (callName !== undefined) {
+    for (let r = 0; r < results.length; r += 1) {
+      if (used.has(r)) continue
+      if (results[r]!.tool?.name === callName) return r
+    }
+  }
+  for (let r = 0; r < results.length; r += 1) {
+    if (!used.has(r)) return r
+  }
+  return -1
+}
+
+function toolUseIdOf(turn: RawTurn): string | undefined {
+  const args = parseArgs(turn.tool?.args_json)
+  const id = args.tool_use_id
+  return typeof id === 'string' && id.length > 0 ? id : undefined
 }
 
 function toCard(turns: RawTurn[], index: number): SegmentCard {
@@ -198,8 +252,10 @@ function firstLineHead(text: string): string {
 function outcomeOf(result: RawTurn | undefined): SegmentOutcome {
   if (result === undefined) return 'unknown'
   const code = parseExitCode(result.content, result.tool?.args_json)
-  if (code === undefined) return 'unknown'
-  return code === 0 ? 'ok' : 'error'
+  if (code !== undefined) return code === 0 ? 'ok' : 'error'
+  // MIMO / Claude Code often omit <exit_code>; a returned tool_result that is
+  // not flagged is_error is treated as ok so rules can drop exploratory reads.
+  return 'ok'
 }
 
 function parseExitCode(content: string, args_json: string | undefined): number | undefined {

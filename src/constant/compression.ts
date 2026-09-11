@@ -1,6 +1,9 @@
 import type { CutProfile } from '../types/cut_profile.ts'
 import { SPAN_MAX_GAP_SEGMENTS } from './window.ts'
 
+/** Long valve: allow wider keep gaps so span repair does not re-inflate MIMO exploration. */
+export const LONG_SPAN_MAX_GAP_SEGMENTS = 12
+
 /** 压缩率：剪后 RawTrace 原文 token / 原 token。PRD MVP 目标。 */
 export const COMPRESSION_RATIO_TARGET = { min: 0.1, max: 0.3 }
 
@@ -121,7 +124,7 @@ export const LONG_CUT_PROFILE: CutProfile = {
   id: 'bin:long',
   ...sharedLabels(),
   span: {
-    max_gap_segments: SPAN_MAX_GAP_SEGMENTS,
+    max_gap_segments: LONG_SPAN_MAX_GAP_SEGMENTS,
     fill_with_representative_dead_end: true,
   },
   dead_end: {
@@ -140,7 +143,7 @@ export const MULTI_DEAD_END_CUT_PROFILE: CutProfile = {
   id: 'bin:multi_dead_end',
   ...sharedLabels(),
   span: {
-    max_gap_segments: SPAN_MAX_GAP_SEGMENTS,
+    max_gap_segments: LONG_SPAN_MAX_GAP_SEGMENTS,
     fill_with_representative_dead_end: true,
   },
   dead_end: {

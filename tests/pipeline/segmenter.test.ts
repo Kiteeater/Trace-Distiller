@@ -86,7 +86,7 @@ describe('segmenter', () => {
 
     const edit = a.segments[2]
     assert.ok(edit)
-    assert.equal(edit.outcome, 'unknown')
+    assert.equal(edit.outcome, 'ok')  // result present without exit_code → ok (MIMO-friendly)
     assert.deepEqual(edit.writes, ['add.ts'])
 
     assert.equal(a.intent_hypothesis.version, 0)
@@ -209,5 +209,40 @@ describe('segmenter', () => {
     assert.ok(card)
     assert.equal(card.tokens, raw.turns[0]!.tokens + raw.turns[1]!.tokens)
     assert.ok(card.tokens > estimateTokens(raw.turns[0]!.content))
+  })
+
+  it('pairs batched tool_calls with following tool_results (Claude Code / MIMO parallel tools)', () => {
+    const raw = rawOf([
+      makeTurn('th', 'thought', 'read three files'),
+      makeTurn('c1', 'tool_call', '{"file_path":"a.ts","tool_use_id":"t1"}', {
+        name: 'Read',
+        args: { file_path: 'a.ts', tool_use_id: 't1' },
+      }),
+      makeTurn('c2', 'tool_call', '{"file_path":"b.ts","tool_use_id":"t2"}', {
+        name: 'Read',
+        args: { file_path: 'b.ts', tool_use_id: 't2' },
+      }),
+      makeTurn('c3', 'tool_call', '{"file_path":"c.ts","tool_use_id":"t3"}', {
+        name: 'Read',
+        args: { file_path: 'c.ts', tool_use_id: 't3' },
+      }),
+      makeTurn('r1', 'tool_result', 'A', { name: 'Read', args: { tool_use_id: 't1' } }),
+      makeTurn('r2', 'tool_result', 'B', { name: 'Read', args: { tool_use_id: 't2' } }),
+      makeTurn('r3', 'tool_result', 'C', { name: 'Read', args: { tool_use_id: 't3' } }),
+    ])
+    const cards = segment(raw).segments
+    assert.equal(cards.length, 3)
+    assert.deepEqual(
+      cards.map((s) => s.tool),
+      ['Read', 'Read', 'Read'],
+    )
+    assert.equal(cards.some((s) => s.tool === 'tool_result'), false)
+    assert.deepEqual(cards[0]?.reads, ['a.ts'])
+    assert.deepEqual(cards[1]?.reads, ['b.ts'])
+    assert.deepEqual(cards[2]?.reads, ['c.ts'])
+    assert.equal(cards[0]?.outcome, 'ok')
+    assert.ok(cards[0]?.raw_refs.includes('r1'))
+    assert.ok(cards[1]?.raw_refs.includes('r2'))
+    assert.ok(cards[2]?.raw_refs.includes('r3'))
   })
 })

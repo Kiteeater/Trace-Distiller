@@ -56,7 +56,8 @@ function applyRules(input: RulesInput): RulesOutput
   1. 失败工具调用且后续无新信息 → 倾向 `dead_end` 或进入聚类。
   2. 重复读同一文件、无中间 write → `routine`。
   3. 相似报错重试（Jaccard）→ 聚到 `rep_of`，代表段未决或 `dead_end`，其余 `line` + `routine`/`dead_end`。
-  4. 读过的路径后来被 write → 给该读段 `graph_hints: ['read_then_later_written']`，**默认仍未决**（这是有效探索强信号，不是自动 key_decision）。
+  4. 读过的路径后来被 write → `routine` + `graph_hints`（写本身未决 / Fail-Closed Keep）。
+  5. 孤立 `tool_result` 段、`ls`/`find` 等探查 Bash、Glob/Grep/Agent、以及「有写操作的轨迹里从未被写的纯读」→ `routine`（撑起 MIMO no_llm 压缩；召回优先，金标仍落在 Edit/Write）。
 - 已决议段 `focus='line'`（噪音）；未决默认 `card`。
 - 每条 LabelDecision 必须带 `rule_name`，报告「点开删除理由」靠它。
 
@@ -94,7 +95,11 @@ rules → types, enums, constant（Jaccard 阈值等）, domain, utils
 | `failed_call_no_followup` | dead_end | line |
 | `repeat_read` | routine | line |
 | `similar_retry` | dead_end / routine | line |
-| `read_then_later_written` | （hint，未决） | card |
+| `read_then_later_written` | routine | line |
+| `orphan_tool_result` | routine | line |
+| `exploratory_listing` | routine | line |
+| `search_tool` | routine | line |
+| `read_never_written` | routine | line |
 
 ---
 

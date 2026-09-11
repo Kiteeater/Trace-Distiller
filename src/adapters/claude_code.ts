@@ -307,8 +307,12 @@ function blockToTurn(
   }
   if (type === 'tool_use') {
     const name = typeof block.name === 'string' ? block.name : 'unknown'
-    const args_json = JSON.stringify(block.input ?? {})
     const toolUseId = typeof block.id === 'string' ? block.id : undefined
+    const input = block.input ?? {}
+    const args_obj: Record<string, unknown> = isRecord(input) ? { ...input } : { value: input }
+    // Stamp call id so segmenter can pair batched tool_result by tool_use_id.
+    if (toolUseId !== undefined) args_obj.tool_use_id = toolUseId
+    const args_json = JSON.stringify(args_obj)
     if (toolUseId !== undefined) pending.set(toolUseId, { name, args_json })
     return makeTurn(id(), 'tool_call', args_json, { name, args_json })
   }

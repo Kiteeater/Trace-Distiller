@@ -13,6 +13,7 @@ import {
   LONG_CUT_PROFILE,
   LONG_DEAD_END_MAX_REPRESENTATIVE,
   LONG_LABEL_WINDOW_SIZE,
+  LONG_SPAN_MAX_GAP_SEGMENTS,
   MULTI_DEAD_END_CUT_PROFILE,
   SHORT_CUT_PROFILE,
   SHORT_DEAD_END_MAX_REPRESENTATIVE,
@@ -68,6 +69,9 @@ describe('locked defaults', () => {
     assert.equal(SHORT_CUT_PROFILE.keep_ratio_floor, null)
     assert.equal(LONG_CUT_PROFILE.dead_end.max_representative, 2)
     assert.equal(LONG_CUT_PROFILE.keep_ratio_floor, 0.08)
+    assert.equal(LONG_SPAN_MAX_GAP_SEGMENTS, 12)
+    assert.equal(LONG_CUT_PROFILE.span.max_gap_segments, 12)
+    assert.equal(MULTI_DEAD_END_CUT_PROFILE.span.max_gap_segments, 12)
     assert.equal(MULTI_DEAD_END_CUT_PROFILE.dead_end.max_representative, 3)
     assert.equal(cutProfileForBin('short').id, 'bin:short')
     assert.equal(cutProfileForBin('long').id, 'bin:long')

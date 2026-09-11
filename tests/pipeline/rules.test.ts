@@ -2,9 +2,12 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { segment } from '../../src/pipeline/segmenter.ts'
 import {
+  RULE_EXPLORATORY_LISTING,
   RULE_FAILED_CALL_NO_FOLLOWUP,
+  RULE_READ_NEVER_WRITTEN,
   RULE_READ_THEN_LATER_WRITTEN,
   RULE_REPEAT_READ,
+  RULE_SEARCH_TOOL,
   RULE_SIMILAR_RETRY,
   applyRules,
   type RulesOutput,
@@ -276,4 +279,41 @@ describe('rules', () => {
       false,
     )
   })
+  it('marks ls Bash as exploratory_listing and Glob as search_tool', () => {
+    const out = run([
+      makeTurn('u', 'user', 'look around'),
+      makeTurn('c1', 'tool_call', '{"command":"ls /tmp"}', { name: 'Bash', args: { command: 'ls /tmp' } }),
+      makeTurn('r1', 'tool_result', 'a\nb'),
+      makeTurn('c2', 'tool_call', '{"pattern":"**/*.ts"}', { name: 'Glob', args: { pattern: '**/*.ts' } }),
+      makeTurn('r2', 'tool_result', 'a.ts'),
+    ])
+    assertPartition(out)
+    const ls = out.view.segments.find((s) => s.tool === 'Bash')
+    const glob = out.view.segments.find((s) => s.tool === 'Glob')
+    assert.ok(ls)
+    assert.ok(glob)
+    assert.equal(decisionById(out, ls.id)?.rule_name, RULE_EXPLORATORY_LISTING)
+    assert.equal(decisionById(out, glob.id)?.rule_name, RULE_SEARCH_TOOL)
+  })
+
+  it('marks pure reads never later written as routine when the trace has writes', () => {
+    const out = run([
+      makeTurn('u', 'user', 'fix'),
+      makeTurn('c1', 'tool_call', '{"path":"wrong.ts"}', { name: 'Read', args: { path: 'wrong.ts' } }),
+      makeTurn('r1', 'tool_result', 'nope'),
+      makeTurn('c2', 'tool_call', '{"path":"add.ts"}', {
+        name: 'Write',
+        args: { path: 'add.ts', contents: 'ok' },
+      }),
+      makeTurn('r2', 'tool_result', 'ok'),
+    ])
+    assertPartition(out)
+    const wrong = out.view.segments.find((s) => s.reads.includes('wrong.ts'))
+    const write = out.view.segments.find((s) => s.tool === 'Write')
+    assert.ok(wrong)
+    assert.ok(write)
+    assert.equal(decisionById(out, wrong.id)?.rule_name, RULE_READ_NEVER_WRITTEN)
+    assert.equal(out.unresolved_ids.includes(write.id), true)
+  })
+
 })
