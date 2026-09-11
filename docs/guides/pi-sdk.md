@@ -68,7 +68,7 @@
 | 网关 API key | `TRACE_DISTILLER_API_KEY`（只进本机 `.env`，禁止提交、禁止 log） |
 | provider 名 | `TRACE_DISTILLER_PROVIDER`（默认 `macaron`） |
 
-`API_BASE`+`API_KEY` 都设时，`createPiKernelSession` 对 `ModelRegistry.inMemory` 调 `registerProvider`（`api: 'openai-completions'`，`authHeader: true`），再用 `registry.find` 设 model，不走内置 `getModel`。复制 `.env.example` 为 `.env`；`script/run-distill.ts` 启动时加载。可选 `bun run smoke-mint`（无 key 则 skip）。
+`API_BASE`+`API_KEY` 都设时，`createPiKernelSession` 对 `ModelRegistry.inMemory` 调 `registerProvider`（`api` 走 `TRACE_DISTILLER_API_TYPE`，默认 `openai-completions`；`authHeader: true`），再用 `registry.find` 设 model，不走内置 `getModel`。复制 `.env.example` 为 `.env`；`script/run-distill.ts` 启动时加载。可选 `bun run smoke-mint`（无 key 则 skip）。
 
 失败：同一会话 **重试 1 次**（`PI_FAILURE_RETRY`），仍失败则编排器 **Fail-Closed Keep**。`createAgentSession` 仍只允许出现在 `src/agent/sessions/`。生产默认 `SessionManager.inMemory()` + `noTools: 'all'`（禁止默认 codingTools）。测试注入 `FakeSessionBackend`。
 

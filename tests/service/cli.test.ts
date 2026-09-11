@@ -59,6 +59,7 @@ describe('cli', { concurrency: 1 }, () => {
     assert.match(help, /--replay/)
     assert.match(help, /TRACE_DISTILLER_MODEL_L4/)
     assert.match(help, /TRACE_DISTILLER_API_BASE/)
+    assert.match(help, /TRACE_DISTILLER_API_TYPE/)
     assert.match(help, /Keys are never logged/)
     assert.match(help, /bench/)
     assert.match(help, /never averaged/)
@@ -216,6 +217,7 @@ describe('cli', { concurrency: 1 }, () => {
     const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`
     assert.doesNotMatch(combined, /sk-[0-9a-f]{16,}/i)
     assert.match(combined, /TRACE_DISTILLER_API_BASE/)
+    assert.match(combined, /TRACE_DISTILLER_API_TYPE/)
   })
 
   it('script entry exits 0 on the synthetic fixture', () => {

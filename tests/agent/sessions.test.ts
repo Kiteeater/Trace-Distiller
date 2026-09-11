@@ -709,6 +709,7 @@ describe('hole sessions', () => {
     assert.match(openSrc, /registerProvider/)
     assert.match(openSrc, /openai-completions/)
     assert.match(openSrc, /TRACE_DISTILLER_API_BASE/)
+    assert.match(openSrc, /TRACE_DISTILLER_API_TYPE/)
     assert.match(openSrc, /authHeader:\s*true/)
     assert.match(openSrc, /applyCustomGateway/)
 
@@ -935,6 +936,80 @@ describe('hole sessions', () => {
     if (result.used !== true) return
     assert.equal(result.model, found)
     assert.equal(calls[0]?.name, 'example-provider')
+  })
+
+  it('TRACE_DISTILLER_API_TYPE unset or empty defaults to openai-completions', () => {
+    const unset = readCustomGatewayEnv({
+      TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
+      TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+      TRACE_DISTILLER_PROVIDER: 'example-provider',
+    })
+    assert.equal(unset?.api, 'openai-completions')
+    const empty = readCustomGatewayEnv({
+      TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
+      TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+      TRACE_DISTILLER_PROVIDER: 'example-provider',
+      TRACE_DISTILLER_API_TYPE: '',
+    })
+    assert.equal(empty?.api, 'openai-completions')
+    const registration = buildCustomProviderRegistration({
+      provider: 'example-provider',
+      modelId: 'example-model',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'sk-test-not-a-real-key',
+      api: '',
+    })
+    assert.equal(registration.config.api, 'openai-completions')
+    assert.equal(registration.config.authHeader, true)
+  })
+
+  it('TRACE_DISTILLER_API_TYPE is passed through as registerProvider api', () => {
+    const registration = buildCustomProviderRegistration({
+      provider: 'example-provider',
+      modelId: 'example-model',
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'sk-test-not-a-real-key',
+      api: 'openai-responses',
+    })
+    assert.equal(registration.config.api, 'openai-responses')
+    assert.equal(registration.config.authHeader, true)
+    const env = readCustomGatewayEnv({
+      TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
+      TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+      TRACE_DISTILLER_PROVIDER: 'example-provider',
+      TRACE_DISTILLER_API_TYPE: 'anthropic-messages',
+    })
+    assert.equal(env?.api, 'anthropic-messages')
+    const calls: Array<{ name: string; config: CustomProviderRegisterConfig }> = []
+    const found = { id: 'example-model', provider: 'example-provider' }
+    const result = applyCustomGateway(
+      {
+        registerProvider(name: string, config: CustomProviderRegisterConfig) {
+          calls.push({ name, config })
+        },
+        find(provider: string, id: string) {
+          if (provider === 'example-provider' && id === 'example-model') return found
+          return undefined
+        },
+      },
+      {
+        set() {},
+      },
+      'example-provider/example-model',
+      {
+        TRACE_DISTILLER_API_BASE: 'https://example.com/v1',
+        TRACE_DISTILLER_API_KEY: 'sk-test-not-a-real-key',
+        TRACE_DISTILLER_PROVIDER: 'example-provider',
+        TRACE_DISTILLER_API_TYPE: 'anthropic-messages',
+      },
+    )
+    assert.equal(result.used, true)
+    if (result.used !== true) return
+    assert.equal(result.model, found)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0]?.name, 'example-provider')
+    assert.equal(calls[0]?.config.api, 'anthropic-messages')
+    assert.equal(calls[0]?.config.authHeader, true)
   })
 
   it('committed sources do not embed API keys', () => {
