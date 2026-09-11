@@ -11,7 +11,8 @@ import {
 import { L4_REPLAY_CODING_TOOLS, resolvePiToolRegistration } from './hole_tools.ts'
 import type { AgentRole } from '../../enums/agent_role.ts'
 import { LABELS, type Label } from '../../enums/label.ts'
-import type { TokenUsage } from './skeleton_pass.ts'
+import { SKELETON_PASS_JSON_KIND, type TokenUsage } from './skeleton_pass.ts'
+import { formatMaskedForPrompt, maskToolResult } from './tool_mask.ts'
 
 /** 按 AgentRole 选模型档。模型名本身不进 constant。 */
 export const MODEL_ENV_BY_ROLE: Record<AgentRole, string> = {
@@ -278,10 +279,18 @@ export function composeSessionPrompt(input: SessionPromptInput): string {
   )
   if (preamble.length > 0) chunks.push(preamble.join('\n\n'))
   for (const msg of input.messages ?? []) {
-    chunks.push(`${msg.role}:\n${msg.content}`)
+    // ADR-0010: prior tool/assistant blobs that look like tool payloads get masked.
+    const content = maskPromptMessageContent(msg.content)
+    chunks.push(`${msg.role}:\n${content}`)
   }
   chunks.push(input.text)
   return chunks.join('\n\n')
+}
+
+/** Mask oversized or structured tool-like blobs before they re-enter a session prompt. */
+export function maskPromptMessageContent(content: string): string {
+  if (content.length <= 480) return content
+  return formatMaskedForPrompt(maskToolResult(content))
 }
 
 /**
@@ -581,7 +590,7 @@ function defaultFakeRespond(input: SessionPromptInput, opts: ResolvedSessionOpts
   }
   const json = defaultFakeJsonForRole(input, opts.role)
   const tool_calls =
-    opts.role === 'hole_a_skeleton' || opts.role === 'hole_b_label'
+    opts.role === 'hole_b_label'
       ? [{ name: 'label_segment', arguments: json }]
       : []
   return {
@@ -620,7 +629,40 @@ function defaultFakeJsonForRole(input: SessionPromptInput, role: AgentRole): unk
   if (role === 'l4_qa') return defaultFakeQaJson(input)
   if (role === 'l4_replay') return defaultFakeReplayJson(input)
   if (role === 'l4_review') return defaultFakeReviewJson(input)
-  return defaultSpikeLabelJson()
+  if (role === 'hole_a_skeleton') return defaultFakeSkeletonJson(input)
+  return defaultSpikeLabelJsonFromPrompt(input)
+}
+
+/** Minimal skeleton_pass_v0 so FakeSessionBackend can drive agent-path distill (ADR-0010). */
+export function defaultFakeSkeletonJson(input?: SessionPromptInput): {
+  kind: typeof SKELETON_PASS_JSON_KIND
+  intent: { text: string }
+  scenario: string
+  skeleton: { nodes: unknown[] }
+} {
+  const text = input?.text ?? ''
+  const intent =
+    text.match(/"text"\s*:\s*"([^"]+)"/)?.[1] ??
+    text.match(/Fix [^\n]{0,80}/)?.[0] ??
+    'fake intent'
+  return {
+    kind: SKELETON_PASS_JSON_KIND,
+    intent: { text: intent.slice(0, 200) },
+    scenario: 'implement',
+    skeleton: { nodes: [] },
+  }
+}
+
+/** Prefer a window segment id from the prompt when present so hole B labels stick. */
+function defaultSpikeLabelJsonFromPrompt(input: SessionPromptInput): SpikeLabelJson {
+  const ids = [...input.text.matchAll(/"id"\s*:\s*"(s\d+)"/g)].map((m) => m[1]!).filter(Boolean)
+  const segment_id = ids[0] ?? 's0001'
+  return {
+    kind: SPIKE_JSON_KIND,
+    segment_id,
+    label: 'key_decision',
+    confidence: 0.91,
+  }
 }
 
 export function defaultFakeQaJson(input: SessionPromptInput): {

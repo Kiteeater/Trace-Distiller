@@ -50,7 +50,7 @@ describe('scoreboard markdown', () => {
         samples: [],
       },
     }
-    const md = renderScoreboardMarkdown({ dir: 'benchmark/datasets', mode: 'no_llm', l4: false, bins })
+    const md = renderScoreboardMarkdown({ dir: 'benchmark/datasets', mode: 'with_llm', l4: false, bins })
     assert.match(md, /## short/)
     assert.match(md, /t1/)
     assert.match(md, /never averaged/i)

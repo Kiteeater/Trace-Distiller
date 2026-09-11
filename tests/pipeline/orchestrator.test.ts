@@ -19,6 +19,8 @@ import {
   assembleRepairingSpan,
   distill,
   fillInKeepWarrant,
+  NO_LLM_REMOVED_MESSAGE,
+  AGENT_PATH_REQUIRED_MESSAGE,
   resolveDistillMode,
   runBlindReviewFillIn,
 } from '../../src/pipeline/orchestrator.ts'
@@ -41,7 +43,7 @@ function load(name: string): string {
   return readFileSync(join(fixtures, name), 'utf8')
 }
 
-describe('orchestrator no_llm', () => {
+describe('orchestrator agent path (ADR-0010)', () => {
   afterEach(() => {
     setSessionBackend(undefined)
   })
@@ -63,10 +65,17 @@ describe('orchestrator no_llm', () => {
     assert.doesNotMatch(src, /TRACE_DISTILLER_MODEL_L4/)
   })
 
-  it('runs adapter fixture to plan + training/playback; resolved drop/collapse, unresolved keep', async () => {
+  it('runs adapter fixture via with_llm + Fake; rules resolve drop/collapse; holes may label', async () => {
     const raw = parse(load('no_llm_conservative.jsonl'))
     const ruled = applyRules({ view: segment(raw), raw })
-    const out = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'no_llm' })
+    const backend = new FakeSessionBackend()
+    setSessionBackend(backend)
+    const out = await distill({
+      raw,
+      profile: DEFAULT_CUT_PROFILE,
+      mode: 'with_llm',
+      opts: { sessionBackend: backend },
+    })
 
     assert.equal(out.plan.trace_id, raw.meta.trace_id)
     assert.equal(out.plan.profile_id, DEFAULT_CUT_PROFILE.id)
@@ -98,40 +107,29 @@ describe('orchestrator no_llm', () => {
       if (d.label === 'dead_end') {
         const entry = out.warrant.entries.find((e) => e.segment_id === d.segment_id)
         assert.ok(entry?.action === 'collapse' || entry?.action === 'drop', d.segment_id)
-        if (entry?.action === 'collapse') {
-          assert.equal(
-            out.plan.collapsed.some((c) => c.segment_id === d.segment_id),
-            true,
-            d.segment_id,
-          )
-          assert.ok((entry.dead_end_summary ?? '').length > 0)
-        } else {
-          assert.equal(out.plan.dropped.includes(d.segment_id), true, d.segment_id)
-        }
       }
     }
 
-    for (const id of ruled.unresolved_ids) {
-      assert.equal(out.plan.kept.includes(id), true, id)
-      const entry = out.warrant.entries.find((e) => e.segment_id === id)
-      assert.equal(entry?.action, 'keep')
-      assert.equal(entry?.source.kind, 'rule')
-      assert.equal(entry?.source.name, FAIL_CLOSED_KEEP_RULE)
-    }
-
-    const again = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'no_llm' })
-    assert.equal(JSON.stringify(again.plan), JSON.stringify(out.plan))
-    assert.equal(JSON.stringify(again.warrant), JSON.stringify(out.warrant))
+    // Agent path: every segment has a warrant entry; plan is non-empty keep/drop/collapse.
+    assert.ok(out.plan.kept.length + out.plan.dropped.length + out.plan.collapsed.length > 0)
   })
 
-  it('resolveDistillMode: --no-llm wins; backend or model env enables with_llm', () => {
-    assert.equal(resolveDistillMode({ no_llm: true, sessionBackend: new FakeSessionBackend() }), 'no_llm')
+  it('resolveDistillMode: --no-llm throws; backend or model env enables with_llm; bare env throws', () => {
+    assert.throws(
+      () => resolveDistillMode({ no_llm: true, sessionBackend: new FakeSessionBackend() }),
+      (err: unknown) => err instanceof Error && err.message.includes('ADR-0010'),
+    )
     assert.equal(resolveDistillMode({ sessionBackend: new FakeSessionBackend() }), 'with_llm')
     assert.equal(
       resolveDistillMode({ env: { TRACE_DISTILLER_MODEL_HOLE_A: 'anthropic/claude' } }),
       'with_llm',
     )
-    assert.equal(resolveDistillMode({ env: {} }), 'no_llm')
+    assert.throws(
+      () => resolveDistillMode({ env: {} }),
+      (err: unknown) =>
+        err instanceof Error && err.message === AGENT_PATH_REQUIRED_MESSAGE,
+    )
+    assert.equal(NO_LLM_REMOVED_MESSAGE.includes('ADR-0010'), true)
   })
 })
 

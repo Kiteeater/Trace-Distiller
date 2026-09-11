@@ -18,6 +18,7 @@ import {
 import { getCutPlan, insertCutPlan, insertWarrant, listWarrants } from '../../src/data/data_warrant.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../../src/domain/cut_decision.ts'
 import { distill } from '../../src/pipeline/orchestrator.ts'
+import { FakeSessionBackend, setSessionBackend } from '../../src/agent/sessions/open_session.ts'
 import { AdmissionError } from '../../src/types/raw_trace.ts'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), '../fixtures/claude_code')
@@ -27,7 +28,7 @@ const agentDir = join(dirname(fileURLToPath(import.meta.url)), '../../src/agent'
 describe('data sqlite', () => {
   it('writes a distill result and reads it back; ruleCoverage matches labels', async () => {
     const raw = parse(readFileSync(join(fixtures, 'no_llm_conservative.jsonl'), 'utf8'))
-    const out = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'no_llm' })
+    const out = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'with_llm', opts: { sessionBackend: new FakeSessionBackend() } })
     const db = openDb(':memory:')
     try {
       runInTransaction(db, () => {

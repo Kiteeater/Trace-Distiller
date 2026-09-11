@@ -6,14 +6,14 @@
   "description": "Distill successful agent traces into training and playback cuts.",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/adapters/claude_code.test.ts tests/domain/cut_decision.test.ts tests/pipeline/segmenter.test.ts tests/pipeline/rules.test.ts tests/pipeline/assembler.test.ts tests/pipeline/orchestrator.test.ts tests/agent/sessions.test.ts tests/agent/pi_spike.test.ts tests/agent/hole_tools.test.ts tests/agent/extension.test.ts tests/agent/skills.test.ts tests/constant/defaults.test.ts tests/data/sqlite.test.ts tests/report/html.test.ts tests/report/live_page.test.ts tests/service/cli.test.ts tests/service/live.test.ts tests/service/live_socket.test.ts tests/eval/eval.test.ts tests/eval/benchmark.test.ts tests/eval/scoreboard.test.ts tests/eval/workspace_replay.test.ts tests/utils/logger.test.ts tests/utils/env.test.ts tests/utils/timeout.test.ts",
+    "test": "node --test tests/adapters/claude_code.test.ts tests/domain/cut_decision.test.ts tests/pipeline/segmenter.test.ts tests/pipeline/rules.test.ts tests/pipeline/assembler.test.ts tests/pipeline/orchestrator.test.ts tests/agent/sessions.test.ts tests/agent/pi_spike.test.ts tests/agent/tool_mask.test.ts tests/agent/hole_tools.test.ts tests/agent/extension.test.ts tests/agent/skills.test.ts tests/constant/defaults.test.ts tests/data/sqlite.test.ts tests/report/html.test.ts tests/report/live_page.test.ts tests/service/cli.test.ts tests/service/live.test.ts tests/service/live_socket.test.ts tests/eval/eval.test.ts tests/eval/benchmark.test.ts tests/eval/scoreboard.test.ts tests/eval/workspace_replay.test.ts tests/utils/logger.test.ts tests/utils/env.test.ts tests/utils/timeout.test.ts",
     "smoke-mint": "node --experimental-strip-types script/smoke-mint.ts",
     "pi-spike": "node --test tests/agent/pi_spike.test.ts",
     "distill": "node --experimental-strip-types script/run-distill.ts",
-    "distill:example": "node --experimental-strip-types script/run-distill.ts distill examples/add-fix.jsonl --no-llm --sqlite /tmp/distiller.sqlite --report /tmp/add-fix.report.html --live-dump /tmp/distiller-live",
-    "bench:fake": "node --experimental-strip-types script/run-distill.ts bench --no-llm --fake-l4",
-    "bench:m1": "node --experimental-strip-types script/run-distill.ts bench --no-llm --fake-l4",
-    "bench:long": "node --experimental-strip-types script/run-distill.ts bench --no-llm --fake-l4 --bin long --out-dir benchmark/out-long",
+    "distill:example": "node --experimental-strip-types script/run-distill.ts distill examples/add-fix.jsonl --fake-l4 --sqlite /tmp/distiller.sqlite --report /tmp/add-fix.report.html --live-dump /tmp/distiller-live",
+    "bench:fake": "node --experimental-strip-types script/run-distill.ts bench --fake-l4",
+    "bench:m1": "node --experimental-strip-types script/run-distill.ts bench --fake-l4",
+    "bench:long": "node --experimental-strip-types script/run-distill.ts bench --fake-l4 --bin long --out-dir benchmark/out-long",
     "bench:long:mint": "node --experimental-strip-types script/bench-long-mint.ts"
   },
   "dependencies": {

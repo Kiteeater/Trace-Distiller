@@ -2,14 +2,23 @@ import { defineTool, type ToolDefinition } from '@mariozechner/pi-coding-agent'
 import { Type } from 'typebox'
 import { LABELS } from '../../enums/label.ts'
 import { HOLE_TOOL_NAMES, type HoleToolName } from '../extension.ts'
+import { formatMaskedForPrompt, maskToolResult } from './tool_mask.ts'
 
 const LABEL_ENUM = Type.Union(LABELS.map((v) => Type.Literal(v)))
 
-function ack(text: string): { content: Array<{ type: 'text'; text: string }>; details: { ok: true } } {
-  return { content: [{ type: 'text', text }], details: { ok: true as const } }
+function ack(
+  toolName: string,
+  payload: unknown,
+): { content: Array<{ type: 'text'; text: string }>; details: { ok: true; masked: true } } {
+  // ADR-0010: never return full tool payload to the next agent turn.
+  const masked = maskToolResult(payload, { toolName })
+  return {
+    content: [{ type: 'text', text: formatMaskedForPrompt(masked) }],
+    details: { ok: true as const, masked: true as const },
+  }
 }
 
-/** pi customTools 闭集；execute 只 ACK，编排器事后从 messages 抽 tool_calls 再跑 extension handlers。 */
+/** pi customTools 闭集；execute 只 ACK（经 tool_mask），编排器事后从 messages 抽 tool_calls 再跑 extension handlers。 */
 export function buildHoleCustomTools(
   requested: readonly string[],
 ): ToolDefinition[] {
@@ -36,9 +45,11 @@ export function buildHoleCustomTools(
           confidence: Type.Number({ description: 'Confidence in [0, 1]' }),
         }),
         async execute(_toolCallId, params) {
-          return ack(
-            `recorded label_segment ${params.segment_id}=${String(params.label)}@${String(params.confidence)}`,
-          )
+          return ack('label_segment', {
+            segment_id: params.segment_id,
+            label: params.label,
+            confidence: params.confidence,
+          })
         },
       }),
     )
@@ -59,9 +70,13 @@ export function buildHoleCustomTools(
           reason: Type.String({ minLength: 1 }),
         }),
         async execute(_toolCallId, params) {
-          return ack(
-            `recorded check_continuity ${params.left_id}->${params.right_id} score=${String(params.score)}`,
-          )
+          return ack('check_continuity', {
+            left_id: params.left_id,
+            right_id: params.right_id,
+            reachable: params.reachable,
+            score: params.score,
+            reason: params.reason,
+          })
         },
       }),
     )
@@ -73,15 +88,19 @@ export function buildHoleCustomTools(
         name: 'read_segment',
         label: 'Read segment',
         description:
-          'Fetch full text for one segment_id in the current window only. Prefer WINDOW_CARDS when enough.',
+          'Fetch full text for one segment_id in the current window only. Prefer WINDOW_CARDS when enough. Tool result is masked for the next agent turn (ADR-0010).',
         promptSnippet: 'Read one window segment raw text',
         parameters: Type.Object({
           segment_id: Type.String({ description: 'Segment id in the current window' }),
         }),
         async execute(_toolCallId, params) {
-          return ack(
-            `read_segment acknowledged for ${params.segment_id}; use WINDOW_CARDS/head when full text is not injected`,
-          )
+          // Full text may later be fetched by extension handlers into warrant/store;
+          // agent turn only sees masked ack (no full payload).
+          return ack('read_segment', {
+            segment_id: params.segment_id,
+            focus: 'full',
+            text: '',
+          })
         },
       }),
     )

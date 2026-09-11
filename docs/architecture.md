@@ -11,29 +11,29 @@
 
 ## 核心观念
 
-> 这不是「一个 agent」，是 **流水线 + 两个 agent 洞**。
+> Agent session 任 **editor-in-chief** 决定 how to cut；确定性 TS 护栏保证可复现（[ADR-0010](./adr/0010-agent-led-cut-with-tool-mask.md)）。
 
-编排层**不用** agent 框架、**不用** LLM。整条链路只有两处需要 LLM 判断力，这两处才嵌入 pi 内核：
+不用 LangChain / CrewAI。pi 只经 `src/agent/sessions/`（可托管 cut-brain 会话循环）。工具结果经 **tool mask** 回灌；全量 payload 进 warrant/training store。
 
 ```text
-流水线编排器（纯 TS，无 LLM）
+Agent-led cut（sessions cut-brain / 洞 A+B；follow-up 完整 ReAct）
 │
 ├─ L0 适配器      → 纯代码（各格式 parser）
-├─ L1 切段+规则   → 纯代码（规则引擎）
+├─ L1 切段+规则   → 纯代码（亦可作 agent 可选工具/hints）
 │
 ├─ ① 骨架 pass    → 【Agent 洞 A】pi SDK
-├─ ② 逐窗打标     → 【Agent 洞 B】pi SDK（骨架注入 context）
+├─ ② 逐窗打标     → 【Agent 洞 B】pi SDK（骨架注入；tool mask）
 │
-├─ ③ 全局重组     → 纯代码 + 一次衔接检查（走洞 B 会话）
+├─ ③ warrant+assemble → 纯代码校验（span / CutWarrant / 双产物）
 ├─ L3 导出        → 纯代码
 └─ L4 评测        → 纯代码统计 + 重放用 pi 起干净会话
 ```
 
-**为什么编排不用 agent/LLM**：切多少段、先跑哪步、失败怎么重试——都是确定性逻辑。交给 LLM 编排只会引入不可复现性；benchmark 要求数字可复现，编排层必须是纯代码。
+**为什么护栏仍是纯代码**：admission / span / assemble / I/O 必须可复现；agent 只拥有裁剪判断权，不拥有校验与落盘权。
 
 一句话映射：
 
-> 流水线用纯代码保证可复现；LLM 判断收敛到两个洞；pi SDK 当洞里的内核；skill 文件承载分场景裁剪策略；SQLite 承载评测闭环——每个组件只干自己擅长的事。
+> Agent 决定怎么切；确定性代码保证切得合法、可复现；tool mask 管住上下文；skill 承载场景策略；SQLite 承载评测闭环。
 
 ---
 
@@ -64,7 +64,7 @@ Demo 的核心镜头是「500 步的墙 → 30 步的精华」，载体是**流�
 
 ## 内核：薄包 pi SDK，不引入 agent 框架
 
-整个系统**不是 agent**，是流水线。需要封装的只有两个函数，放 `agent/sessions/`：
+系统是 **agent 主编 + 确定性流水线护栏**。洞函数放 `agent/sessions/`（后续 cut-brain 循环也只许落这里）：
 
 ```text
 skeletonPass(trace)                          → 骨架 + 场景分类（洞 A，强模型）

@@ -75,7 +75,7 @@ function walkTs(dir: string): string[] {
 }
 
 describe('writeWarrant', () => {
-  it('matches no_llm distill: resolved drop/collapse, unresolved fail-closed keep', async () => {
+  it('writeWarrant: resolved drop/collapse, unresolved fail-closed keep (rules labels only)', async () => {
     const raw = parse(load('no_llm_conservative.jsonl'))
     const ruled = applyRules({ view: segment(raw), raw })
     const warrant = writeWarrant({
@@ -84,9 +84,7 @@ describe('writeWarrant', () => {
       view: ruled.view,
       profile: DEFAULT_CUT_PROFILE,
     })
-    const out = await distill({ raw, profile: DEFAULT_CUT_PROFILE, mode: 'no_llm' })
 
-    assert.deepEqual(warrant, out.warrant)
     assert.deepEqual(
       warrant.entries.map((e) => e.segment_id),
       ruled.view.segments.map((s) => s.id),

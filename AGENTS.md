@@ -2,29 +2,29 @@
 
 给写代码的人（和 agent）看。产品词以 [CONTEXT.md](./CONTEXT.md) 为准；分层理由见 [docs/architecture.md](./docs/architecture.md)；叶子文件以 [docs/guides/file-architecture.md](./docs/guides/file-architecture.md) 为准。
 
-## 这不是一个 agent
+## Agent 主编 + 确定性护栏（ADR-0010）
 
-编排是纯 TypeScript 流水线。LLM 只出现在洞 A（骨架）、洞 B（逐窗打标）和 L4 eval 干净会话（QA / replay / review）。L4 不计蒸馏成本。不要把 Distiller 理解成 runtime agent，不要引入 LangChain 一类编排框架。
+裁剪决策权在 **agent session（editor-in-chief）**：理解意图并决定 how to cut。Tools 只执行操作；工具结果经 **tool mask** 回灌下一 turn（全量可进 warrant/training store）。Admission / span / warrant assemble / I/O 仍是确定性 TypeScript。pi 只经 `src/agent/sessions/`（可托管 cut-brain 会话，不是 pi-coding 产品循环）。不要引入 LangChain / CrewAI。`--no-llm` 已删除。L4 不计蒸馏成本。
 
 ## 命令
 
 - 装依赖：`bun install`（唯一锁文件 `bun.lock`）
 - 跑产物：`node`（不要用 bun 当运行时跑产物）
 - 类型检查：`bun run typecheck` 或 `tsc --noEmit`
-- 快捷：`bun run distill:example`、`bun run bench:fake` / `bun run bench:m1`（= `bench --no-llm --fake-l4`）；成熟度见 [docs/guides/maturity.md](./docs/guides/maturity.md)
+- 快捷：`bun run distill:example`、`bun run bench:fake` / `bun run bench:m1`（= `bench --fake-l4`）；成熟度见 [docs/guides/maturity.md](./docs/guides/maturity.md)
 - **不要**提交 `package-lock.json` / `yarn.lock` / `pnpm-lock.yaml`
 
 入口：
 
 ```text
-node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--report out.html] [--live-dump dir] [--live-socket path] [--no-llm]
+node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--sqlite path] [--report out.html] [--live-dump dir] [--live-socket path] [--fake-l4]
 node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
-node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm] [--fake-l4] [--with-l4]
+node script/run-distill.ts bench [--dir benchmark/datasets] [--fake-l4] [--with-l4]
 ```
 
-`--no-llm` 强制无洞；未加且注入了假后端或设了洞模型 env 时走 `with_llm`。`eval` 读 SQLite 蒸馏指标；`--qa` / `--replay` 在有会话后端（注入 FakeSessionBackend 或 `TRACE_DISTILLER_MODEL_L4`）时跑 L4，否则跳过并注明。真实重放成功率需要仓库+模型，CI 只保证接口。`bench` 默认 `no_llm`（防 mint 挂起）；`--fake-l4` 打本地 composite；`--with-l4` 才连真 mint（会话硬超时；长样建议 `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`）。`--bin` / `--bins` 选赛道并用 bin CutProfile 阀门。扫 `short` / `long` / `multi_dead_end` 分档报 JSON，禁止合并平均；无金标则召回 skipped；六项有 fail 则该样本总分 0。另有 m1_score（压缩率得分×关键步召回），cost 失败不归零 m1。pi 工厂 spike：`bun run pi-spike`。
+Agent-led only（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）。`--no-llm` 已删除（传入即报错）。蒸馏需 agent 路径：`--fake-l4` / 注入 `FakeSessionBackend`，或 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B`。`eval` 读 SQLite 蒸馏指标；`--qa` / `--replay` 在有会话后端时跑 L4，否则跳过并注明。`bench` 无 `--with-l4` 时默认注入 FakeSessionBackend 防挂；`--fake-l4` 另打本地 L4 composite；`--with-l4` 才连真 mint（会话硬超时；长样建议 `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`）。`--bin` / `--bins` 选赛道并用 bin CutProfile 阀门。扫 `short` / `long` / `multi_dead_end` 分档报 JSON，禁止合并平均；无金标则召回 skipped；六项有 fail 则该样本总分 0。另有 m1_score（压缩率得分×关键步召回），cost 失败不归零 m1。pi 工厂 spike：`bun run pi-spike`。
 
 ## 分层纪律
 
@@ -49,8 +49,7 @@ node script/run-distill.ts bench [--dir benchmark/datasets] [--no-llm] [--fake-l
 - 卡片字段由代码填，禁止 LLM 生成 `head` / `sig` / `focus`。segmenter 截 `head` 到 `SEGMENT_HEAD_MAX_CHARS`。
 - L0：`src/adapters/claude_code.ts` 解析单任务 claude-code JSONL 并执行 Admission Gate。
 - L1：切段 / 规则打标 / 无洞编排 / assembler / SQLite / 自包含报告 / distill CLI 已通。
-- **无洞通路**：`distill({ mode: 'no_llm' })` 与 CLI `--no-llm`。规则已决议按 CutProfile 裁；未决段 Fail-Closed Keep。凭证走 `src/agent/sessions/write_warrant.ts` 纯代码汇总（LabelDecision[] + 未决 keep + decideCut），orchestrator 可复用。
-- **带洞通路**：`distill({ mode: 'with_llm', opts: { sessionBackend } })`。洞 A `skeletonPass` 写回 intent/skeleton；未决按 `LABEL_WINDOW_SIZE` 串行 `labelWindow`（skill 经 `resolveSkillRoute`）；`still_unlabeled` ∪ 窗失败 Fail-Closed Keep（source.name=`fail_closed_keep`）；合并规则+LLM decisions → writeWarrant → assemble。盲测用 `eval.review` 纯代码对照骨架与 plan，缺节点回填 keep，最多 `REVIEW_MAX_ROUNDS`，不调 L4 LLM。测试注入 `FakeSessionBackend`。
+- **Agent 通路（唯一）**：`distill({ mode: 'with_llm', opts: { sessionBackend } })`。规则层先跑作 hints；洞 A `skeletonPass` 写回 intent/skeleton；未决按 `LABEL_WINDOW_SIZE` 串行 `labelWindow`；`still_unlabeled` ∪ 窗失败 → Fail-Closed Keep（agent/tool failure policy）；合并 decisions → writeWarrant → assemble。盲测纯代码回填。工具回灌经 `tool_mask`。测试/CI 注入 `FakeSessionBackend` 或 `--fake-l4`。`--no-llm` 已删除（ADR-0010）。
 - Live：`src/service/live.ts` 内存订阅 Distiller job（`list_jobs` / `attach_job` / `detach_job` / `get_cut_progress` / `get_partial_result` / `get_warrant_tail`）+ 只读 `dumpJobSnapshot` / `dumpAllJobs`。纯 TS，无 LLM。源 = 进程内 `registerJobFromResult`，禁止 HTTP listen。可选 Unix domain socket 见 `src/service/live_socket.ts`（`startLiveSocket` / `stopLiveSocket`；CLI `--live-socket <path>`；默认关闭；JSON lines；distill 结束即关并 unlink，不 keep-alive）。默认传输仍是进程内表 + `--live-dump` / `live-dump` 写出 `<job_id>.live.json` 与 `file://` 自包含 `live.html`（`src/report/live_page.ts`）。页只读 Distiller 裁剪过程，不是对方 agent。`src/agent/skills/` 五份极简 Markdown + README；`src/utils/logger.ts` 无状态打 stderr。
 - Eval：`compressionRatio` / `distillCostRatio` / `compressionScore` / `keyStepRecall` / `compositeScore` 纯函数（L4 token 不计蒸馏成本；`hole_a_plus_b_tokens` 优先读 pi-ai `Usage.input`/`output`，缺用量才 `estimateTokens`）；`computeDistillMetrics` 汇总压缩率、规则覆盖、LLM 段占比、Fail-Closed 数。蒸馏成功写入 `data` 指标表。分档报分壳：`src/eval/benchmark.ts`（`scoreSample` / `aggregateBins`）；召回只读独立金标，不读 LabelDecision。盲测协议：review 输入只有 intent + playback；缺骨架节点由代码回填 keep；最多 `REVIEW_MAX_ROUNDS=2`。L4 会话：`runQa` / `runReplay` / `runBlindReview`（`src/agent/sessions/l4_*.ts`）；eval 调用这些函数。假后端返回可解析 QA/replay/review JSON；真模型走 `TRACE_DISTILLER_MODEL_L4`。编排器不 import L4。
 - 蒸馏洞三工具已拍板闭集：`label_segment` / `check_continuity` / `read_segment`。`src/agent/extension.ts` 纯函数 handler（校验枚举 / 取数）；rationale 不进凭证；`read_segment` 只本段；一窗一会话；Fail-Closed Keep。handler 不接 pi。
