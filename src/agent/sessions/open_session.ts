@@ -29,6 +29,9 @@ export const MODEL_ENV_BY_ROLE: Record<AgentRole, string> = {
 export const GATEWAY_API_BASE_ENV = 'TRACE_DISTILLER_API_BASE'
 export const GATEWAY_API_KEY_ENV = 'TRACE_DISTILLER_API_KEY'
 export const GATEWAY_PROVIDER_ENV = 'TRACE_DISTILLER_PROVIDER'
+export const GATEWAY_API_TYPE_ENV = 'TRACE_DISTILLER_API_TYPE'
+/** pi `registerProvider` `api` when TRACE_DISTILLER_API_TYPE is unset/empty. */
+export const GATEWAY_API_TYPE_DEFAULT = 'openai-completions'
 
 const GATEWAY_MODEL_ENV_KEYS = [
   MODEL_ENV_BY_ROLE.hole_a_skeleton,
@@ -46,11 +49,14 @@ export interface CustomGatewayEnv {
   apiKey: string
   /** Set when TRACE_DISTILLER_PROVIDER or a MODEL_* `provider/modelId` prefix is present. */
   provider?: string
+  /** pi `registerProvider` `api` (TRACE_DISTILLER_API_TYPE; default openai-completions). */
+  api: string
 }
 
 export interface CustomProviderRegisterConfig {
   baseUrl: string
-  api: 'openai-completions'
+  /** pi KnownApi or any string passed through to registerProvider. */
+  api: string
   apiKey: string
   authHeader: true
   compat: typeof CUSTOM_PROVIDER_COMPAT
@@ -225,13 +231,21 @@ export function deriveGatewayProvider(env: NodeJS.Dict<string> = process.env): s
   return undefined
 }
 
+/** One api type for the custom gateway (no per-hole override). Unset/empty → default. */
+export function resolveGatewayApiType(env: NodeJS.Dict<string> = process.env): string {
+  const raw = env[GATEWAY_API_TYPE_ENV]
+  if (typeof raw === 'string' && raw.length > 0) return raw
+  return GATEWAY_API_TYPE_DEFAULT
+}
+
 export function readCustomGatewayEnv(env: NodeJS.Dict<string> = process.env): CustomGatewayEnv | undefined {
   const baseUrl = env[GATEWAY_API_BASE_ENV]
   const apiKey = env[GATEWAY_API_KEY_ENV]
   if (typeof baseUrl !== 'string' || baseUrl.length === 0) return undefined
   if (typeof apiKey !== 'string' || apiKey.length === 0) return undefined
   const provider = deriveGatewayProvider(env)
-  return provider !== undefined ? { baseUrl, apiKey, provider } : { baseUrl, apiKey }
+  const api = resolveGatewayApiType(env)
+  return provider !== undefined ? { baseUrl, apiKey, provider, api } : { baseUrl, apiKey, api }
 }
 
 export function resolveCustomGatewayModelRef(
@@ -248,14 +262,16 @@ export function buildCustomProviderRegistration(input: {
   modelId: string
   baseUrl: string
   apiKey: string
+  api?: string
 }): CustomProviderRegistration {
   const compat = { ...CUSTOM_PROVIDER_COMPAT }
+  const api = typeof input.api === 'string' && input.api.length > 0 ? input.api : GATEWAY_API_TYPE_DEFAULT
   return {
     provider: input.provider,
     modelId: input.modelId,
     config: {
       baseUrl: input.baseUrl,
-      api: 'openai-completions',
+      api,
       apiKey: input.apiKey,
       authHeader: true,
       compat,
@@ -297,6 +313,7 @@ export function applyCustomGateway<T>(
     modelId: ref.id,
     baseUrl: gateway.baseUrl,
     apiKey: gateway.apiKey,
+    api: gateway.api,
   })
   authStorage.set(ref.provider, { type: 'api_key', key: gateway.apiKey })
   registry.registerProvider(registration.provider, registration.config)
