@@ -343,7 +343,8 @@ export function maskPromptMessageContent(content: string): string {
 
 /**
  * Parse model JSON that may be fenced, wrapped in prose, near-JSON
- * (trailing commas, comments), or truncated. Prefer salvage over throw.
+ * (trailing commas, comments, unescaped quotes in strings), or truncated.
+ * Prefer salvage over throw; still throw when unparseable.
  */
 export function parseStructuredJson(text: string): unknown {
   const trimmed = text.trim()
@@ -361,6 +362,7 @@ export function parseStructuredJson(text: string): unknown {
   let lastErr: unknown
   const seen = new Set<string>()
   for (const raw of attempts) {
+    // raw → existing near-JSON repair (includes quote salvage when needed).
     for (const variant of [raw, repairNearJson(raw)]) {
       if (seen.has(variant)) continue
       seen.add(variant)
@@ -376,7 +378,8 @@ export function parseStructuredJson(text: string): unknown {
 
 /**
  * Soft repairs for mint near-JSON: strip comments, trailing commas,
- * and close truncated braces/brackets/strings when the model cut off mid-object.
+ * close truncated braces/brackets/strings, and (when still unparseable)
+ * escape interior `"` that are clearly string-content, not structural.
  */
 export function repairNearJson(text: string): string {
   let s = text.trim()
@@ -386,7 +389,62 @@ export function repairNearJson(text: string): string {
   s = stripTrailingCommas(s)
   s = closeTruncatedJson(s)
   s = stripTrailingCommas(s)
-  return s.trim()
+  s = s.trim()
+  if (jsonParseable(s)) return s
+  // One more salvage pass: quoted identifiers inside question/answer strings.
+  return escapeUnescapedStringQuotes(s)
+}
+
+function jsonParseable(text: string): boolean {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Escape `"` that sit inside string values (e.g. `"Fix the "add" function"`)
+ * while leaving structural delimiters alone. Conservative look-ahead: a quote
+ * is a closer only when the next non-ws char is `,` `}` `]` `:` or EOF.
+ */
+function escapeUnescapedStringQuotes(text: string): string {
+  let out = ''
+  let inString = false
+  let escape = false
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!
+    if (!inString) {
+      out += ch
+      if (ch === '"') inString = true
+      continue
+    }
+    if (escape) {
+      out += ch
+      escape = false
+      continue
+    }
+    if (ch === '\\') {
+      out += ch
+      escape = true
+      continue
+    }
+    if (ch === '"') {
+      let j = i + 1
+      while (j < text.length && /[\s\n\r\t]/.test(text[j]!)) j += 1
+      const next = j < text.length ? text[j]! : ''
+      if (next === '' || next === ',' || next === '}' || next === ']' || next === ':') {
+        out += ch
+        inString = false
+      } else {
+        out += '\\"'
+      }
+      continue
+    }
+    out += ch
+  }
+  return out
 }
 
 function stripJsonComments(text: string): string {

@@ -256,6 +256,31 @@ describe("real replay workspace wiring", () => {
     assert.equal(l4.qa, 1)
   })
 
+  it("salvages QA near-JSON with unescaped quotes via parse path (no skip)", async () => {
+    setSessionBackend(
+      new FakeSessionBackend(() => ({
+        text:
+          '{"kind":"l4_qa_v0","items":[{"id":"q1","question":"What was the task?","answer":"Fix the "add" function","correct":true},{"id":"q2","question":"What was edited?","answer":"add.ts","correct":true},{"id":"q3","question":"How verified?","answer":"pytest","correct":true}]}',
+        json: null,
+        tool_calls: [],
+        usage: { role: "l4_qa", input_tokens: 1, output_tokens: 1 },
+      })),
+    )
+    const l4 = await runOptionalL4({
+      intent: { version: 0, text: "Fix add" },
+      playback: {
+        trace_id: FLUFF_TRACE,
+        plan_ref: "plan",
+        cards: [card("s0017", "Edit", "x")],
+        collapsed: [],
+      },
+      run_qa: true,
+      run_replay: false,
+      repo_root: repoRoot,
+    })
+    assert.equal(l4.qa, 1)
+  })
+
   it("coherence failure notes when tool call missing", async () => {
     setSessionBackend(
       new FakeSessionBackend(() => ({
