@@ -38,7 +38,7 @@ bun run bench:long:mint   # 真 mint long-only；默认 SESSION_TIMEOUT_MS=30000
 |------|------|------|
 | **短样 `with_llm`（真洞 A/B）** | mint token 成本；洞 A+B ~6–10k 固定开销会顶穿 0.3 | **short / original_tokens≤25k：cost 只报不分**（仍不计 L4）；短档阀门更少剪（`bin:short`）；看 `m1_score` + 软 cost 后的 composite；不要把过夜默认改成 `--with-l4` |
 | **长样 `with_llm` / long mint** | 慢、易超时；洞窗更积极 + 更强 dead_end collapse | `--bin long` 单独跑；`SESSION_TIMEOUT_MS≥300000`；keep 地板 ~8–15%；可用 `TRACE_DISTILLER_BENCH_LONG_SAMPLE` 只 mint 一条 |
-| **真 mint L4 QA / replay / review** | 会话超时、模型波动、缺 workspace 时 replay 只能测接口 | 显式 `--with-l4`；长样用 `--bin long` + `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`（或 `bun run bench:long:mint`）；CI 继续 `--fake-l4` |
+| **真 mint L4 QA / replay / review** | 会话超时、模型波动、缺 workspace 时 replay 只能测接口；QA 曾现 `correct=1/3` | 显式 `--with-l4`；长样用 `--bin long` + `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`（或 `bun run bench:long:mint`）；CI 继续 `--fake-l4`；**QA 畸形/低分各重试一次**，题必须可从 playback 答 |
 | **可选 live Unix socket** | 默认关闭；命令结束即 unlink | 日常仍用 `--live-dump` / `file://` |
 
 ---

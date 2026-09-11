@@ -8,7 +8,7 @@ import {
   composeSessionPrompt,
   setSessionBackend,
 } from '../../src/agent/sessions/open_session.ts'
-import { runQa } from '../../src/agent/sessions/l4_qa.ts'
+import { interpretQaResult, runQa, shouldRetryQaScore } from '../../src/agent/sessions/l4_qa.ts'
 import { runReplay } from '../../src/agent/sessions/l4_replay.ts'
 import {
   assertBlindReviewPrompt,
@@ -420,6 +420,70 @@ describe('eval L4 via fake backend', () => {
       false,
       'dropped skeleton node must not be injected into the review session',
     )
+  })
+
+
+  it('retries once when first QA scores 1/3 (mint unstable mode) then accepts full score', async () => {
+    let calls = 0
+    const low = {
+      kind: 'l4_qa_v0',
+      items: [
+        { id: 'q1', question: 'task?', answer: 'fix add', correct: true },
+        { id: 'q2', question: 'unanswerable about dropped file?', answer: 'guess', correct: false },
+        { id: 'q3', question: 'another miss?', answer: 'no', correct: false },
+      ],
+    }
+    const high = {
+      kind: 'l4_qa_v0',
+      items: [
+        { id: 'q1', question: 'What was the task?', answer: 'Fix add', correct: true },
+        { id: 'q2', question: 'What was edited?', answer: 'add.ts a-b to a+b', correct: true },
+        { id: 'q3', question: 'How verified?', answer: 'pytest passed', correct: true },
+      ],
+    }
+    const fake = new FakeSessionBackend(() => {
+      calls += 1
+      const body = calls === 1 ? low : high
+      // First reply as prose-wrapped JSON (mint failure mode); retry clean.
+      if (calls === 1) {
+        return {
+          text: `Here are the answers:\n${JSON.stringify(body)}`,
+          json: null,
+          tool_calls: [],
+          usage: { role: 'l4_qa', input_tokens: 1, output_tokens: 1 },
+        }
+      }
+      return {
+        text: JSON.stringify(body),
+        json: body,
+        tool_calls: [],
+        usage: { role: 'l4_qa', input_tokens: 1, output_tokens: 1 },
+      }
+    })
+    const lowRank = shouldRetryQaScore(
+      { items: low.items, score: { answered: 3, correct: 1 }, usage: { role: 'l4_qa', input_tokens: 0, output_tokens: 0 } },
+      { intent, playback },
+    )
+    assert.equal(lowRank, true)
+    const qa = await runQa({ intent, playback, backend: fake })
+    assert.equal(qa.score.correct, 3)
+    assert.equal(qa.score.answered, 3)
+    assert.equal(qa.retried, true)
+    assert.ok(calls >= 2)
+  })
+
+  it('interpretQaResult extracts items from prose and tolerates is_correct alias', () => {
+    const parsed = interpretQaResult(
+      {
+        text: 'Sure.\n{"kind":"l4_qa_v0","items":[{"id":"q1","question":"q","answer":"a","is_correct":true}]}',
+        json: null,
+        tool_calls: [],
+        usage: { role: 'l4_qa', input_tokens: 1, output_tokens: 1 },
+      },
+      'l4_qa',
+    )
+    assert.equal(parsed.score.correct, 1)
+    assert.equal(parsed.items[0]?.correct, true)
   })
 
   it('orchestrator does not import L4 session runners', () => {

@@ -74,6 +74,8 @@ segmenter → types, enums, utils（token 估算）
 ## 5. 关键规则 / 算法
 
 - **Action Unit = 思考 + 工具 + 返回**。这是切段的产品定义，不是按 token 窗口切。
+- **并行 tool_use（Claude Code / MIMO）**：连续 N 个 `tool_call` 后跟 N 个 `tool_result` 时按 `tool_use_id`（否则同名 FIFO）配对，避免 orphan `tool_result` 段虚增 keep。
+- **outcome**：有 `<exit_code>` / `is_error` 按码；否则有返回且未标错 → `ok`（MIMO 常缺 exit 标签）。
 - **卡片字段零 LLM**（ADR-0009）。`head` 截取规则：原文第一行，超过 `SEGMENT_HEAD_MAX_CHARS`（已拍板 120）截断。
 - **focus 默认 card**：降为 `line` 是 rules 的事（噪音段）；升为 `full` 是洞 B 调 `read_segment` 的事。
 - 切多少段是确定性函数，必须可复现，否则 benchmark 数字漂。

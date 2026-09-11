@@ -10,6 +10,10 @@ export const RULE_FAILED_CALL_NO_FOLLOWUP = 'failed_call_no_followup'
 export const RULE_REPEAT_READ = 'repeat_read'
 export const RULE_SIMILAR_RETRY = 'similar_retry'
 export const RULE_READ_THEN_LATER_WRITTEN = 'read_then_later_written'
+export const RULE_ORPHAN_TOOL_RESULT = 'orphan_tool_result'
+export const RULE_EXPLORATORY_LISTING = 'exploratory_listing'
+export const RULE_SEARCH_TOOL = 'search_tool'
+export const RULE_READ_NEVER_WRITTEN = 'read_never_written'
 
 const NON_ACTION_TOOLS = new Set(['thought', 'user', 'assistant', 'tool_result', ''])
 
@@ -43,8 +47,12 @@ export function applyRules(input: RulesInput): RulesOutput {
   const resolved = new Map<string, LabelDecision>()
 
   applySimilarRetry(segments, rawById, laterWritten, resolved)
+  applyOrphanToolResult(segments, laterWritten, resolved)
+  applyExploratoryListing(segments, rawById, laterWritten, resolved)
+  applySearchTool(segments, laterWritten, resolved)
   applyRepeatRead(segments, laterWritten, resolved)
   applyReadThenLaterWritten(segments, laterWritten, resolved)
+  applyReadNeverWritten(segments, laterWritten, resolved)
   applyFailedCallNoFollowup(segments, laterWritten, resolved)
 
   for (const seg of segments) {
@@ -112,6 +120,26 @@ function laterWrittenReads(segments: SegmentCard[]): Map<string, GraphHint[]> {
     if (hit) hints.set(seg.id, ['read_then_later_written'])
   }
   return hints
+}
+
+/**
+ * Orphan tool_result Action Units (unpaired after a batch) are pure noise —
+ * the payload already belongs on the matched call segment when pairing works.
+ * Drop as routine under no_llm so MIMO parallel-tool traces can compress.
+ */
+function applyOrphanToolResult(
+  segments: SegmentCard[],
+  laterWritten: Map<string, GraphHint[]>,
+  resolved: Map<string, LabelDecision>,
+): void {
+  for (const seg of segments) {
+    if (resolved.has(seg.id)) continue
+    if (seg.tool.toLowerCase() !== 'tool_result') continue
+    resolved.set(
+      seg.id,
+      decision(seg.id, 'routine', RULE_ORPHAN_TOOL_RESULT, laterWritten.get(seg.id)),
+    )
+  }
 }
 
 function applySimilarRetry(
@@ -231,6 +259,97 @@ function applyReadThenLaterWritten(
       decision(seg.id, 'routine', RULE_READ_THEN_LATER_WRITTEN, laterWritten.get(seg.id)),
     )
   }
+}
+
+
+const LISTING_BASH_RE =
+  /^(?:sudo\s+)?(?:ls|ll|la|pwd|find|tree|dir|du|df|whoami|uname|env|printenv|which|whereis|realpath|readlink)\b/u
+
+const SEARCH_TOOLS = new Set(['glob', 'grep', 'search', 'agent'])
+
+/**
+ * Bash/shell listing / env probes (ls, find, pwd, …) are exploratory noise.
+ * Keep real build/test/run commands unresolved for hole B / Fail-Closed.
+ */
+function applyExploratoryListing(
+  segments: SegmentCard[],
+  rawById: Map<string, RawTurn>,
+  laterWritten: Map<string, GraphHint[]>,
+  resolved: Map<string, LabelDecision>,
+): void {
+  for (const seg of segments) {
+    if (resolved.has(seg.id)) continue
+    if (!isAction(seg)) continue
+    const tool = seg.tool.toLowerCase()
+    if (tool !== 'bash' && tool !== 'shell') continue
+    const cmd = bashCommand(seg, rawById)
+    if (cmd === undefined || !LISTING_BASH_RE.test(cmd.trim())) continue
+    resolved.set(
+      seg.id,
+      decision(seg.id, 'routine', RULE_EXPLORATORY_LISTING, laterWritten.get(seg.id)),
+    )
+  }
+}
+
+/** Glob / Grep / Search without writes are search noise under no_llm. */
+function applySearchTool(
+  segments: SegmentCard[],
+  laterWritten: Map<string, GraphHint[]>,
+  resolved: Map<string, LabelDecision>,
+): void {
+  for (const seg of segments) {
+    if (resolved.has(seg.id)) continue
+    if (!SEARCH_TOOLS.has(seg.tool.toLowerCase())) continue
+    if (seg.writes.length > 0) continue
+    resolved.set(
+      seg.id,
+      decision(seg.id, 'routine', RULE_SEARCH_TOOL, laterWritten.get(seg.id)),
+    )
+  }
+}
+
+/**
+ * Pure read of a path that is never written later → routine.
+ * Complements read_then_later_written (which drops the pre-edit read).
+ * Wrong-file exploration on MIMO traces otherwise Fail-Closed Keeps huge blobs.
+ */
+function applyReadNeverWritten(
+  segments: SegmentCard[],
+  laterWritten: Map<string, GraphHint[]>,
+  resolved: Map<string, LabelDecision>,
+): void {
+  // Read-only debug traces: keep reads Fail-Closed (may be the only signal).
+  if (!segments.some((s) => s.writes.length > 0)) return
+  for (const seg of segments) {
+    if (resolved.has(seg.id)) continue
+    if (seg.writes.length > 0) continue
+    if (seg.reads.length === 0) continue
+    if (!isAction(seg)) continue
+    if (laterWritten.has(seg.id)) continue
+    resolved.set(
+      seg.id,
+      decision(seg.id, 'routine', RULE_READ_NEVER_WRITTEN, laterWritten.get(seg.id)),
+    )
+  }
+}
+
+function bashCommand(seg: SegmentCard, rawById: Map<string, RawTurn>): string | undefined {
+  for (const id of seg.raw_refs) {
+    const turn = rawById.get(id)
+    if (turn?.role !== 'tool_call') continue
+    let args: Record<string, unknown> = {}
+    try {
+      const parsed: unknown = JSON.parse(turn.tool?.args_json ?? '{}')
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        args = parsed as Record<string, unknown>
+      }
+    } catch {
+      args = {}
+    }
+    if (typeof args.command === 'string') return args.command
+  }
+  const m = /^Bash:(.*)$/u.exec(seg.sig)
+  return m?.[1]
 }
 
 function applyFailedCallNoFollowup(

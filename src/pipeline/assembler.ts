@@ -74,7 +74,7 @@ export function assemble(input: AssembleInput): AssembleOutput {
   }
 
   const continuity = indexContinuity(input.continuity)
-  const violations = checkSpan(steps, indexOf, continuity)
+  const violations = checkSpan(steps, indexOf, continuity, profile.span.max_gap_segments)
 
   const warrant_ref = stableHash(JSON.stringify(warrant))
   const plan: CutPlan = {
@@ -166,6 +166,7 @@ function checkSpan(
   steps: string[],
   indexOf: Map<string, number>,
   continuity: Map<string, ContinuityScore>,
+  maxGap: number = SPAN_MAX_GAP_SEGMENTS,
 ): SpanViolation[] {
   const violations: SpanViolation[] = []
   for (let i = 0; i + 1 < steps.length; i += 1) {
@@ -177,7 +178,7 @@ function checkSpan(
     if (li === undefined || ri === undefined) continue
     const gap_segments = ri - li - 1
     const cont = continuity.get(`${left}\0${right}`)
-    const tooFar = gap_segments > SPAN_MAX_GAP_SEGMENTS
+    const tooFar = gap_segments > maxGap
     const continuityFail = cont !== undefined && !cont.ok
     if (!tooFar && !continuityFail) continue
 
