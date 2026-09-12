@@ -11,8 +11,11 @@ describe('scoreboard markdown', () => {
         n: 1,
         mean_composite: 10,
         stddev_composite: 0,
+        n_defined_composite: 1,
         mean_m1_score: 80,
         stddev_m1_score: 0,
+        n_defined_m1: 1,
+        n_gate_fail: 0,
         mean_hole_a_efficiency: 0.42,
         stddev_hole_a_efficiency: 0,
         samples: [
@@ -48,8 +51,11 @@ describe('scoreboard markdown', () => {
         n: 0,
         mean_composite: null,
         stddev_composite: null,
+        n_defined_composite: 0,
         mean_m1_score: null,
         stddev_m1_score: null,
+        n_defined_m1: 0,
+        n_gate_fail: 0,
         mean_hole_a_efficiency: null,
         stddev_hole_a_efficiency: null,
         samples: [],
@@ -59,8 +65,11 @@ describe('scoreboard markdown', () => {
         n: 0,
         mean_composite: null,
         stddev_composite: null,
+        n_defined_composite: 0,
         mean_m1_score: null,
         stddev_m1_score: null,
+        n_defined_m1: 0,
+        n_gate_fail: 0,
         mean_hole_a_efficiency: null,
         stddev_hole_a_efficiency: null,
         samples: [],
@@ -75,8 +84,84 @@ describe('scoreboard markdown', () => {
     assert.match(md, /\| a_eff \|/)
     assert.match(md, /mean m1=/)
     assert.match(md, /mean a_eff=/)
+    assert.match(md, /defined=1/)
+    assert.match(md, /gate fails=0/)
     assert.match(md, /0\.420/)
     assert.match(md, /ADR-0011 b/)
+    assert.match(md, /ADR-0014/)
     assert.doesNotMatch(md, /overall score/i)
+    assert.doesNotMatch(md, /hard-?zero/i)
+    assert.doesNotMatch(md, /fail → 0/)
+  })
+
+  it('renders undefined composite/m1 as em dash, not zero', () => {
+    const bins: BenchmarkReport['bins'] = {
+      short: {
+        bin: 'short',
+        n: 1,
+        mean_composite: null,
+        stddev_composite: null,
+        n_defined_composite: 0,
+        mean_m1_score: null,
+        stddev_m1_score: null,
+        n_defined_m1: 0,
+        n_gate_fail: 1,
+        mean_hole_a_efficiency: null,
+        stddev_hole_a_efficiency: null,
+        samples: [
+          {
+            trace_id: 't-fail',
+            bin: 'short',
+            metrics: {
+              compression_ratio: { value: 0.9, status: 'fail' },
+              key_step_recall: { value: 1, status: 'pass' },
+              replay: { value: 1, status: 'pass' },
+              qa: { value: 0.9, status: 'pass' },
+              coherence: { value: 4.5, status: 'pass' },
+              distill_cost_ratio: { value: 0.1, status: 'pass' },
+            },
+            composite: null,
+            m1_score: null,
+            gold: 'independent',
+          },
+        ],
+      },
+      long: {
+        bin: 'long',
+        n: 0,
+        mean_composite: null,
+        stddev_composite: null,
+        n_defined_composite: 0,
+        mean_m1_score: null,
+        stddev_m1_score: null,
+        n_defined_m1: 0,
+        n_gate_fail: 0,
+        mean_hole_a_efficiency: null,
+        stddev_hole_a_efficiency: null,
+        samples: [],
+      },
+      multi_dead_end: {
+        bin: 'multi_dead_end',
+        n: 0,
+        mean_composite: null,
+        stddev_composite: null,
+        n_defined_composite: 0,
+        mean_m1_score: null,
+        stddev_m1_score: null,
+        n_defined_m1: 0,
+        n_gate_fail: 0,
+        mean_hole_a_efficiency: null,
+        stddev_hole_a_efficiency: null,
+        samples: [],
+      },
+    }
+    const md = renderScoreboardMarkdown({ dir: 'benchmark/datasets', mode: 'with_llm', l4: false, bins })
+    assert.match(md, /t-fail/)
+    assert.match(md, /0\.900 \(f\)/)
+    assert.match(md, /mean composite=— \(defined=0\)/)
+    assert.match(md, /mean m1=— \(defined=0\)/)
+    assert.match(md, /gate fails=1/)
+    assert.match(md, /\| t-fail \|.*\| — \| — \|/)
+    assert.doesNotMatch(md, /\| t-fail \|.*\| 0\.00 \|/)
   })
 })

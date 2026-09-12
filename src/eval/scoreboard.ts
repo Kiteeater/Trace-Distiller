@@ -16,7 +16,7 @@ export function renderScoreboardMarkdown(input: {
     '',
     'Tracks are scored separately and **never averaged**.',
     '',
-    '> **M1 vs composite:** `m1_score` = 压缩率得分 × 关键步召回（M1 硬门禁）。`composite` 六项门槛中，**short 档或 original_tokens≤25k 的 cost 只报不分**（洞 A+B 固定开销会顶穿 0.3；仍不计 L4）。QA 0/0 视为 skipped。compress+recall 过时看 `m1_score`。',
+    '> **Defined composite / m1 (ADR-0014):** 单项列始终显示 value + pass/fail/skip。`composite` / `m1_score` **仅当该分所需门槛全过且有数值时才定义**；否则 `—`（JSON `null`），**不是** 0。m1 所需：compression + key_step_recall。composite 所需：现行六项（**short 档或 original_tokens≤25k 的 cost 只报不分**；仍不计 L4）。QA 0/0 视为 skipped。档均值只对 defined 样本；`gate fails` 计任一项 metric `fail` 的样本。公式在 defined 时不变（ADR-0005）：composite = 压缩率得分 × 召回 × 重放；m1 = 压缩率得分 × 召回。',
     '',
     '> **Hole A vector efficiency (ADR-0011 b):** `a_eff` = quality / log(1+tokens). Quality = embedding cosine(predicted intent vs gold intent) [, skeleton point recall if `skeleton_segment_ids` gold]. **Bench-only — not an online stop** (`sparse_intent` still stops on `enough` + hard budget). Default embedding = deterministic hash (no API key). Not part of m1/composite.',
     '',
@@ -43,7 +43,9 @@ export function renderScoreboardMarkdown(input: {
       table.mean_hole_a_efficiency === null || table.mean_hole_a_efficiency === undefined
         ? '—'
         : table.mean_hole_a_efficiency.toFixed(3)
-    lines.push(`n=${table.n} · mean composite=${mean} · mean m1=${meanM1} · mean a_eff=${meanA}`)
+    lines.push(
+      `n=${String(table.n)} · mean composite=${mean} (defined=${String(table.n_defined_composite)}) · mean m1=${meanM1} (defined=${String(table.n_defined_m1)}) · gate fails=${String(table.n_gate_fail)} · mean a_eff=${meanA}`,
+    )
     lines.push('')
     lines.push(
       '| trace | compress | recall | replay | qa | coherence | cost | composite | m1 | a_eff | gold |',

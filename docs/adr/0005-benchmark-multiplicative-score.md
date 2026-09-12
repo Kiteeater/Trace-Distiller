@@ -4,4 +4,6 @@
 
 **Status**: accepted
 
+记分板呈现（fail 不再硬写成字面 0；公式在 defined 时不变）见 [ADR-0014](./0014-scoreboard-defined-composite.md)。
+
 详见 [benchmark/README.md](../../benchmark/README.md)。

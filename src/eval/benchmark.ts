@@ -65,11 +65,13 @@ export interface ScoredSample {
     coherence: MetricCell
     distill_cost_ratio: MetricCell
   }
-  /** 任一项 fail → 0；有 skipped 且无 fail → null（M1 不硬挂）；六项全过 → 乘法分。含 cost。 */
+  /**
+   * 六项全过才定义（乘法分，含 cost）；任一门 fail 或 skipped → null（记分板 —，不硬写成 0；ADR-0014）。
+   */
   composite: number | null
   /**
    * M1 出门分：压缩率得分 × 关键步召回。只看 compress+recall；
-   * cost/replay/qa/coherence 失败不拖垮 m1_score（仍会拖垮 composite）。
+   * 两门都过才定义，否则 null（cost/replay/qa/coherence 失败不拖垮 m1_score）。
    */
   m1_score: number | null
   gold: 'independent' | 'skipped'
@@ -83,8 +85,14 @@ export interface BinTable {
   n: number
   mean_composite: number | null
   stddev_composite: number | null
+  /** Samples whose composite is defined (all six gates passed). Mean is over these only. */
+  n_defined_composite: number
   mean_m1_score: number | null
   stddev_m1_score: number | null
+  /** Samples whose m1 is defined (compression + recall gates passed). */
+  n_defined_m1: number
+  /** Samples with any metric status `fail` (process-gate / distill / span). */
+  n_gate_fail: number
   mean_hole_a_efficiency: number | null
   stddev_hole_a_efficiency: number | null
   samples: ScoredSample[]
@@ -162,14 +170,13 @@ function readOptionalIntentText(value: unknown): string | undefined {
 }
 
 /**
- * 六项门槛：缺项 skipped（M1 不硬挂）；任一项 fail → 总分 0。
+ * 六项门槛：缺项 skipped；任一项 fail 或 skipped → 总分 null（记分板 —，ADR-0014）。
  * 全过：Score = 压缩率得分 × 召回 × 重放（召回/重放 0–1）。
  * 完整 composite 含 cost 门槛（short/small soft：只报不分）；勿静默去掉 L4 外成本。
  */
 export function scoredComposite(parts: BenchmarkParts): number | null {
   const statuses = metricStatuses(parts)
-  if (Object.values(statuses).some((s) => s === 'fail')) return 0
-  if (Object.values(statuses).some((s) => s === 'skipped')) return null
+  if (Object.values(statuses).some((s) => s !== 'pass')) return null
   return compressionScore(parts.compression_ratio) * parts.key_step_recall! * parts.replay!
 }
 
@@ -219,7 +226,7 @@ export function metricStatuses(parts: BenchmarkParts): {
   }
 }
 
-/** Bench sample that failed distill (e.g. SpanFailure): composite 0, compression fail/null. */
+/** Bench sample that failed distill (e.g. SpanFailure): composite null, compression fail. Counts as n_gate_fail. */
 export function failedBenchSample(input: {
   bin: BenchmarkBin
   trace_id: string
@@ -236,7 +243,7 @@ export function failedBenchSample(input: {
       coherence: { value: null, status: 'skipped' },
       distill_cost_ratio: { value: null, status: 'skipped' },
     },
-    composite: 0,
+    composite: null,
     m1_score: null,
     gold: 'skipped',
   }
@@ -331,12 +338,15 @@ export function aggregateBins(samples: readonly ScoredSample[]): BenchmarkReport
     const stats = meanStd(scores)
     table.mean_composite = stats.mean
     table.stddev_composite = stats.stddev
+    table.n_defined_composite = scores.length
     const m1Scores = table.samples
       .map((s) => s.m1_score)
       .filter((n): n is number => n !== null)
     const m1Stats = meanStd(m1Scores)
     table.mean_m1_score = m1Stats.mean
     table.stddev_m1_score = m1Stats.stddev
+    table.n_defined_m1 = m1Scores.length
+    table.n_gate_fail = table.samples.filter(sampleHasGateFail).length
     const holeAScores = table.samples
       .map((s) => s.hole_a_vector?.efficiency)
       .filter((n): n is number => n !== null && n !== undefined)
@@ -353,12 +363,19 @@ function emptyBin(bin: BenchmarkBin): BinTable {
     n: 0,
     mean_composite: null,
     stddev_composite: null,
+    n_defined_composite: 0,
     mean_m1_score: null,
     stddev_m1_score: null,
+    n_defined_m1: 0,
+    n_gate_fail: 0,
     mean_hole_a_efficiency: null,
     stddev_hole_a_efficiency: null,
     samples: [],
   }
+}
+
+function sampleHasGateFail(sample: ScoredSample): boolean {
+  return Object.values(sample.metrics).some((cell) => cell.status === 'fail')
 }
 
 function optionalGate(value: number | null, pass: (v: number) => boolean): MetricStatus {
