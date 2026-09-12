@@ -128,6 +128,31 @@ describe('eval ratios', () => {
     assert.equal(metrics.llm_segment_fraction, 0.25)
     assert.equal(metrics.fail_closed_count, 1)
   })
+
+  it('Fail-Closed Keep is excluded from ruled_count / rule_coverage numerator', () => {
+    const metrics = computeDistillMetrics({
+      raw: { meta: { total_tokens: 100 } },
+      training: { turns: [{ tokens: 40 }] },
+      view: { segments: [1, 2, 3, 4] },
+      decisions: [
+        { source: { kind: 'rule', name: 'repeat_read' } },
+        { source: { kind: 'rule', name: 'fail_closed_keep' } },
+        { source: { kind: 'llm', name: 'implement' } },
+      ],
+      warrant: {
+        entries: [
+          { source: { name: 'repeat_read' } },
+          { source: { name: 'fail_closed_keep' } },
+          { source: { name: 'implement' } },
+          { source: { name: 'fail_closed_keep' } },
+        ],
+      },
+    })
+    assert.equal(metrics.ruled_count, 1)
+    assert.equal(metrics.rule_coverage, 0.25)
+    assert.equal(metrics.llm_count, 1)
+    assert.equal(metrics.fail_closed_count, 2)
+  })
 })
 
 describe('distill economics / ROI (ADR-0015)', () => {

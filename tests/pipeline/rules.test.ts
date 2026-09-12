@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { segment } from '../../src/pipeline/segmenter.ts'
+import { DEFAULT_CUT_PROFILE } from '../../src/constant/compression.ts'
+import type { LabelDecision } from '../../src/domain/label_decision.ts'
 import {
   RULE_EXPLORATORY_LISTING,
   RULE_FAILED_CALL_NO_FOLLOWUP,
@@ -10,6 +12,8 @@ import {
   RULE_SEARCH_TOOL,
   RULE_SIMILAR_RETRY,
   applyRules,
+  filterRulesForSkeletonProtect,
+  ruleWouldDropOrCollapse,
   type RulesOutput,
 } from '../../src/pipeline/rules.ts'
 import type { RawTrace, RawTurn, RawTurnRole } from '../../src/types/raw_trace.ts'
@@ -314,6 +318,46 @@ describe('rules', () => {
     assert.ok(write)
     assert.equal(decisionById(out, wrong.id)?.rule_name, RULE_READ_NEVER_WRITTEN)
     assert.equal(out.unresolved_ids.includes(write.id), true)
+  })
+
+  it('filterRulesForSkeletonProtect withholds drop/collapse on skeleton; keeps keep-mapping', () => {
+    assert.equal(ruleWouldDropOrCollapse('routine', DEFAULT_CUT_PROFILE), true)
+    assert.equal(ruleWouldDropOrCollapse('dead_end', DEFAULT_CUT_PROFILE), true)
+    assert.equal(ruleWouldDropOrCollapse('collapse_uncertain', DEFAULT_CUT_PROFILE), true)
+    assert.equal(ruleWouldDropOrCollapse('key_decision', DEFAULT_CUT_PROFILE), false)
+
+    const d = (
+      segment_id: string,
+      label: LabelDecision['label'],
+      name: string,
+    ): LabelDecision => ({
+      segment_id,
+      label,
+      source: { kind: 'rule', name },
+      confidence: 1,
+      rule_name: name,
+    })
+    const out = filterRulesForSkeletonProtect({
+      decisions: [
+        d('s1', 'routine', RULE_REPEAT_READ),
+        d('s2', 'dead_end', RULE_SIMILAR_RETRY),
+        d('s3', 'routine', RULE_REPEAT_READ),
+        d('s5', 'key_decision', 'synthetic_keep'),
+      ],
+      unresolved_ids: ['s4'],
+      skeletonIds: new Set(['s1', 's2', 's5']),
+      profile: DEFAULT_CUT_PROFILE,
+    })
+    assert.deepEqual(
+      out.decisions.map((x) => x.segment_id),
+      ['s3', 's5'],
+    )
+    assert.equal(out.unresolved_ids.includes('s1'), true)
+    assert.equal(out.unresolved_ids.includes('s2'), true)
+    assert.equal(out.unresolved_ids.includes('s4'), true)
+    assert.equal(out.unresolved_ids.includes('s3'), false)
+    assert.equal(out.unresolved_ids.includes('s5'), false)
+    assert.equal(out.decisions.find((x) => x.segment_id === 's5')?.label, 'key_decision')
   })
 
 })

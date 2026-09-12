@@ -24,9 +24,9 @@ export interface WriteWarrantInput {
 
 /**
  * 已决议段按 CutProfile → keep/collapse/drop。
- * 未出现在 labels 里的段 Fail-Closed Keep（ADR-0010：agent/tool failure policy，
- * 不是「规则优先静默 keep」）。规则标签只能来自 cut-brain 已采纳的 apply_rules_hint
- * 或调用方显式传入的 labels，writeWarrant 自身不跑 applyRules。
+ * 未出现在 labels 里的段 Fail-Closed Keep（ADR-0010：agent/tool failure policy）。
+ * 规则标签来自编排器已采纳的 L1 规则（ADR-0015）或 cut-brain 的 apply_rules_hint；
+ * writeWarrant 自身不跑 applyRules。
  * 覆盖 view.segments 每一个 id。形状与 assembler 吃的 CutWarrant 一致。
  *
  * 死胡同代表策略（CutProfile.dead_end / span.fill_with_representative_dead_end）：

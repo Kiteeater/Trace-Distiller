@@ -2,6 +2,7 @@ import { SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD } from '../constant/window.ts'
 import type { GraphHint, LabelDecision } from '../domain/label_decision.ts'
 import type { Label } from '../enums/label.ts'
 import type { AgentView } from '../types/agent_view.ts'
+import type { CutProfile } from '../types/cut_profile.ts'
 import type { RawTrace, RawTurn } from '../types/raw_trace.ts'
 import type { SegmentCard } from '../types/segment.ts'
 
@@ -75,6 +76,50 @@ export function applyRules(input: RulesInput): RulesOutput {
     unresolved_ids,
     graph,
   }
+}
+
+/**
+ * Whether a rule label maps to drop or collapse under `profile`.
+ * Default profile: routine → drop; dead_end / collapse_uncertain → collapse.
+ */
+export function ruleWouldDropOrCollapse(label: Label, profile: CutProfile): boolean {
+  if (profile.keep_labels.includes(label)) return false
+  if (profile.collapse_labels.includes(label)) return true
+  if (profile.drop_labels.includes(label)) return true
+  return false
+}
+
+export interface FilterRulesForSkeletonProtectInput {
+  decisions: readonly LabelDecision[]
+  unresolved_ids: readonly string[]
+  skeletonIds: ReadonlySet<string>
+  profile: CutProfile
+}
+
+/**
+ * ADR-0015: never adopt a rule drop/collapse on Hole A skeleton ids.
+ * Those ids stay unresolved so Hole B can skeleton_protect / keep.
+ */
+export function filterRulesForSkeletonProtect(
+  input: FilterRulesForSkeletonProtectInput,
+): { decisions: LabelDecision[]; unresolved_ids: string[] } {
+  const withheld: string[] = []
+  const decisions: LabelDecision[] = []
+  for (const d of input.decisions) {
+    if (input.skeletonIds.has(d.segment_id) && ruleWouldDropOrCollapse(d.label, input.profile)) {
+      withheld.push(d.segment_id)
+      continue
+    }
+    decisions.push(d)
+  }
+  const unresolved_ids = [...input.unresolved_ids]
+  const seen = new Set(unresolved_ids)
+  for (const id of withheld) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    unresolved_ids.push(id)
+  }
+  return { decisions, unresolved_ids }
 }
 
 function cloneCard(seg: SegmentCard): SegmentCard {

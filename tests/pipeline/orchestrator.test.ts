@@ -13,9 +13,10 @@ import {
   type SessionPromptResult,
   type ResolvedSessionOpts,
 } from '../../src/agent/sessions/open_session.ts'
+import { skeletonSegmentIds } from '../../src/agent/sessions/cut_brain_harness.ts'
 import { DEFAULT_CUT_PROFILE } from '../../src/constant/compression.ts'
 import { REVIEW_MAX_ROUNDS } from '../../src/constant/window.ts'
-import { COLLAPSE_UNCERTAIN_RULE } from '../../src/domain/cut_decision.ts'
+import { COLLAPSE_UNCERTAIN_RULE, SKELETON_PROTECT_RULE } from '../../src/domain/cut_decision.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../../src/domain/cut_decision.ts'
 import {
   assembleRepairingSpan,
@@ -32,7 +33,7 @@ import type { SegmentCard } from '../../src/types/segment.ts'
 import type { RawTrace, RawTurn } from '../../src/types/raw_trace.ts'
 import type { AgentView } from '../../src/types/agent_view.ts'
 import { estimateTokens } from '../../src/utils/tokens.ts'
-import { applyRules } from '../../src/pipeline/rules.ts'
+import { applyRules, filterRulesForSkeletonProtect } from '../../src/pipeline/rules.ts'
 import { segment } from '../../src/pipeline/segmenter.ts'
 import { writeWarrant } from '../../src/agent/sessions/write_warrant.ts'
 import type { Skeleton } from '../../src/types/agent_view.ts'
@@ -58,8 +59,9 @@ describe('orchestrator agent path (ADR-0010)', () => {
     assert.match(src, /agent\/sessions\/write_warrant/)
     assert.match(src, /skeleton_pass/)
     assert.match(src, /cut_brain/)
-    assert.doesNotMatch(src, /from '\.\/rules/)
-    assert.doesNotMatch(src, /applyRules/)
+    assert.match(src, /from '\.\/rules/)
+    assert.match(src, /applyRules/)
+    assert.match(src, /filterRulesForSkeletonProtect/)
     assert.doesNotMatch(src, /l4_qa/)
     assert.doesNotMatch(src, /l4_replay/)
     assert.doesNotMatch(src, /l4_review/)
@@ -284,9 +286,17 @@ describe('orchestrator with_llm', () => {
     assert.ok(out.training.turns.length > 0)
     assert.ok(out.playback.cards.length > 0)
 
+    const protectedRules = filterRulesForSkeletonProtect({
+      decisions: ruled.decisions,
+      unresolved_ids: ruled.unresolved_ids,
+      skeletonIds: skeletonSegmentIds(out.view.skeleton),
+      profile: DEFAULT_CUT_PROFILE,
+    })
+    const ruledIds = new Set(protectedRules.decisions.map((d) => d.segment_id))
     const llmLabeled = out.decisions.filter((d) => d.source.kind === 'llm')
-    assert.equal(llmLabeled.length, ruled.unresolved_ids.length)
+    assert.equal(llmLabeled.length, protectedRules.unresolved_ids.length)
     for (const d of llmLabeled) {
+      assert.equal(ruledIds.has(d.segment_id), false, d.segment_id)
       assert.notEqual(d.label, 'useful_exploration')
       assert.equal(d.source.name, 'test_fix')
       const entry = out.warrant.entries.find((e) => e.segment_id === d.segment_id)
@@ -295,9 +305,16 @@ describe('orchestrator with_llm', () => {
       assert.equal(entry?.action, 'keep')
       assert.equal(entry?.source.kind, 'llm')
     }
+    for (const d of protectedRules.decisions) {
+      const got = out.decisions.find((x) => x.segment_id === d.segment_id)
+      assert.ok(got, d.segment_id)
+      assert.equal(got!.source.kind, 'rule')
+      assert.equal(got!.source.name, d.rule_name)
+      assert.notEqual(got!.source.kind, 'llm')
+    }
     assert.equal(out.plan.kept.includes(keepId), true)
 
-    for (const d of ruled.decisions) {
+    for (const d of protectedRules.decisions) {
       if (d.label === 'routine') {
         assert.equal(out.plan.dropped.includes(d.segment_id), true)
       }
@@ -313,10 +330,7 @@ describe('orchestrator with_llm', () => {
     }
 
     const holeBCalls = backend.calls.filter((c) => c.role === 'hole_b_label')
-    assert.ok(holeBCalls.length >= 1)
-    assert.ok(holeBCalls.some((c) => c.input.text.includes('apply_rules_hint') || (c.input.system ?? '').includes('apply_rules_hint')))
-    // 1 hint round + at least one single-slot turn per remaining id
-    assert.ok(holeBCalls.length >= 1 + ruled.unresolved_ids.length)
+    assert.equal(holeBCalls.length, protectedRules.unresolved_ids.length)
     assert.deepEqual(out.unresolved_ids, [])
     assert.ok((out.hole_a_plus_b_tokens ?? 0) > 0)
 
@@ -349,8 +363,14 @@ describe('orchestrator with_llm', () => {
       opts: { sessionBackend: backend },
     })
 
-    assert.deepEqual(out.unresolved_ids, ruled.unresolved_ids)
-    for (const id of ruled.unresolved_ids) {
+    const failClosedIds = filterRulesForSkeletonProtect({
+      decisions: ruled.decisions,
+      unresolved_ids: ruled.unresolved_ids,
+      skeletonIds: skeletonSegmentIds(out.view.skeleton),
+      profile: DEFAULT_CUT_PROFILE,
+    }).unresolved_ids
+    assert.deepEqual(out.unresolved_ids, failClosedIds)
+    for (const id of failClosedIds) {
       assert.equal(out.plan.kept.includes(id), true, id)
       const entry = out.warrant.entries.find((e) => e.segment_id === id)
       assert.equal(entry?.action, 'keep')
@@ -375,7 +395,13 @@ describe('orchestrator with_llm', () => {
     })
     // Schema-empty is ADR-0012 exhaust/schema path, not 0010 Keep.
     // Skeleton ids are hard-protected from collapse_uncertain (force keep).
-    for (const id of ruled.unresolved_ids) {
+    const silentUnresolved = filterRulesForSkeletonProtect({
+      decisions: ruled.decisions,
+      unresolved_ids: ruled.unresolved_ids,
+      skeletonIds: skeletonSegmentIds(silentOut.view.skeleton),
+      profile: DEFAULT_CUT_PROFILE,
+    }).unresolved_ids
+    for (const id of silentUnresolved) {
       const entry = silentOut.warrant.entries.find((e) => e.segment_id === id)
       assert.notEqual(entry?.source.name, FAIL_CLOSED_KEEP_RULE)
       const labeled = silentOut.decisions.find((d) => d.segment_id === id)
@@ -429,7 +455,13 @@ describe('orchestrator with_llm', () => {
     assert.equal(out.plan.dropped.includes(fillTarget), false)
     const entry = out.warrant.entries.find((e) => e.segment_id === fillTarget)
     assert.equal(entry?.action, 'keep')
-    assert.equal(entry?.source.name, FAIL_CLOSED_KEEP_RULE)
+    const fillDecision = out.decisions.find((d) => d.segment_id === fillTarget)
+    assert.ok(fillDecision)
+    assert.notEqual(fillDecision!.label, 'routine')
+    assert.notEqual(fillDecision!.label, 'dead_end')
+    assert.ok(
+      fillDecision!.source.kind === 'llm' || fillDecision!.source.name === SKELETON_PROTECT_RULE,
+    )
 
     const warrant = writeWarrant({
       skeleton: ruled.view.skeleton,
@@ -471,6 +503,113 @@ describe('orchestrator with_llm', () => {
       fillInKeepWarrant(reviewed.warrant, dropped).entries.filter((e) => e.action === 'keep').length,
       reviewed.warrant.entries.filter((e) => e.action === 'keep').length,
     )
+  })
+
+  it('rules resolve before B; ruled ids are not re-labeled by llm', async () => {
+    const raw = parse(load('no_llm_conservative.jsonl'))
+    const ruled = applyRules({ view: segment(raw), raw })
+    assert.ok(ruled.decisions.length > 0)
+    const keepId = ruled.unresolved_ids[0]
+    assert.ok(keepId)
+    const backend = labelingBackend({
+      nodes: [{ id: 'n-keep', kind: 'turning_point', segment_ids: [keepId], note: '' }],
+      holeB: 'label_all',
+    })
+    const out = await distill({
+      raw,
+      profile: DEFAULT_CUT_PROFILE,
+      mode: 'with_llm',
+      opts: { sessionBackend: backend },
+    })
+    const protectedRules = filterRulesForSkeletonProtect({
+      decisions: ruled.decisions,
+      unresolved_ids: ruled.unresolved_ids,
+      skeletonIds: skeletonSegmentIds(out.view.skeleton),
+      profile: DEFAULT_CUT_PROFILE,
+    })
+    for (const d of protectedRules.decisions) {
+      const got = out.decisions.find((x) => x.segment_id === d.segment_id)
+      assert.ok(got, d.segment_id)
+      assert.equal(got!.source.kind, 'rule')
+      assert.equal(got!.label, d.label)
+      assert.equal(got!.source.name, d.rule_name)
+    }
+    const llmIds = new Set(
+      out.decisions.filter((d) => d.source.kind === 'llm').map((d) => d.segment_id),
+    )
+    for (const d of protectedRules.decisions) {
+      assert.equal(llmIds.has(d.segment_id), false, d.segment_id)
+    }
+  })
+
+  it('Hole B call count tracks unresolved after rules, not full segment count', async () => {
+    const raw = parse(load('no_llm_conservative.jsonl'))
+    const view = segment(raw)
+    const ruled = applyRules({ view, raw })
+    const keepId = ruled.unresolved_ids[0]
+    assert.ok(keepId)
+    const backend = labelingBackend({
+      nodes: [{ id: 'n-keep', kind: 'turning_point', segment_ids: [keepId], note: '' }],
+      holeB: 'label_all',
+    })
+    const out = await distill({
+      raw,
+      profile: DEFAULT_CUT_PROFILE,
+      mode: 'with_llm',
+      opts: { sessionBackend: backend },
+    })
+    const unresolved = filterRulesForSkeletonProtect({
+      decisions: ruled.decisions,
+      unresolved_ids: ruled.unresolved_ids,
+      skeletonIds: skeletonSegmentIds(out.view.skeleton),
+      profile: DEFAULT_CUT_PROFILE,
+    }).unresolved_ids
+    const holeBCalls = backend.calls.filter((c) => c.role === 'hole_b_label')
+    assert.ok(unresolved.length < view.segments.length)
+    assert.equal(holeBCalls.length, unresolved.length)
+    assert.ok(holeBCalls.length < view.segments.length)
+    const labeledFocus = holeBCalls
+      .map((c) => parseFocusId(c.input.text))
+      .filter((id): id is string => id !== undefined)
+    for (const id of labeledFocus) {
+      assert.equal(unresolved.includes(id), true, id)
+    }
+  })
+
+  it('skeleton ids that match a drop/collapse rule are kept, not rule-dropped', async () => {
+    const raw = parse(load('no_llm_conservative.jsonl'))
+    const ruled = applyRules({ view: segment(raw), raw })
+    const dropId = ruled.decisions.find((d) => d.label === 'routine')?.segment_id
+    assert.ok(dropId)
+    const backend = labelingBackend({
+      nodes: [
+        {
+          id: 'n-skel-drop',
+          kind: 'turning_point',
+          segment_ids: [dropId],
+          note: 'would be routine-dropped without skeleton protect',
+        },
+      ],
+      holeB: 'label_all',
+    })
+    const out = await distill({
+      raw,
+      profile: DEFAULT_CUT_PROFILE,
+      mode: 'with_llm',
+      opts: { sessionBackend: backend },
+    })
+    const labeled = out.decisions.find((d) => d.segment_id === dropId)
+    assert.ok(labeled)
+    assert.notEqual(labeled!.label, 'routine')
+    assert.notEqual(labeled!.label, 'dead_end')
+    assert.equal(labeled!.label, 'key_decision')
+    assert.ok(
+      labeled!.source.kind === 'llm' || labeled!.source.name === SKELETON_PROTECT_RULE,
+    )
+    const entry = out.warrant.entries.find((e) => e.segment_id === dropId)
+    assert.equal(entry?.action, 'keep')
+    assert.equal(out.plan.dropped.includes(dropId), false)
+    assert.equal(out.plan.kept.includes(dropId), true)
   })
 })
 

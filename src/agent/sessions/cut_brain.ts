@@ -5,6 +5,7 @@ import {
   CUT_BRAIN_TOOL_NAMES,
   handleApplyRulesHint,
 } from '../extension.ts'
+import { DEFAULT_CUT_PROFILE } from '../../constant/compression.ts'
 import {
   CUT_BRAIN_FOCUS_SLOT,
   CUT_BRAIN_ROUNDS_PER_UNRESOLVED,
@@ -12,8 +13,9 @@ import {
 } from '../../constant/window.ts'
 import { DROP_BY_POLICY_RULE } from '../../domain/cut_decision.ts'
 import type { LabelDecision } from '../../domain/label_decision.ts'
-import { applyRules, type RulesOutput } from '../../pipeline/rules.ts'
+import { applyRules, filterRulesForSkeletonProtect, type RulesOutput } from '../../pipeline/rules.ts'
 import type { AgentView, IntentHypothesis, Skeleton } from '../../types/agent_view.ts'
+import type { CutProfile } from '../../types/cut_profile.ts'
 import type { RawTrace } from '../../types/raw_trace.ts'
 import type { SegmentCard } from '../../types/segment.ts'
 import {
@@ -48,7 +50,7 @@ import {
 } from './open_session.ts'
 
 export interface CutBrainInput {
-  /** Open segment ids the agent may label/keep (usually all view.segments). */
+  /** Open segment ids the agent may label/keep (orchestrator: unresolved after rules). */
   segment_ids: string[]
   view: AgentView
   raw: RawTrace
@@ -59,6 +61,10 @@ export interface CutBrainInput {
   backend?: SessionBackend
   /** Override ReAct round cap (tests). */
   max_rounds?: number
+  /** Orchestrator already adopted L1 rules (ADR-0015); skip redundant hint prompt. */
+  rules_already_applied?: boolean
+  /** Profile for refusing rule drop/collapse on skeleton if apply_rules_hint is still called. */
+  profile?: CutProfile
 }
 
 export interface CutBrainOutput {
@@ -68,7 +74,7 @@ export interface CutBrainOutput {
   view: AgentView
   usage: TokenUsage
   notes?: string[]
-  /** True when agent called apply_rules_hint and rules were adopted. */
+  /** True when L1 rules are already in force (orchestrator adopt or apply_rules_hint). */
   rules_hint_applied: boolean
   metrics: CutBrainMetrics
 }
@@ -76,11 +82,19 @@ export interface CutBrainOutput {
 /**
  * ADR-0012 cut-brain：单槽 focus=1 + 渐进披露 + collapse_uncertain。
  * S0 永不整包进 prompt；工具 execute = ACK + card_id。
- * 规则仅当 agent 调用 apply_rules_hint 时采纳（预算耗尽 drop_by_policy 除外）。
+ * Orchestrator 已采纳高精规则时只收到未决 id（ADR-0015）；apply_rules_hint 仍可选。
+ * apply_rules_hint / 预算耗尽不得 drop/collapse 骨架段（skeleton_protect）。
  */
 export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
   if (input.segment_ids.length === 0) {
-    throw new Error('cutBrain: segment_ids is empty')
+    return {
+      decisions: [],
+      still_unresolved: [],
+      view: input.view,
+      usage: { role: 'hole_b_label', input_tokens: 0, output_tokens: 0 },
+      rules_hint_applied: input.rules_already_applied === true,
+      metrics: emptyMetrics(),
+    }
   }
 
   loadSkillText(input)
@@ -89,6 +103,7 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
   const budget = roundBudget(unresolved0, input.max_rounds)
   const openIds = new Set(input.segment_ids)
   const skeletonIds = skeletonSegmentIds(input.skeleton)
+  const profile = input.profile ?? DEFAULT_CUT_PROFILE
   const session = openSession({
     role: 'hole_b_label',
     tools: CUT_BRAIN_TOOL_NAMES,
@@ -96,7 +111,7 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
   })
 
   let view = input.view
-  let rulesHintApplied = false
+  let rulesHintApplied = input.rules_already_applied === true
   let rulesCache: RulesOutput | undefined
   const decisions = new Map<string, LabelDecision>()
   const notes: string[] = []
@@ -147,7 +162,9 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
             'Do not label multiple ids. Do not request full segment text.',
             'keep requires keep_bits skeleton_hit|key_decision_flag and confidence ≥ 0.5.',
             'If disclose cap is hit and you are still unsure, label collapse_uncertain (never keep).',
-            'Optional: call apply_rules_hint once to endorse deterministic L1 rule labels.',
+            ...(rulesHintApplied
+              ? []
+              : ['Optional: call apply_rules_hint once to endorse deterministic L1 rule labels.']),
             TRACE_DATA_NOTICE,
           ].join(' '),
           messages,
@@ -191,7 +208,13 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
           rulesCache = handled.rules
           rulesHintApplied = true
           view = handled.rules.view
-          for (const d of handled.rules.decisions) {
+          const adopted = filterRulesForSkeletonProtect({
+            decisions: handled.rules.decisions,
+            unresolved_ids: handled.rules.unresolved_ids,
+            skeletonIds,
+            profile,
+          })
+          for (const d of adopted.decisions) {
             if (!openIds.has(d.segment_id)) continue
             if (decisions.has(d.segment_id)) continue
             decisions.set(d.segment_id, d)
@@ -340,7 +363,11 @@ function exhaustRemaining(
   for (const id of leftover) {
     if (ctx.decisions.has(id)) continue
     const ruled = byId.get(id)
-    if (ruled !== undefined && ruled.label === 'routine') {
+    if (
+      ruled !== undefined &&
+      ruled.label === 'routine' &&
+      !ctx.skeletonIds.has(id)
+    ) {
       ctx.decisions.set(id, dropByPolicyDecision(id, ruled.rule_name ?? DROP_BY_POLICY_RULE))
       continue
     }
