@@ -44,7 +44,7 @@ function distillCostRatio(input: CostInput): number
 // 剪辑消耗 ÷ 剪掉的 token（ADR-0015 主比：distill_tokens / SFT_tokens_saved）
 
 function sftTokensSaved(input: { original_tokens: number; training_cut_tokens: number }): number
-// max(0, original − TrainingCut tokens)
+// proxy_saved_trainingcut = max(0, original − TrainingCut tokens)；不是真实训练节省（ADR-0015）
 
 function distillRoi(input: { hole_a_plus_b_tokens: number; sft_tokens_saved: number }): number | null
 // saved/spent when spent>0；spent=0 → null（不计 L4；不进 composite/m1）

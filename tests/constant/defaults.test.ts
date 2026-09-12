@@ -11,7 +11,7 @@ import {
   KEEP_FLOOR_MIN_ORIGINAL_TOKENS,
   KEEP_RATIO_SOFT_CAP,
   LLM_LABEL_FRACTION_HINT,
-  RULES_FIRST_COVERAGE_TARGET,
+  RULES_SAFE_COVERAGE_HINT,
   LONG_CUT_PROFILE,
   LONG_DEAD_END_MAX_REPRESENTATIVE,
   LONG_LABEL_WINDOW_SIZE,
@@ -114,7 +114,7 @@ describe('locked defaults', () => {
     assert.equal(BENCHMARK_PASS.coherence_mean_min, 4)
     assert.equal(BENCHMARK_PASS.coherence_item_min, 2)
     assert.equal(BENCHMARK_PASS.distill_cost_ratio_max, 0.3)
-    assert.equal(RULES_FIRST_COVERAGE_TARGET, 0.7)
+    assert.equal(RULES_SAFE_COVERAGE_HINT, 0.7)
     assert.equal(LLM_LABEL_FRACTION_HINT, 0.3)
     assert.deepEqual(
       COMPRESSION_SCORE_KNOTS.map((k) => k.ratio),

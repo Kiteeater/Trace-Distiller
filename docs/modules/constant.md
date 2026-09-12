@@ -59,10 +59,10 @@ const PI_FAILURE_RETRY = 1
 /** 洞 A 头尾意图的预算提示：约 2k token，一次调用（ADR-0009） */
 const SKELETON_PASS_TOKEN_HINT = 2000
 
-/** ADR-0015 方向：规则作默认 cheap knife 应覆盖约 70% 段，再付昂贵洞。本 PR 不是流水线门禁。 */
-const RULES_FIRST_COVERAGE_TARGET = 0.7
+/** ADR-0015：分档观测 hint（complement of LLM_LABEL_FRACTION_HINT=0.3）。不是硬门禁、不是 `--no-llm`。 */
+const RULES_SAFE_COVERAGE_HINT = 0.7
 
-/** 规则层清完后，预期仍要进洞 B 的段比例（成本粗账，不是硬门禁）= 1 − RULES_FIRST_COVERAGE_TARGET */
+/** 规则层清完后，预期仍要进洞 B 的段比例（分档观测 hint，不是硬门禁）= 1 − RULES_SAFE_COVERAGE_HINT */
 const LLM_LABEL_FRACTION_HINT = 0.30
 
 /** 场景 → skill 文件。键是已拍板 Scenario。查不到回退 implement。 */
@@ -132,7 +132,7 @@ constant **不依赖** pipeline 实现、不依赖 pi、不依赖 data。
 
 ## 5. 关键规则 / 算法
 
-- **规则优先、LLM 少看**（[ADR-0002](../adr/0002-rule-first-labeling.md)）：`LLM_LABEL_FRACTION_HINT` 是成本叙事用的粗账（0009 写约 1/5 token、规则清完剩约 30%），不是「超过 30% 就失败」的断言。真值以 SQLite 统计为准。
+- **规则优先、LLM 少看**（[ADR-0002](../adr/0002-rule-first-labeling.md) / [ADR-0015](../adr/0015-distill-cost-roi.md)）：`RULES_SAFE_COVERAGE_HINT=0.7` 与 `LLM_LABEL_FRACTION_HINT=0.3` 是分档观测 hint（0009 写约 1/5 token、规则清完剩约 30%），不是硬门禁、不是 `--no-llm`。真值以 SQLite 统计为准。
 - **保守不裁**（ADR-0008）：`FAIL_CLOSED_KEEP = true` 在 MVP 不允许改成「失败当死胡同删掉」。
 - **乘法复合分的压缩率映射**（[ADR-0005](../adr/0005-benchmark-multiplicative-score.md)）属于 eval/benchmark，不进流水线 constant。流水线只认 10%–30% 目标区间。
 - **skill 热更新活口**：路由表指向 Markdown 路径；后期加 `rewrite_skill` 不必改目录结构（architecture「三条活口」）。
