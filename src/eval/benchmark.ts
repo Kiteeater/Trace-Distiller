@@ -6,8 +6,10 @@ import {
   compressionScore,
   costGateApplies,
   costGatePass,
+  distillRoi,
   keyStepRecall,
   m1Score,
+  sftTokensSaved,
   type BenchmarkParts,
 } from './metrics.ts'
 import type { HoleAVectorScore } from './vector_efficiency.ts'
@@ -32,8 +34,16 @@ export interface ScoreSampleInput {
   trace_id: string
   compression_ratio: number
   distill_cost_ratio: number
-  /** RawTrace 原文 token；短样 / 小体积 soft cost gate 用。 */
+  /** RawTrace 原文 token；短样 / 小体积 soft cost gate 用。也用于 sft_saved。 */
   original_tokens?: number
+  /**
+   * Hole A+B tokens (L4 excluded). When omitted, scoreboard economics cells are null.
+   */
+  hole_a_plus_b_tokens?: number
+  /** TrainingCut turn token sum. Used with original_tokens for sft_saved. */
+  training_cut_tokens?: number
+  /** Precomputed SFT tokens saved; wins over original−cut if both given. */
+  sft_saved?: number
   kept: readonly string[]
   /** null = 无独立金标（M1 skipped，不算硬挂）。禁止用流水线自己的标签当金标。 */
   gold_segment_ids: readonly string[] | null
@@ -78,6 +88,13 @@ export interface ScoredSample {
   notes?: string[]
   /** Bench-only Hole A vector efficiency (ADR-0011 b). Omitted when not computed. */
   hole_a_vector?: HoleAVectorScore | null
+  /**
+   * ADR-0015 economics. null when unknown (span / distill failure, or input omitted).
+   * ROI is a column + mean of defined — not a composite/m1 gate.
+   */
+  distill_tokens: number | null
+  sft_saved: number | null
+  roi: number | null
 }
 
 export interface BinTable {
@@ -95,6 +112,10 @@ export interface BinTable {
   n_gate_fail: number
   mean_hole_a_efficiency: number | null
   stddev_hole_a_efficiency: number | null
+  /** Mean of finite defined ROI only (null/Infinity excluded). Not a composite gate. */
+  mean_roi: number | null
+  stddev_roi: number | null
+  n_defined_roi: number
   samples: ScoredSample[]
 }
 
@@ -246,6 +267,9 @@ export function failedBenchSample(input: {
     composite: null,
     m1_score: null,
     gold: 'skipped',
+    distill_tokens: null,
+    sft_saved: null,
+    roi: null,
   }
   if (input.notes.length > 0) sample.notes = [...input.notes]
   return sample
@@ -309,6 +333,7 @@ export function scoreSample(input: ScoreSampleInput): ScoredSample {
     composite: scoredComposite(parts),
     m1_score: scoredM1(parts),
     gold: gold === null ? 'skipped' : 'independent',
+    ...economicsFromScoreInput(input),
   }
   if (input.notes !== undefined && input.notes.length > 0) {
     sample.notes = [...input.notes]
@@ -353,6 +378,13 @@ export function aggregateBins(samples: readonly ScoredSample[]): BenchmarkReport
     const holeAStats = meanStd(holeAScores)
     table.mean_hole_a_efficiency = holeAStats.mean
     table.stddev_hole_a_efficiency = holeAStats.stddev
+    const roiScores = table.samples
+      .map((s) => s.roi)
+      .filter((n): n is number => n !== null && Number.isFinite(n))
+    const roiStats = meanStd(roiScores)
+    table.mean_roi = roiStats.mean
+    table.stddev_roi = roiStats.stddev
+    table.n_defined_roi = roiScores.length
   }
   return { bins }
 }
@@ -370,8 +402,34 @@ function emptyBin(bin: BenchmarkBin): BinTable {
     n_gate_fail: 0,
     mean_hole_a_efficiency: null,
     stddev_hole_a_efficiency: null,
+    mean_roi: null,
+    stddev_roi: null,
+    n_defined_roi: 0,
     samples: [],
   }
+}
+
+function economicsFromScoreInput(input: ScoreSampleInput): {
+  distill_tokens: number | null
+  sft_saved: number | null
+  roi: number | null
+} {
+  const distill_tokens =
+    input.hole_a_plus_b_tokens !== undefined ? input.hole_a_plus_b_tokens : null
+  let sft_saved: number | null = null
+  if (input.sft_saved !== undefined) {
+    sft_saved = Math.max(0, input.sft_saved)
+  } else if (input.original_tokens !== undefined && input.training_cut_tokens !== undefined) {
+    sft_saved = sftTokensSaved({
+      original_tokens: input.original_tokens,
+      training_cut_tokens: input.training_cut_tokens,
+    })
+  }
+  const roi =
+    distill_tokens !== null && sft_saved !== null
+      ? distillRoi({ hole_a_plus_b_tokens: distill_tokens, sft_tokens_saved: sft_saved })
+      : null
+  return { distill_tokens, sft_saved, roi }
 }
 
 function sampleHasGateFail(sample: ScoredSample): boolean {

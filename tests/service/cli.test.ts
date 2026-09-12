@@ -706,12 +706,20 @@ describe('cli', { concurrency: 1 }, () => {
       composite: number | null
       metrics: { replay: { value: number | null; status: string } }
       notes?: string[]
+      distill_tokens: number | null
+      sft_saved: number | null
+      roi: number | null
     }
     const report = JSON.parse(line) as {
       fake_l4?: boolean
       l4?: boolean
       bins: {
-        short: { samples: Sample[]; mean_composite: number | null }
+        short: {
+          samples: Sample[]
+          mean_composite: number | null
+          mean_roi: number | null
+          n_defined_roi: number
+        }
         long: { samples: Sample[]; mean_composite: number | null }
         multi_dead_end: { samples: Sample[]; mean_composite: number | null }
       }
@@ -722,6 +730,11 @@ describe('cli', { concurrency: 1 }, () => {
     assert.ok(fluff, 'missing fluff sample')
     assert.equal(fluff!.metrics.replay.status, 'pass')
     assert.equal(fluff!.metrics.replay.value, 1)
+    assert.equal(typeof fluff!.distill_tokens, 'number')
+    assert.equal(typeof fluff!.sft_saved, 'number')
+    assert.ok(fluff!.sft_saved! > 0, `sft_saved=${String(fluff!.sft_saved)}`)
+    assert.ok(fluff!.roi === null || typeof fluff!.roi === 'number')
+    assert.equal(typeof report.bins.short.n_defined_roi, 'number')
     assert.ok(fluff!.composite !== null && fluff!.composite > 0, `composite=${String(fluff!.composite)}`)
     assert.ok((fluff!.notes ?? []).some((n) => /verify ok|heal/.test(n)))
     for (const bin of ['long', 'multi_dead_end'] as const) {
@@ -741,6 +754,10 @@ describe('cli', { concurrency: 1 }, () => {
     assert.match(md, /long-debug/)
     assert.match(md, /multi-dead/)
     assert.match(md, /### notes/)
+    assert.match(md, /ADR-0015/)
+    assert.match(md, /\| roi \|/)
+    assert.match(md, /\| distill_tokens \|/)
+    assert.match(md, /mean roi=/)
   })
 
   it('parseArgv reads --with-l4', () => {
@@ -870,8 +887,16 @@ describe('cli', { concurrency: 1 }, () => {
           n: number
           n_defined_composite: number
           n_defined_m1: number
+          n_defined_roi: number
           n_gate_fail: number
-          samples: Array<{ trace_id: string; composite: number | null; notes?: string[] }>
+          samples: Array<{
+            trace_id: string
+            composite: number | null
+            notes?: string[]
+            distill_tokens: number | null
+            sft_saved: number | null
+            roi: number | null
+          }>
         }
       }
     }
@@ -879,15 +904,21 @@ describe('cli', { concurrency: 1 }, () => {
     assert.ok(payload.bins.short.n_gate_fail >= 1)
     assert.equal(typeof payload.bins.short.n_defined_composite, 'number')
     assert.equal(typeof payload.bins.short.n_defined_m1, 'number')
+    assert.equal(typeof payload.bins.short.n_defined_roi, 'number')
     const failed = payload.bins.short.samples.find((s) =>
       (s.notes ?? []).some((n) => n.startsWith('span_failure:')),
     )
     assert.ok(failed, 'expected a span_failure sample')
     assert.equal(failed!.composite, null)
+    assert.equal(failed!.distill_tokens, null)
+    assert.equal(failed!.sft_saved, null)
+    assert.equal(failed!.roi, null)
     const survived = payload.bins.short.samples.find(
       (s) => !(s.notes ?? []).some((n) => n.startsWith('span_failure:')),
     )
     assert.ok(survived, 'expected a surviving sample')
+    assert.equal(typeof survived!.distill_tokens, 'number')
+    assert.equal(typeof survived!.sft_saved, 'number')
     const md = readFileSync(join(outDir, 'scoreboard.md'), 'utf8')
     assert.match(md, /span_failure:/)
     assert.match(md, /gate fails=/)

@@ -171,6 +171,8 @@ describe('benchmark bins are not averaged together', () => {
     assert.equal(report.bins.multi_dead_end.mean_m1_score, null)
     assert.equal(report.bins.multi_dead_end.n_defined_composite, 0)
     assert.equal(report.bins.multi_dead_end.n_defined_m1, 0)
+    assert.equal(report.bins.multi_dead_end.n_defined_roi, 0)
+    assert.equal(report.bins.multi_dead_end.mean_roi, null)
     assert.equal(report.bins.multi_dead_end.n_gate_fail, 0)
     const keys = Object.keys(report.bins)
     assert.deepEqual(keys, ['short', 'long', 'multi_dead_end'])
@@ -212,6 +214,54 @@ describe('benchmark bins are not averaged together', () => {
     assert.equal(failed.metrics.key_step_recall.status, 'fail')
     assert.equal(span.composite, null)
     assert.equal(span.metrics.compression_ratio.status, 'fail')
+    assert.equal(span.distill_tokens, null)
+    assert.equal(span.sft_saved, null)
+    assert.equal(span.roi, null)
+  })
+
+  it('ROI is column + mean of defined; not a composite gate', () => {
+    const profitable = scoreSample(
+      passingInput({
+        bin: 'short',
+        trace_id: 'profit',
+        hole_a_plus_b_tokens: 50,
+        original_tokens: 1000,
+        training_cut_tokens: 200,
+      }),
+    )
+    const spentZero = scoreSample(
+      passingInput({
+        bin: 'short',
+        trace_id: 'fake-zero-spend',
+        hole_a_plus_b_tokens: 0,
+        original_tokens: 1000,
+        training_cut_tokens: 200,
+      }),
+    )
+    const noSave = scoreSample(
+      passingInput({
+        bin: 'short',
+        trace_id: 'no-save',
+        hole_a_plus_b_tokens: 40,
+        original_tokens: 100,
+        training_cut_tokens: 100,
+      }),
+    )
+    assert.equal(profitable.distill_tokens, 50)
+    assert.equal(profitable.sft_saved, 800)
+    assert.equal(profitable.roi, 16)
+    assert.ok(profitable.composite !== null)
+    assert.equal(spentZero.distill_tokens, 0)
+    assert.equal(spentZero.sft_saved, 800)
+    assert.equal(spentZero.roi, null)
+    assert.ok(spentZero.composite !== null)
+    assert.equal(noSave.sft_saved, 0)
+    assert.equal(noSave.roi, 0)
+    const report = aggregateBins([profitable, spentZero, noSave])
+    const table = report.bins.short
+    assert.equal(table.n_defined_roi, 2)
+    assert.equal(table.mean_roi, (16 + 0) / 2)
+    assert.equal(spentZero.composite, profitable.composite)
   })
 })
 
@@ -293,6 +343,9 @@ describe('failedBenchSample / noteFromBenchDistillError', () => {
     assert.equal(sample.metrics.compression_ratio.status, 'fail')
     assert.equal(sample.gold, 'skipped')
     assert.deepEqual(sample.notes, [note])
+    assert.equal(sample.distill_tokens, null)
+    assert.equal(sample.sft_saved, null)
+    assert.equal(sample.roi, null)
   })
 
   it('prefixes other distill errors as distill_error:', () => {

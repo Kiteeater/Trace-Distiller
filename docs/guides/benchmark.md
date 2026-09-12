@@ -5,7 +5,7 @@
 | 版本 | v0.2 |
 | 日期 | 2026-09-09 |
 | 状态 | **已收口**（公式与及格线）；token 口径对齐 ingest；盲测协议已拍板（LLM review 仍待 spike） |
-| 权威来源 | [benchmark/README.md](../../benchmark/README.md)、[ADR-0005](../adr/0005-benchmark-multiplicative-score.md)、[ADR-0014](../adr/0014-scoreboard-defined-composite.md) |
+| 权威来源 | [benchmark/README.md](../../benchmark/README.md)、[ADR-0005](../adr/0005-benchmark-multiplicative-score.md)、[ADR-0014](../adr/0014-scoreboard-defined-composite.md)、[ADR-0015](../adr/0015-distill-cost-roi.md) |
 
 > 压缩和保真绑在一起看。单项好看不算数。设计原文在 [benchmark/README.md](../../benchmark/README.md)，本页把它写成已定验收口径。
 
@@ -82,6 +82,7 @@ Score = 压缩率得分 × 关键步召回率 × 重放成功率
 - **不拿 Distiller 自己的 Rule / 洞 B 标签评自己。**
 - **成本只计洞 A + 洞 B**，不含 L4（QA / 重放 / review）token。
 - **Cost soft gate（真 mint）**：`short` 档，或 `original_tokens ≤ 25_000`（`COST_SOFT_ORIGINAL_TOKENS`）时，`distill_cost_ratio` **照常写入记分板**，但 **不因 >0.3 判 fail / 不拖垮 composite**——洞 A+B 固定开销在短样上几乎必然 >0.3。更大 long 样仍用硬门槛 0.3。
+- **Distill token economics / ROI（ADR-0015）**：主比 `distill_cost_ratio` = `distill_tokens / SFT_tokens_saved`（= 现有 cost；分子仅 Hole A+B，**不计 L4**）。ROI = saved/spent（spent>0）；`ROI > 1` ⇔ 单次复用 token 盈利 ⇔ cost_ratio < 1。spent=0 → ROI `null`/`—`（不把 Infinity 灌进均值）。记分板列 `distill_tokens` / `sft_saved` / `roi`；`mean_roi` 只对 defined。**不是** composite/m1 门禁。Fake / `--fake-l4` 同样填列（Fake 用量为 0 时 roi 为 `—`）。
 - **Keep 地板**：`original_tokens≥5k` 时 `KEEP_RATIO_FLOOR=0.08`（软顶 `KEEP_RATIO_SOFT_CAP=0.15`），避免 long/multi 被剪到 <5%；短样不强制抬 keep，以免单段跳过 0.3。
 - **短 / 长阀门（CutProfile bin valve）**：`cutProfileForBin(bin)` 为三档提供默认 CutProfile——**short**：`max_representative=5`、更大/默认洞窗、`keep_ratio_floor=null`（少剪 + 已有 soft cost）；**long**：`max_representative=2`、更小洞窗（更积极）、`keep_ratio_floor≈0.08`（目标带 8–15%）；**multi_dead_end**：代表上限 3 + 同 long 的地板/洞窗。`bench --bin short|long|multi_dead_end` 或 `--bins a,b` 只跑所选赛道，避免短长混跑挂起。长 mint 建议 `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`；快捷：`bun run bench:long:mint`。
 - **QA 0/0**：视为 skipped（不是 fail）。
@@ -234,6 +235,8 @@ benchmark/
 - [ADR-0005](../adr/0005-benchmark-multiplicative-score.md) — 乘法复合分
 - [ADR-0004](../adr/0004-span-constraint-reachable.md) — 够得着
 - [ADR-0007](../adr/0007-separate-brain-label-judge-budgets.md) — 预算分账
+- [ADR-0014](../adr/0014-scoreboard-defined-composite.md) — defined composite / m1
+- [ADR-0015](../adr/0015-distill-cost-roi.md) — distill cost ROI 列
 - [docs/modules/eval.md](../modules/eval.md) / [report.md](../modules/report.md)
 - [datasets.md](./datasets.md) — 样本从哪来、金标怎么标
 - [ingest-and-preprocess.md](./ingest-and-preprocess.md) — token 口径

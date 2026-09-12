@@ -1,7 +1,27 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { renderScoreboardMarkdown } from '../../src/eval/scoreboard.ts'
-import type { BenchmarkReport } from '../../src/eval/benchmark.ts'
+import type { BenchmarkBin, BenchmarkReport, BinTable } from '../../src/eval/benchmark.ts'
+
+function emptyBin(bin: BenchmarkBin): BinTable {
+  return {
+    bin,
+    n: 0,
+    mean_composite: null,
+    stddev_composite: null,
+    n_defined_composite: 0,
+    mean_m1_score: null,
+    stddev_m1_score: null,
+    n_defined_m1: 0,
+    n_gate_fail: 0,
+    mean_hole_a_efficiency: null,
+    stddev_hole_a_efficiency: null,
+    mean_roi: null,
+    stddev_roi: null,
+    n_defined_roi: 0,
+    samples: [],
+  }
+}
 
 describe('scoreboard markdown', () => {
   it('renders per-bin tables without overall', () => {
@@ -18,6 +38,9 @@ describe('scoreboard markdown', () => {
         n_gate_fail: 0,
         mean_hole_a_efficiency: 0.42,
         stddev_hole_a_efficiency: 0,
+        mean_roi: 10,
+        stddev_roi: 0,
+        n_defined_roi: 1,
         samples: [
           {
             trace_id: 't1',
@@ -33,6 +56,9 @@ describe('scoreboard markdown', () => {
             composite: 60,
             m1_score: 80,
             gold: 'independent',
+            distill_tokens: 100,
+            sft_saved: 1000,
+            roi: 10,
             hole_a_vector: {
               quality: 1,
               cosine: 1,
@@ -46,34 +72,8 @@ describe('scoreboard markdown', () => {
           },
         ],
       },
-      long: {
-        bin: 'long',
-        n: 0,
-        mean_composite: null,
-        stddev_composite: null,
-        n_defined_composite: 0,
-        mean_m1_score: null,
-        stddev_m1_score: null,
-        n_defined_m1: 0,
-        n_gate_fail: 0,
-        mean_hole_a_efficiency: null,
-        stddev_hole_a_efficiency: null,
-        samples: [],
-      },
-      multi_dead_end: {
-        bin: 'multi_dead_end',
-        n: 0,
-        mean_composite: null,
-        stddev_composite: null,
-        n_defined_composite: 0,
-        mean_m1_score: null,
-        stddev_m1_score: null,
-        n_defined_m1: 0,
-        n_gate_fail: 0,
-        mean_hole_a_efficiency: null,
-        stddev_hole_a_efficiency: null,
-        samples: [],
-      },
+      long: emptyBin('long'),
+      multi_dead_end: emptyBin('multi_dead_end'),
     }
     const md = renderScoreboardMarkdown({ dir: 'benchmark/datasets', mode: 'with_llm', l4: false, bins })
     assert.match(md, /## short/)
@@ -82,13 +82,18 @@ describe('scoreboard markdown', () => {
     assert.match(md, /m1_score/)
     assert.match(md, /\| m1 \|/)
     assert.match(md, /\| a_eff \|/)
+    assert.match(md, /\| roi \|/)
+    assert.match(md, /\| distill_tokens \|/)
+    assert.match(md, /\| sft_saved \|/)
     assert.match(md, /mean m1=/)
     assert.match(md, /mean a_eff=/)
+    assert.match(md, /mean roi=10\.00 \(defined=1\)/)
     assert.match(md, /defined=1/)
     assert.match(md, /gate fails=0/)
     assert.match(md, /0\.420/)
     assert.match(md, /ADR-0011 b/)
     assert.match(md, /ADR-0014/)
+    assert.match(md, /ADR-0015/)
     assert.doesNotMatch(md, /overall score/i)
     assert.doesNotMatch(md, /hard-?zero/i)
     assert.doesNotMatch(md, /fail → 0/)
@@ -108,6 +113,9 @@ describe('scoreboard markdown', () => {
         n_gate_fail: 1,
         mean_hole_a_efficiency: null,
         stddev_hole_a_efficiency: null,
+        mean_roi: null,
+        stddev_roi: null,
+        n_defined_roi: 0,
         samples: [
           {
             trace_id: 't-fail',
@@ -123,43 +131,21 @@ describe('scoreboard markdown', () => {
             composite: null,
             m1_score: null,
             gold: 'independent',
+            distill_tokens: null,
+            sft_saved: null,
+            roi: null,
           },
         ],
       },
-      long: {
-        bin: 'long',
-        n: 0,
-        mean_composite: null,
-        stddev_composite: null,
-        n_defined_composite: 0,
-        mean_m1_score: null,
-        stddev_m1_score: null,
-        n_defined_m1: 0,
-        n_gate_fail: 0,
-        mean_hole_a_efficiency: null,
-        stddev_hole_a_efficiency: null,
-        samples: [],
-      },
-      multi_dead_end: {
-        bin: 'multi_dead_end',
-        n: 0,
-        mean_composite: null,
-        stddev_composite: null,
-        n_defined_composite: 0,
-        mean_m1_score: null,
-        stddev_m1_score: null,
-        n_defined_m1: 0,
-        n_gate_fail: 0,
-        mean_hole_a_efficiency: null,
-        stddev_hole_a_efficiency: null,
-        samples: [],
-      },
+      long: emptyBin('long'),
+      multi_dead_end: emptyBin('multi_dead_end'),
     }
     const md = renderScoreboardMarkdown({ dir: 'benchmark/datasets', mode: 'with_llm', l4: false, bins })
     assert.match(md, /t-fail/)
     assert.match(md, /0\.900 \(f\)/)
     assert.match(md, /mean composite=— \(defined=0\)/)
     assert.match(md, /mean m1=— \(defined=0\)/)
+    assert.match(md, /mean roi=— \(defined=0\)/)
     assert.match(md, /gate fails=1/)
     assert.match(md, /\| t-fail \|.*\| — \| — \|/)
     assert.doesNotMatch(md, /\| t-fail \|.*\| 0\.00 \|/)

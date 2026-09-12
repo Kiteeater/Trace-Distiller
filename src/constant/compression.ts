@@ -52,6 +52,14 @@ export const KEEP_FLOOR_MIN_ORIGINAL_TOKENS = 5_000
 export const KEEP_RATIO_SOFT_CAP = 0.15
 
 
+/**
+ * ADR-0015 direction: rules as the default cheap knife should cover ~70% of
+ * segments before expensive Hole A/B. Not a pipeline gate in this PR (follow-up).
+ * Agent still decides hard cases (ADR-0010); this is not a resurrected `--no-llm` path.
+ * Complement of LLM_LABEL_FRACTION_HINT (kept as a 0.3 literal to avoid 1-0.7 float noise).
+ */
+export const RULES_FIRST_COVERAGE_TARGET = 0.7
+
 /** 规则层清完后，预期仍要进洞 B 的段比例（成本粗账，不是硬门禁）。 */
 export const LLM_LABEL_FRACTION_HINT = 0.3
 

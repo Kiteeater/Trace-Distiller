@@ -18,6 +18,8 @@ export function renderScoreboardMarkdown(input: {
     '',
     '> **Defined composite / m1 (ADR-0014):** 单项列始终显示 value + pass/fail/skip。`composite` / `m1_score` **仅当该分所需门槛全过且有数值时才定义**；否则 `—`（JSON `null`），**不是** 0。m1 所需：compression + key_step_recall。composite 所需：现行六项（**short 档或 original_tokens≤25k 的 cost 只报不分**；仍不计 L4）。QA 0/0 视为 skipped。档均值只对 defined 样本；`gate fails` 计任一项 metric `fail` 的样本。公式在 defined 时不变（ADR-0005）：composite = 压缩率得分 × 召回 × 重放；m1 = 压缩率得分 × 召回。',
     '',
+    '> **Distill token economics (ADR-0015):** 主比 `cost` = `distill_tokens / sft_saved`（Hole A+B only；**L4 never counted**）。ROI = saved/spent when spent>0；`ROI > 1` ⇔ `cost < 1` ⇔ token-profitable for a single reuse。spent=0 → ROI `—`（JSON `null`，不把 Infinity 灌进均值）。ROI 是 **列 + defined 均值**，**不是** composite/m1 门禁。',
+    '',
     '> **Hole A vector efficiency (ADR-0011 b):** `a_eff` = quality / log(1+tokens). Quality = embedding cosine(predicted intent vs gold intent) [, skeleton point recall if `skeleton_segment_ids` gold]. **Bench-only — not an online stop** (`sparse_intent` still stops on `enough` + hard budget). Default embedding = deterministic hash (no API key). Not part of m1/composite.',
     '',
   ]
@@ -43,14 +45,18 @@ export function renderScoreboardMarkdown(input: {
       table.mean_hole_a_efficiency === null || table.mean_hole_a_efficiency === undefined
         ? '—'
         : table.mean_hole_a_efficiency.toFixed(3)
+    const meanRoi =
+      table.mean_roi === null || table.mean_roi === undefined
+        ? '—'
+        : table.mean_roi.toFixed(2)
     lines.push(
-      `n=${String(table.n)} · mean composite=${mean} (defined=${String(table.n_defined_composite)}) · mean m1=${meanM1} (defined=${String(table.n_defined_m1)}) · gate fails=${String(table.n_gate_fail)} · mean a_eff=${meanA}`,
+      `n=${String(table.n)} · mean composite=${mean} (defined=${String(table.n_defined_composite)}) · mean m1=${meanM1} (defined=${String(table.n_defined_m1)}) · gate fails=${String(table.n_gate_fail)} · mean a_eff=${meanA} · mean roi=${meanRoi} (defined=${String(table.n_defined_roi)})`,
     )
     lines.push('')
     lines.push(
-      '| trace | compress | recall | replay | qa | coherence | cost | composite | m1 | a_eff | gold |',
+      '| trace | compress | recall | replay | qa | coherence | cost | distill_tokens | sft_saved | roi | composite | m1 | a_eff | gold |',
     )
-    lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|')
+    lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|')
     for (const s of table.samples) {
       lines.push(row(s))
     }
@@ -83,5 +89,15 @@ function row(s: ScoredSample): string {
     s.hole_a_vector === undefined || s.hole_a_vector === null || s.hole_a_vector.efficiency === null
       ? 'skip'
       : s.hole_a_vector.efficiency.toFixed(3)
-  return `| ${s.trace_id} | ${cell(m.compression_ratio)} | ${cell(m.key_step_recall)} | ${cell(m.replay)} | ${cell(m.qa)} | ${cell(m.coherence)} | ${cell(m.distill_cost_ratio)} | ${comp} | ${m1} | ${aEff} | ${s.gold} |`
+  return `| ${s.trace_id} | ${cell(m.compression_ratio)} | ${cell(m.key_step_recall)} | ${cell(m.replay)} | ${cell(m.qa)} | ${cell(m.coherence)} | ${cell(m.distill_cost_ratio)} | ${tokenCell(s.distill_tokens)} | ${tokenCell(s.sft_saved)} | ${roiCell(s.roi)} | ${comp} | ${m1} | ${aEff} | ${s.gold} |`
+}
+
+function tokenCell(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—'
+  return String(Math.round(n))
+}
+
+function roiCell(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—'
+  return n.toFixed(2)
 }

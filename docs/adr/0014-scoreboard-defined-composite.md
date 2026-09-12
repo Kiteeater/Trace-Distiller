@@ -8,6 +8,7 @@ accepted（2026-09-12）
 
 - [ADR-0005](./0005-benchmark-multiplicative-score.md)（乘法公式：压缩率得分 × 召回 × 重放；本 ADR 不改公式，只改「未过门槛」的呈现）
 - [ADR-0013](./0013-training-utility-before-cut-polish.md)（composite / m1 是过程门禁，不是训练效用证明；硬写成 0 会把半成功伪装成全失败，并拖垮档均值）
+- [ADR-0015](./0015-distill-cost-roi.md)（ROI 同样按列 + defined 均值呈现，不硬写成 0、不进 composite 乘法）
 
 ## Context
 

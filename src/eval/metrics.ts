@@ -17,6 +17,31 @@ export interface CostInput {
   tokens_removed: number
 }
 
+export interface SftSavedInput {
+  original_tokens: number
+  training_cut_tokens: number
+}
+
+export interface RoiInput {
+  /** 仅 hole_a_* + hole_b_*。禁止把 L4 计入。 */
+  hole_a_plus_b_tokens: number
+  sft_tokens_saved: number
+}
+
+export interface DistillEconomicsInput {
+  hole_a_plus_b_tokens: number
+  original_tokens: number
+  training_cut_tokens: number
+}
+
+/** Scoreboard economics (ADR-0015). ROI is a column, not a composite/m1 gate. */
+export interface DistillEconomics {
+  distill_tokens: number
+  sft_tokens_saved: number
+  distill_cost_ratio: number
+  roi: number | null
+}
+
 /**
  * DistillResult 的结构子集。eval 不 import pipeline，避免 biz 反向依赖。
  * hole_a_plus_b_tokens 缺省按 0（无洞 / 未记用量）。
@@ -49,14 +74,58 @@ export function compressionRatio(input: CompressionInput): number {
 }
 
 /**
- * 剪辑消耗 ÷ 剪掉的 token。L4 token 不计蒸馏成本。
+ * 蒸馏花掉的 token / 省下的 SFT token（ADR-0015 主比；即 spent/saved）。
+ * 分子仅 hole_a_* + hole_b_*。L4 token 不计蒸馏成本（ADR-0007）。
  * tokens_removed <= 0：消耗为 0 则 0，否则 +Infinity。
+ * 记分板另报 ROI = saved/spent（inverse）；spent=0 时 ROI 为 null，不把 Infinity 灌进均值。
  */
 export function distillCostRatio(input: CostInput): number {
   if (input.tokens_removed <= 0) {
     return input.hole_a_plus_b_tokens === 0 ? 0 : Number.POSITIVE_INFINITY
   }
   return input.hole_a_plus_b_tokens / input.tokens_removed
+}
+
+/**
+ * SFT tokens saved ≈ original − TrainingCut turn tokens, clamped at 0
+ * so Fake/CI never feeds a negative denominator into ROI.
+ */
+export function sftTokensSaved(input: SftSavedInput): number {
+  return Math.max(0, input.original_tokens - input.training_cut_tokens)
+}
+
+/**
+ * ROI = SFT_tokens_saved / distill_tokens when spent > 0 (ADR-0015).
+ * spent=0 → null (do not inject Infinity into board means).
+ * saved≤0 and spent>0 → 0. ROI>1 ⇔ distill_cost_ratio<1 ⇔ token-profitable
+ * for a single reuse. Not a composite/m1 gate.
+ */
+export function distillRoi(input: RoiInput): number | null {
+  const spent = input.hole_a_plus_b_tokens
+  const saved = Math.max(0, input.sft_tokens_saved)
+  if (!(spent > 0) || !Number.isFinite(spent)) return null
+  return saved / spent
+}
+
+/** Bundle spent/saved + primary ratio + ROI for scoreboard wiring. */
+export function distillEconomics(input: DistillEconomicsInput): DistillEconomics {
+  const distill_tokens = input.hole_a_plus_b_tokens
+  const sft_tokens_saved = sftTokensSaved({
+    original_tokens: input.original_tokens,
+    training_cut_tokens: input.training_cut_tokens,
+  })
+  return {
+    distill_tokens,
+    sft_tokens_saved,
+    distill_cost_ratio: distillCostRatio({
+      hole_a_plus_b_tokens: distill_tokens,
+      tokens_removed: sft_tokens_saved,
+    }),
+    roi: distillRoi({
+      hole_a_plus_b_tokens: distill_tokens,
+      sft_tokens_saved,
+    }),
+  }
 }
 
 /**
@@ -240,11 +309,15 @@ export function computeDistillMetrics(result: DistillMetricsSource): DistillMetr
   const fail_closed_count = result.warrant.entries.filter(
     (e) => e.source.name === FAIL_CLOSED_KEEP_RULE,
   ).length
+  const tokens_removed = sftTokensSaved({
+    original_tokens,
+    training_cut_tokens: cut_tokens,
+  })
   return {
     compression_ratio: compressionRatio({ original_tokens, cut_tokens }),
     distill_cost_ratio: distillCostRatio({
       hole_a_plus_b_tokens: hole,
-      tokens_removed: original_tokens - cut_tokens,
+      tokens_removed,
     }),
     rule_coverage: total_segments > 0 ? ruled_count / total_segments : 0,
     llm_segment_fraction: total_segments > 0 ? llm_count / total_segments : 0,
