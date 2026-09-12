@@ -50,7 +50,7 @@ bun run bench:long:mint   # 真 mint long-only；默认 SESSION_TIMEOUT_MS=30000
 | **Training Cut → SFT 导出** | **M2**。当前只有中间 `TrainingCut`（RawTurn[]）与 `*-training.json`。聊天模板 / messages 角色映射 / 训练集打包 **未定型**（见 [milestones.md](../milestones.md)、[TODO.md](../TODO.md) M2、ADR-0003） | 不要写假 trainer、不要把中间 JSON 改名成 `*.sft.jsonl` 假装完成 |
 | **真实 GT 语料池** | `benchmark/datasets/long/` + `multi_dead_end/` 已接入更多 MIMO 长会话（含失败工具/重试后恢复）；本地私有 3–5 条成功 Trace 仍待接入 | 不要把合成小样当私有原料勾完；公开适配样见 `long/SOURCES.md` / `multi_dead_end/SOURCES.md` |
 | **盲测调 L4 `blindReview`** | 纯代码对照骨架与 plan 已通；调模型的盲测会话未接通 | 不要在报告里写「已过盲测门禁」 |
-| **训练有效性对比 / 批量入口** | M3+ | — |
+| **训练有效性对比 / 批量入口** | M3+ | 训练有效性须先于 cut 美学优化，见 [ADR-0013](../adr/0013-training-utility-before-cut-polish.md)；勿假装当前 composite 已证明训练效用 |
 
 ---
 

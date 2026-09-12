@@ -66,4 +66,5 @@ cp .env.example .env
 - [AGENTS.md](./AGENTS.md) — 工程规则  
 - [docs/guides/](./docs/guides/) — 成熟度、benchmark、架构叶子等  
 - [docs/adr/](./docs/adr/) — 已拍板决定  
+- [ADR-0013](./docs/adr/0013-training-utility-before-cut-polish.md) — 训练效用先于 cut polish  
 - [docs/architecture.md](./docs/architecture.md) — 流水线与两个 agent 洞
