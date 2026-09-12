@@ -115,7 +115,7 @@ _Avoid_: 重放成功率
 _Avoid_: fluency, readability（人类可读性是另一项）
 
 **处理成本比（Distill Cost Ratio）**：
-剪辑自身消耗的 token ÷ 剪掉的 token（洞 A+B；不计 L4）。记分板另报 ROI = 省下的 SFT token / 蒸馏花费（ADR-0015）；ROI>1 即单次复用 token 盈利。ROI 不是复合分门禁。
+剪辑自身消耗的 token ÷ 剪掉的 token（洞 A+B；不计 L4）。记分板另报 ROI = proxy_saved_trainingcut / spend_AB（ADR-0015；`sft_saved` 非真实训练节省）；摊薄情景 1×1/3×1/3×3 仅文档；质量门控 ROI；规则覆盖是观测 hint 不是门禁。ROI 不是复合分门禁。
 _Avoid_: API bill, absolute token spend
 
 **复合分（Composite Score）**：
