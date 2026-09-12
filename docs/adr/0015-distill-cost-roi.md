@@ -50,7 +50,7 @@ ADR-0013 把 composite/m1 定性为过程门禁。蒸馏**自身**的 token 经�
 - 骨架段 / 关键决策段：规则**禁 drop / 禁 collapse**。
 - Fail-Closed Keep **不计入规则覆盖分子**；禁止靠 Keep 灌分子刷覆盖率。
 
-常量 `RULES_SAFE_COVERAGE_HINT = 0.7` 是分档观测 hint（`LLM_LABEL_FRACTION_HINT=0.3` 的补），**不是**硬门禁、**不是** `--no-llm`。本 PR 不改 cut 行为。
+常量 `RULES_SAFE_COVERAGE_HINT = 0.7` 是分档观测 hint（`LLM_LABEL_FRACTION_HINT=0.3` 的补），**不是**硬门禁、**不是** `--no-llm`。流水线跟进：高精规则先决议并采纳，洞 B 只打未决。
 
 ## Consequences
 
@@ -58,3 +58,4 @@ ADR-0013 把 composite/m1 定性为过程门禁。蒸馏**自身**的 token 经�
 - Fake / `--fake-l4` 同样填列（Fake 用量为 0 时 roi 为 `—`，列仍在）。span / distill 失败不编造经济学数字。
 - 不放松 `compress ≤ 0.3` / `BENCHMARK_PASS` / `key_step_recall≥0.95`；ROI 失败不归零 composite/m1。质量挂了的 ROI 无意义。
 - 规则覆盖是分档观测 hint，不是硬门禁；不得靠 Fail-Closed Keep 刷分子，也不得牺牲骨架 / 关键决策保护换覆盖率。
+- [x] 流水线跟进：高精规则先决议并采纳；洞 B 只打未决；覆盖率为观测 hint；骨架禁砍；非 --no-llm。

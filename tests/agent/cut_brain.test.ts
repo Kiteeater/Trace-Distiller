@@ -257,6 +257,53 @@ describe('cutBrain', () => {
       assert.ok(d.confidence >= CUT_BRAIN_LOW_CONFIDENCE)
     }
   })
+
+  it('returns empty output without throwing when segment_ids is empty', async () => {
+    const raw = parse(load('no_llm_conservative.jsonl'))
+    const view = segment(raw)
+    const backend = new FakeSessionBackend()
+    const out = await cutBrain({
+      segment_ids: [],
+      view,
+      raw,
+      skeleton: view.skeleton,
+      intent: intent(),
+      skill_path: skillPath,
+      backend,
+    })
+    assert.deepEqual(out.decisions, [])
+    assert.deepEqual(out.still_unresolved, [])
+    assert.equal(out.usage.input_tokens, 0)
+    assert.equal(out.usage.output_tokens, 0)
+    assert.equal(backend.calls.length, 0)
+  })
+
+  it('apply_rules_hint does not drop/collapse Hole A skeleton ids', async () => {
+    const raw = parse(load('no_llm_conservative.jsonl'))
+    const view = segment(raw)
+    const ruled = applyRules({ view, raw })
+    const dropId = ruled.decisions.find((d) => d.label === 'routine')?.segment_id
+    assert.ok(dropId)
+    const skeleton: Skeleton = {
+      version: 0,
+      nodes: [{ id: 'n-protect', kind: 'turning_point', segment_ids: [dropId], note: '' }],
+    }
+    const backend = new FakeSessionBackend()
+    const out = await cutBrain({
+      segment_ids: view.segments.map((s) => s.id),
+      view,
+      raw,
+      skeleton,
+      intent: intent(),
+      skill_path: skillPath,
+      backend,
+    })
+    const labeled = out.decisions.find((d) => d.segment_id === dropId)
+    assert.ok(labeled)
+    assert.notEqual(labeled!.label, 'routine')
+    assert.notEqual(labeled!.label, 'dead_end')
+    assert.equal(labeled!.label, 'key_decision')
+  })
 })
 
 function synthCard(id: string, extra: Partial<SegmentCard> = {}): SegmentCard {

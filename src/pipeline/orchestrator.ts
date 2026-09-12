@@ -1,4 +1,5 @@
 import { cutBrain } from '../agent/sessions/cut_brain.ts'
+import { skeletonSegmentIds } from '../agent/sessions/cut_brain_harness.ts'
 import { type SkeletonPatch } from '../agent/sessions/label_window.ts'
 import {
   hasInjectedSessionBackend,
@@ -25,8 +26,9 @@ import type { CutProfile } from '../types/cut_profile.ts'
 import type { CutWarrant } from '../types/cut_warrant.ts'
 import type { RawTrace } from '../types/raw_trace.ts'
 import { assemble, type AssembleOutput } from './assembler.ts'
+import { filterRulesForSkeletonProtect, applyRules } from './rules.ts'
 import { segment } from './segmenter.ts'
-import { warn as logWarn } from '../utils/logger.ts'
+import { info as logInfo, warn as logWarn } from '../utils/logger.ts'
 
 /** Agent-led path only (ADR-0010). `--no_llm` / rules-only removed. */
 export type DistillMode = 'with_llm'
@@ -104,9 +106,11 @@ export function resolveDistillMode(input: {
 }
 
 /**
- * Agent-led 编排（ADR-0010 Phase 2）：segment → 洞 A → cut-brain（可调 apply_rules_hint）→ writeWarrant → assemble。
- * 不把规则 decisions 静默并进最终结果；规则仅当 agent 调用 apply_rules_hint 时采纳。
- * 未决 Fail-Closed Keep = agent/tool failure policy。禁止 import pi SDK。
+ * Agent-led 编排（ADR-0010 + ADR-0015）：segment → 洞 A → 高精规则先决议并采纳 →
+ * cut-brain 只打未决（可调 apply_rules_hint）→ writeWarrant → assemble。
+ * 规则是默认 cheap knife，不是 `--no-llm` / 全量 rules-only 产品；缺后端或模型仍报错。
+ * 骨架段规则禁 drop/collapse，留给洞 B skeleton_protect。
+ * 未决 ∪ 洞 B 硬失败 → Fail-Closed Keep（仅针对交给 B 的 id）。禁止 import pi SDK。
  */
 export async function distill(input: DistillInput): Promise<DistillResult> {
   const { raw, profile, mode } = input
@@ -151,30 +155,55 @@ async function runWithLlm(input: {
   const route = resolveSkillRoute(holeA.scenario)
   const holeNotes: string[] = []
   let holeTokens = holeA.usage.input_tokens + holeA.usage.output_tokens
-  let decisions: LabelDecision[] = []
-  let stillUnresolved: string[] = view.segments.map((s) => s.id)
 
-  try {
-    const brain = await cutBrain({
-      segment_ids: view.segments.map((s) => s.id),
-      view,
-      raw,
-      skeleton,
-      intent: view.intent_hypothesis,
-      skill_path: route.path,
-      ...(backend !== undefined ? { backend } : {}),
-    })
-    decisions = brain.decisions
-    stillUnresolved = brain.still_unresolved
-    view = { ...brain.view, intent_hypothesis: view.intent_hypothesis, skeleton }
-    holeTokens += brain.usage.input_tokens + brain.usage.output_tokens
-    if (brain.notes !== undefined) holeNotes.push(...brain.notes)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    const note = `cut_brain_failed:${message}`
-    holeNotes.push(note)
-    logWarn(note)
-    // stillUnresolved stays all segment ids → Fail-Closed Keep in writeWarrant
+  const rulesOut = applyRules({ view, raw })
+  view = { ...rulesOut.view, intent_hypothesis: view.intent_hypothesis, skeleton }
+  const protectedRules = filterRulesForSkeletonProtect({
+    decisions: rulesOut.decisions,
+    unresolved_ids: rulesOut.unresolved_ids,
+    skeletonIds: skeletonSegmentIds(skeleton),
+    profile,
+  })
+  const adopted = protectedRules.decisions
+  const unresolvedForB = protectedRules.unresolved_ids
+  logInfo(`rules_first:ruled=${String(adopted.length)} unresolved=${String(unresolvedForB.length)}`)
+
+  let decisions: LabelDecision[] = [...adopted]
+  let stillUnresolved: string[] = [...unresolvedForB]
+
+  if (unresolvedForB.length === 0) {
+    stillUnresolved = []
+  } else {
+    try {
+      const brain = await cutBrain({
+        segment_ids: unresolvedForB,
+        view,
+        raw,
+        skeleton,
+        intent: view.intent_hypothesis,
+        skill_path: route.path,
+        rules_already_applied: true,
+        profile,
+        ...(backend !== undefined ? { backend } : {}),
+      })
+      const merged = new Map(adopted.map((d) => [d.segment_id, d]))
+      for (const d of brain.decisions) merged.set(d.segment_id, d)
+      decisions = view.segments.flatMap((s) => {
+        const d = merged.get(s.id)
+        return d === undefined ? [] : [d]
+      })
+      stillUnresolved = brain.still_unresolved
+      view = { ...brain.view, intent_hypothesis: view.intent_hypothesis, skeleton }
+      holeTokens += brain.usage.input_tokens + brain.usage.output_tokens
+      if (brain.notes !== undefined) holeNotes.push(...brain.notes)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const note = `cut_brain_failed:${message}`
+      holeNotes.push(note)
+      logWarn(note)
+      decisions = [...adopted]
+      stillUnresolved = [...unresolvedForB]
+    }
   }
 
   view = { ...view, skeleton }

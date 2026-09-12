@@ -10,7 +10,7 @@
 
 **目的**
 
-- 按固定顺序跑完：准入后的 RawTrace → 切段 → 洞 A → cut-brain（可选 `apply_rules_hint`）→ 凭证 → assembler →（可选）盲测回填 → 交给 service 去导出/出报告。
+- 按固定顺序跑完：准入后的 RawTrace → 切段 → 洞 A → 高精规则先决议并采纳 → cut-brain 只打未决（可选 `apply_rules_hint`）→ 凭证 → assembler →（可选）盲测回填 → 交给 service 去导出/出报告。
 - 决定：切多少窗、失败怎么重试、何时 Fail-Closed Keep、review 回填哪几段。这些全是代码。
 - 查 `SKILL_ROUTE`，把 skill 路径传给洞 B，不让 LLM 选策略文件。
 
@@ -29,7 +29,7 @@
 
 ```text
 ① 洞 A skeletonPass：头 1–2 turn + 验证点附近 → 意图 v0 + 场景码 + 骨架 v0
-② cut-brain（洞 B 角色）：agent 可调 `apply_rules_hint`；未决 `label_segment` / `keep_segment`；工具结果 mask 后迭代
+② 高精规则先决议并采纳；cut-brain（洞 B）只打未决：agent 可调 `apply_rules_hint`；未决 `label_segment` / `keep_segment`；工具结果 mask 后迭代。骨架 drop/collapse 不采纳。仍非 `--no-llm` / 非全量 rules-only。
 ③ 凭证：基于骨架 v1 + 全部 LabelDecision 写出 CutWarrant
      （建议：洞 A 二次调用 writeWarrant；若实现选择纯代码汇总，也必须仍走本步骤的数据形状）
 ④ assembler：执行凭证 + span；必要时洞 B check_continuity
@@ -66,7 +66,7 @@ orchestrator 是 async 的唯一原因：洞 A/B 是 IO。它自己的分支逻�
 **做**
 
 - 调 adapters 之外的 biz 函数（adapter 也可由 service 先调再传入；两种都可以，但 GT 检查必须已发生）。
-- 不把 `applyRules` 静默并进最终 decisions；规则仅当 cut-brain 调用 `apply_rules_hint`。
+- 高精规则先跑并采纳进最终 decisions；洞 B 只收到未决 id（骨架 drop/collapse 不采纳）。仍非 `--no-llm` / 非全量 rules-only。
 - cut-brain 内部按 `LABEL_WINDOW_SIZE` / `CUT_BRAIN_MAX_ROUNDS` 迭代未决 id。
 - 窗失败：解析失败或超 token → 该窗 `failClosedKeep`，记入 warrant source=`fail_closed_keep`。
 - 场景码 → skill：查表，查不到按 constant 规定失败或默认 skill。
