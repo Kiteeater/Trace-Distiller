@@ -23,9 +23,12 @@ import {
   compositeScore,
   m1Score,
   distillCostRatio,
+  distillEconomics,
+  distillRoi,
   keyStepRecall,
   qaRatio,
   sixMetricsPassed,
+  sftTokensSaved,
 } from '../../src/eval/metrics.ts'
 import { replay } from '../../src/eval/replay.ts'
 import { REVIEW_MAX_ROUNDS } from '../../src/constant/window.ts'
@@ -124,6 +127,63 @@ describe('eval ratios', () => {
     assert.equal(metrics.rule_coverage, 0.5)
     assert.equal(metrics.llm_segment_fraction, 0.25)
     assert.equal(metrics.fail_closed_count, 1)
+  })
+})
+
+describe('distill economics / ROI (ADR-0015)', () => {
+  it('sftTokensSaved clamps cut > original to 0', () => {
+    assert.equal(sftTokensSaved({ original_tokens: 100, training_cut_tokens: 30 }), 70)
+    assert.equal(sftTokensSaved({ original_tokens: 100, training_cut_tokens: 100 }), 0)
+    assert.equal(sftTokensSaved({ original_tokens: 100, training_cut_tokens: 140 }), 0)
+    assert.equal(sftTokensSaved({ original_tokens: 0, training_cut_tokens: 0 }), 0)
+  })
+
+  it('saved=0 spent>0 → cost +Infinity and roi=0', () => {
+    assert.equal(
+      distillCostRatio({ hole_a_plus_b_tokens: 8, tokens_removed: 0 }),
+      Number.POSITIVE_INFINITY,
+    )
+    assert.equal(distillRoi({ hole_a_plus_b_tokens: 8, sft_tokens_saved: 0 }), 0)
+  })
+
+  it('saved=0 spent=0 → cost 0 and roi null', () => {
+    assert.equal(distillCostRatio({ hole_a_plus_b_tokens: 0, tokens_removed: 0 }), 0)
+    assert.equal(distillRoi({ hole_a_plus_b_tokens: 0, sft_tokens_saved: 0 }), null)
+  })
+
+  it('saved>0 spent=0 → cost 0 and roi null (no Infinity in board means)', () => {
+    assert.equal(distillCostRatio({ hole_a_plus_b_tokens: 0, tokens_removed: 10 }), 0)
+    assert.equal(distillRoi({ hole_a_plus_b_tokens: 0, sft_tokens_saved: 10 }), null)
+  })
+
+  it('saved>0 spent>0 → finite ROI = saved/spent; inverse of cost_ratio', () => {
+    assert.equal(distillRoi({ hole_a_plus_b_tokens: 50, sft_tokens_saved: 200 }), 4)
+    assert.equal(
+      distillCostRatio({ hole_a_plus_b_tokens: 50, tokens_removed: 200 }),
+      0.25,
+    )
+    assert.ok(4 > 1)
+    assert.ok(0.25 < 1)
+  })
+
+  it('distillEconomics bundles tokens, cost_ratio, and roi; L4 never enters spent', () => {
+    const eco = distillEconomics({
+      hole_a_plus_b_tokens: 40,
+      original_tokens: 1000,
+      training_cut_tokens: 200,
+    })
+    assert.equal(eco.distill_tokens, 40)
+    assert.equal(eco.sft_tokens_saved, 800)
+    assert.equal(eco.distill_cost_ratio, 40 / 800)
+    assert.equal(eco.roi, 800 / 40)
+    const clamped = distillEconomics({
+      hole_a_plus_b_tokens: 5,
+      original_tokens: 10,
+      training_cut_tokens: 99,
+    })
+    assert.equal(clamped.sft_tokens_saved, 0)
+    assert.equal(clamped.distill_cost_ratio, Number.POSITIVE_INFINITY)
+    assert.equal(clamped.roi, 0)
   })
 })
 

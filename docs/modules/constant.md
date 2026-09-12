@@ -59,7 +59,10 @@ const PI_FAILURE_RETRY = 1
 /** 洞 A 头尾意图的预算提示：约 2k token，一次调用（ADR-0009） */
 const SKELETON_PASS_TOKEN_HINT = 2000
 
-/** 规则层清完后，预期仍要进洞 B 的段比例（成本粗账，不是硬门禁） */
+/** ADR-0015 方向：规则作默认 cheap knife 应覆盖约 70% 段，再付昂贵洞。本 PR 不是流水线门禁。 */
+const RULES_FIRST_COVERAGE_TARGET = 0.7
+
+/** 规则层清完后，预期仍要进洞 B 的段比例（成本粗账，不是硬门禁）= 1 − RULES_FIRST_COVERAGE_TARGET */
 const LLM_LABEL_FRACTION_HINT = 0.30
 
 /** 场景 → skill 文件。键是已拍板 Scenario。查不到回退 implement。 */

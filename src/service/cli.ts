@@ -697,6 +697,11 @@ async function runBench(args: CliArgs): Promise<number> {
               compression_ratio: computed.compression_ratio,
               distill_cost_ratio: computed.distill_cost_ratio,
               original_tokens: raw.meta.total_tokens,
+              hole_a_plus_b_tokens: result.hole_a_plus_b_tokens ?? 0,
+              training_cut_tokens: result.training.turns.reduce(
+                (sum, turn) => sum + turn.tokens,
+                0,
+              ),
               kept: result.plan.kept,
               gold_segment_ids: gold === null ? null : gold.segment_ids,
               replay,

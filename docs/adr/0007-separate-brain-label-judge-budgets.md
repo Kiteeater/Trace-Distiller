@@ -7,3 +7,5 @@
 **Note**: 取代早期「Brain / Label / Judge 三端口在单一 Agent Runtime 内」的表述；分账原则不变，附着点改为两洞 + L4。
 
 详见 [architecture.md](../architecture.md)。
+
+**Note (ADR-0015):** 主比仍是「洞 A+B 花掉的 token / 省下的 SFT token」；记分板另报 ROI = saved/spent（spent=0 为 `null`/`—`）。L4 仍不计。

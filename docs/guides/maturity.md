@@ -25,7 +25,7 @@ bun run bench:long:mint   # 真 mint long-only；默认 SESSION_TIMEOUT_MS=30000
 | 能力 | 怎么跑 | 说明 |
 |------|--------|------|
 | **离线蒸馏（假后端 agent 路径）** | `bun run distill:example` 或 `node script/run-distill.ts distill … --fake-l4` | ADR-0010/0011：无 `--no-llm`；FakeSessionBackend 走洞 A 多轮稀疏采样 + cut-brain（可选 `apply_rules_hint`）；写出 Training/Playback、HTML 报告、可选 live dump |
-| **假 L4 记分板 + m1 + Hole A a_eff** | `bun run bench:fake` / `bun run bench:m1` | `bench --fake-l4`；stdout JSON + `benchmark/out/scoreboard.md`；有 `m1` 列（压缩率得分 × 关键步召回；cost 失败不归零 m1）。读板：单项始终可见；composite/m1 未过门槛显示 `—` 而非 0（ADR-0014）；均值只对 defined；另计 `n_gate_fail`。另有 bench-only `a_eff`（ADR-0011 b：intent cosine / log(1+tokens)；默认确定性 embedding；`--no-vector-efficiency` 可关） |
+| **假 L4 记分板 + m1 + Hole A a_eff** | `bun run bench:fake` / `bun run bench:m1` | `bench --fake-l4`；stdout JSON + `benchmark/out/scoreboard.md`；有 `m1` 列（压缩率得分 × 关键步召回；cost 失败不归零 m1）。读板：单项始终可见；composite/m1 未过门槛显示 `—` 而非 0（ADR-0014）；均值只对 defined；另计 `n_gate_fail`。另有 `distill_tokens` / `sft_saved` / `roi`（ADR-0015；ROI 是列+defined 均值，不是 composite 归零门禁）。另有 bench-only `a_eff`（ADR-0011 b：intent cosine / log(1+tokens)；默认确定性 embedding；`--no-vector-efficiency` 可关） |
 | **真 mint 重放 + 校验（接口）** | `bench --with-l4`（需本机 `.env`）+ workspace fixture | L4 会话硬超时；mapped workspace 有 `verify[]` 时门禁重放；密钥不进仓库 |
 
 同源双投影：assembler 已从同一 CutPlan 写出 `*-training.json`（`TrainingCut`：按保留集抽出的 RawTurn 列）与 `*-playback.json`（卡片流）。这是 M1 中间表示，**不是**定型 SFT 模板。
