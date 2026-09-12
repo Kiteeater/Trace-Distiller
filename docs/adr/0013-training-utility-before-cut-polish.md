@@ -41,3 +41,4 @@ ADR-0010 / 0011 / 0012 锁的是 **怎么切**（agent 主编、注意力纪律�
 - ADR-0005 的乘法复合分继续作为过程门禁；不升格为训练效用指标。
 - 无增益时产品话术收束到 replay / editor，不把 Training Cut 中间 JSON 说成已验证的 SFT 原料。
 - 本 ADR 为 docs-only 锁定；不在此改 `src/`。效用实验属 M3+，见 [milestones.md](../milestones.md)。
+- 实验怎么跑（臂、预算对齐、v0 规模、导出接口）：[training-utility-experiment.md](../guides/training-utility-experiment.md)。

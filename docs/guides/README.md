@@ -41,6 +41,7 @@
 | [agent-harness.md](./agent-harness.md) | 两个洞的 harness，不是 Distiller Runtime Agent | 架构 / harness | 已确认 harness 形状 |
 | [pi-sdk.md](./pi-sdk.md) | pi 只当 sessions 洞内核；换内核只换 sessions；spike 三项仍待验 | 架构 / harness | **已收口**（spike 除外） |
 | [benchmark.md](./benchmark.md) | 6 指标及格线、乘法复合分、分档赛道；M1 只强制压缩+保真 | 评测 / 接入 | **已收口** |
+| [training-utility-experiment.md](./training-utility-experiment.md) | ADR-0013 四臂训练效用对照（同等 GPU-hours）；复合分绿 ≠ 能训 | 评测 / 接入 | **红 / 设计已锁** |
 
 本文件是索引。
 
