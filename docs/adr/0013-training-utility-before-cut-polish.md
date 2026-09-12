@@ -8,6 +8,7 @@ accepted（2026-09-12）
 
 - [ADR-0010](./0010-agent-led-cut-with-tool-mask.md) / [ADR-0011](./0011-hole-a-sparse-sampling-intent.md) / [ADR-0012](./0012-hole-b-single-slot-progressive-disclosure.md)（agent cut path：主编、洞 A 稀疏采样、洞 B 单槽渐进披露。本 ADR 不改这些契约，也不把它们当成训练侧验证）
 - [ADR-0005](./0005-benchmark-multiplicative-score.md)（乘法复合分；本 ADR 把它定性为过程门禁，不是训练效用证明）
+- [ADR-0014](./0014-scoreboard-defined-composite.md)（过程门禁分在记分板上仅 defined 时展示；fail 不再硬写成 0）
 - [成熟度一览](../guides/maturity.md)（红区已标「训练有效性对比 / 批量入口 M3+」；本 ADR 把门槛写死）
 
 ## Context

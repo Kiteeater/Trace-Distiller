@@ -68,11 +68,11 @@ function answerQa(cut: TrainingCut | PlaybackCut, items: QaItem[]): Promise<QaSc
 
 function replay(task: ReplayTask, plan: CutPlan): Promise<{ success: boolean }>
 
-function compositeScore(parts: BenchmarkParts): number
-// 六项未全部及格 → 0；否则 压缩率得分 × 关键步召回 × 重放成功率（含 cost 门槛）
+function compositeScore(parts: BenchmarkParts): number | null
+// 六项未全部及格 → null（记分板 —，ADR-0014）；否则 压缩率得分 × 关键步召回 × 重放成功率（含 cost 门槛）
 
 function m1Score(parts: Pick<BenchmarkParts, 'compression_ratio' | 'key_step_recall'>): number | null
-// M1：压缩率得分 × 关键步召回；cost/replay/qa/coherence 不参与
+// M1：压缩率得分 × 关键步召回（两门都过才定义，否则 null）；cost/replay/qa/coherence 不参与
 
 function scoreHoleAVectorEfficiency(input: HoleAVectorInput): Promise<HoleAVectorScore>
 // ADR-0011 b：quality / log(1+tokens)；默认 DeterministicHashEmbedding；bench-only
@@ -115,7 +115,7 @@ eval → types, enums, constant, domain, data
 
 ## 5. 关键规则 / 算法
 
-- **乘法复合分**（ADR-0005）：六项全及格才计总分；压缩率得分分段映射，不奖励剪到 0%。
+- **乘法复合分**（ADR-0005 / [ADR-0014](../adr/0014-scoreboard-defined-composite.md)）：六项全及格才计总分（defined）；否则 null（记分板 —，不硬写成 0）。压缩率得分分段映射，不奖励剪到 0%。
 - **连贯性卡下限**不只卡均值。
 - **盲测对抗性**（ADR-0009，已拍板）：review 只拿意图 + playback。缺失骨架点 → `reviewFillInIds` 回填对应段 keep，最多 `REVIEW_MAX_ROUNDS=2`。这既是门禁也是闭环修正，也是 Fail-Closed 的另一种实现。
 - **关键步召回**：金标来源是人工+强模型双标（benchmark）；MVP 可用洞 A 骨架节点当弱代理，但报告必须写明「非金标」。
@@ -145,5 +145,5 @@ eval → types, enums, constant, domain, data
 - [x] grep 无 pi SDK。
 - [x] 未关闭的 P0 口径不得假装「压缩率已达标」。（数字会算，不宣称落入 10%–30%）
 - [x] replay / QA / review 接口经 sessions（假后端可测；真模型 `TRACE_DISTILLER_MODEL_L4`）。真实重放成功率需仓库+模型，CI 不假装。
-- [x] 分档报分壳：`src/eval/benchmark.ts`；六项门槛；乘法分；一项 fail → 0；无金标 skipped；三档禁止合并平均。
+- [x] 分档报分壳：`src/eval/benchmark.ts`；六项门槛；乘法分；一项 fail → composite/m1 `null`（—）；无金标 skipped；三档禁止合并平均；均值只对 defined；`n_gate_fail`（ADR-0014）。
 - [x] Hole A 向量效率（ADR-0011 b）：`src/eval/vector_efficiency.ts`；bench `a_eff`；默认确定性 embedding；不进 m1/composite；不进 sparse_intent 停机。

@@ -58,7 +58,7 @@ describe('benchmark multiplicative score', () => {
     )
   })
 
-  it('m1_score survives cost fail while composite zeros', () => {
+  it('m1_score survives cost fail while composite stays undefined', () => {
     const sample = scoreSample(
       passingInput({
         bin: 'long',
@@ -67,7 +67,7 @@ describe('benchmark multiplicative score', () => {
       }),
     )
     assert.equal(sample.metrics.distill_cost_ratio.status, 'fail')
-    assert.equal(sample.composite, 0)
+    assert.equal(sample.composite, null)
     assert.equal(sample.m1_score, compressionScore(0.2) * 1)
     assert.ok(sample.m1_score! > 0)
   })
@@ -97,22 +97,25 @@ describe('benchmark multiplicative score', () => {
     assert.equal(sample.composite, null)
   })
 
-  it('one failing metric zeros the composite even if others look good', () => {
-    assert.equal(scoreSample(passingInput({ replay: 0.1 })).composite, 0)
-    assert.equal(scoreSample(passingInput({ qa: 0.1 })).composite, 0)
-    assert.equal(scoreSample(passingInput({ compression_ratio: 0.9 })).composite, 0)
-    assert.equal(scoreSample(passingInput({ gold_segment_ids: ['miss'] })).composite, 0)
+  it('one failing metric leaves composite undefined even if others look good', () => {
+    assert.equal(scoreSample(passingInput({ replay: 0.1 })).composite, null)
+    assert.equal(scoreSample(passingInput({ qa: 0.1 })).composite, null)
+    assert.equal(scoreSample(passingInput({ compression_ratio: 0.9 })).composite, null)
+    assert.equal(scoreSample(passingInput({ gold_segment_ids: ['miss'] })).composite, null)
     assert.equal(
       scoreSample(passingInput({ coherence_scores: [5, 5, 1] })).composite,
-      0,
+      null,
       'coherence floor < 2 fails even with a high mean',
     )
-    assert.equal(scoreSample(passingInput({ compression_ratio: 1 })).composite, 0, 'full keep')
+    assert.equal(scoreSample(passingInput({ compression_ratio: 1 })).composite, null, 'full keep')
     assert.equal(
       scoreSample(passingInput({ compression_ratio: 0, gold_segment_ids: ['a'], kept: [] })).composite,
-      0,
+      null,
       'full delete',
     )
+    const compressFail = scoreSample(passingInput({ compression_ratio: 0.9 }))
+    assert.equal(compressFail.metrics.compression_ratio.status, 'fail')
+    assert.equal(compressFail.m1_score, null)
   })
 
   it('missing gold is skipped, not a hard fail (M1)', () => {
@@ -124,14 +127,15 @@ describe('benchmark multiplicative score', () => {
     assert.equal(sample.m1_score, null)
   })
 
-  it('a present fail still zeros the score when gold is skipped', () => {
+  it('a present fail leaves composite undefined when gold is skipped', () => {
     const sample = scoreSample(
       passingInput({ gold_segment_ids: null, compression_ratio: 0.8, replay: null, qa: null, coherence_scores: null }),
     )
     assert.equal(sample.metrics.key_step_recall.status, 'skipped')
     assert.equal(sample.metrics.replay.status, 'skipped')
     assert.equal(sample.metrics.compression_ratio.status, 'fail')
-    assert.equal(sample.composite, 0)
+    assert.equal(sample.composite, null)
+    assert.equal(sample.m1_score, null)
   })
 })
 
@@ -159,8 +163,15 @@ describe('benchmark bins are not averaged together', () => {
     assert.equal(report.bins.short.mean_m1_score, short.m1_score)
     assert.equal(report.bins.long.mean_m1_score, long.m1_score)
     assert.notEqual(short.composite, long.composite)
+    assert.equal(report.bins.short.n_defined_composite, 1)
+    assert.equal(report.bins.long.n_defined_composite, 1)
+    assert.equal(report.bins.short.n_gate_fail, 0)
+    assert.equal(report.bins.long.n_gate_fail, 0)
     assert.equal(report.bins.multi_dead_end.mean_composite, null)
     assert.equal(report.bins.multi_dead_end.mean_m1_score, null)
+    assert.equal(report.bins.multi_dead_end.n_defined_composite, 0)
+    assert.equal(report.bins.multi_dead_end.n_defined_m1, 0)
+    assert.equal(report.bins.multi_dead_end.n_gate_fail, 0)
     const keys = Object.keys(report.bins)
     assert.deepEqual(keys, ['short', 'long', 'multi_dead_end'])
     assert.equal('overall' in report, false)
@@ -171,6 +182,36 @@ describe('benchmark bins are not averaged together', () => {
     const crossMean = ((short.composite ?? 0) + (long.composite ?? 0)) / 2
     assert.notEqual(report.bins.short.mean_composite, crossMean)
     assert.notEqual(report.bins.long.mean_composite, crossMean)
+  })
+
+  it('means skip undefined scores; gate-fail count is separate', () => {
+    const passing = scoreSample(passingInput({ bin: 'short', trace_id: 'ok' }))
+    const failed = scoreSample(
+      passingInput({
+        bin: 'short',
+        trace_id: 'fail-recall',
+        gold_segment_ids: ['miss'],
+        kept: ['s0006'],
+      }),
+    )
+    const span = failedBenchSample({
+      bin: 'short',
+      trace_id: 'span',
+      notes: ['span_failure:gap'],
+    })
+    const report = aggregateBins([passing, failed, span])
+    const table = report.bins.short
+    assert.equal(table.n, 3)
+    assert.equal(table.n_defined_composite, 1)
+    assert.equal(table.n_defined_m1, 1)
+    assert.equal(table.n_gate_fail, 2)
+    assert.equal(table.mean_composite, passing.composite)
+    assert.equal(table.mean_m1_score, passing.m1_score)
+    assert.equal(failed.composite, null)
+    assert.equal(failed.m1_score, null)
+    assert.equal(failed.metrics.key_step_recall.status, 'fail')
+    assert.equal(span.composite, null)
+    assert.equal(span.metrics.compression_ratio.status, 'fail')
   })
 })
 
@@ -218,7 +259,7 @@ describe('independent gold', () => {
 })
 
 describe('failedBenchSample / noteFromBenchDistillError', () => {
-  it('records composite 0 with compression fail and span_failure note', () => {
+  it('records composite null with compression fail and span_failure note', () => {
     const plan: CutPlan = {
       trace_id: 't-fail',
       profile_id: 'default',
@@ -246,7 +287,7 @@ describe('failedBenchSample / noteFromBenchDistillError', () => {
       trace_id: 't-fail',
       notes: [note],
     })
-    assert.equal(sample.composite, 0)
+    assert.equal(sample.composite, null)
     assert.equal(sample.m1_score, null)
     assert.equal(sample.metrics.compression_ratio.value, null)
     assert.equal(sample.metrics.compression_ratio.status, 'fail')

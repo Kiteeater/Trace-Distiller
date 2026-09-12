@@ -150,8 +150,8 @@ node script/run-distill.ts bench --with-l4
 - 扫 `short/` `long/` `multi_dead_end/` 下的 `*.jsonl`。**默认 `no_llm`**（即使 `.env` 有 mint 也不自动连网），避免过夜挂起。
 - `--fake-l4`：注入 `FakeSessionBackend`（确定性 heal + verify），三档均可出现 `replay=1` / `composite>0`。
 - `--with-l4`：才启用真 mint L4 / with_llm。
-- **composite**：六项全过才算分，否则 `0`；有 skipped 且无 fail → `null`。公式 = 压缩率得分 × 关键步召回 × 重放（乘法）。含 cost≤0.3 门槛（**short / original_tokens≤25k：cost 只报不分**；仍不计 L4）。三档**禁止合成平均**。
-- **m1_score**：M1 硬门禁 = 压缩率得分 × 关键步召回。cost/replay/qa/coherence 失败不归零 m1。短 trace 真 mint 成本比常 >0.3 → composite=0 但 m1 可 >0。
+- **composite**：六项全过才**定义**；否则 `null`（记分板 `—`，不硬写成 0；ADR-0014）。公式（defined 时）= 压缩率得分 × 关键步召回 × 重放（乘法）。含 cost≤0.3 门槛（**short / original_tokens≤25k：cost 只报不分**；仍不计 L4）。三档**禁止合成平均**。档均值只对 defined；另计 `n_gate_fail`。
+- **m1_score**：M1 硬门禁 = 压缩率得分 × 关键步召回（compress+recall 都过才定义）。cost/replay/qa/coherence 失败不归零 m1。短 trace 真 mint 成本比常 >0.3 → composite 为 `—` 但 m1 可 defined。
 - 金标：先读 `data/raw/<trace_id>.key-decisions.json`，没有再读样本旁的 `<stem>.key-decisions.json`。没有金标 → 关键步召回 `skipped`，M1 **不算硬挂**。
 - stdout 一行 JSON + `benchmark/out/scoreboard.md`。
 - 现有样本：`short/`（add-fix + fluff-heavy）、`long/long-debug`、`multi_dead_end/many-retries`；workspaces 见 `manifest.json`。
@@ -174,7 +174,7 @@ benchmark/
 
 ## L4 重放工作区（真实小仓）
 
-合成 replay≈0 的根因：bench 以前开 L4 会话却**没有可改的仓库 cwd**，真模型只能回 success=false，六项里 replay 挂 → composite 被乘成 0。
+合成 replay 失败的根因：bench 以前开 L4 会话却**没有可改的仓库 cwd**，真模型只能回 success=false，六项里 replay 挂 → composite 未定义（`—`）。
 
 现约定：
 

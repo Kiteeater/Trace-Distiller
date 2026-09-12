@@ -5,7 +5,7 @@
 | 版本 | v0.2 |
 | 日期 | 2026-09-09 |
 | 状态 | **已收口**（公式与及格线）；token 口径对齐 ingest；盲测协议已拍板（LLM review 仍待 spike） |
-| 权威来源 | [benchmark/README.md](../../benchmark/README.md)、[ADR-0005](../adr/0005-benchmark-multiplicative-score.md) |
+| 权威来源 | [benchmark/README.md](../../benchmark/README.md)、[ADR-0005](../adr/0005-benchmark-multiplicative-score.md)、[ADR-0014](../adr/0014-scoreboard-defined-composite.md) |
 
 > 压缩和保真绑在一起看。单项好看不算数。设计原文在 [benchmark/README.md](../../benchmark/README.md)，本页把它写成已定验收口径。
 
@@ -27,13 +27,15 @@
 
 ```text
 第一层  6 个单项（自动）
-   │    全部及格才计总分，否则 0
+   │    始终报 value + pass/fail/skip
    ▼
-第二层  乘法复合分
+第二层  乘法复合分（仅 defined）
+   │    所需门槛全过才有分；否则 —（null），不是 0（ADR-0014）
    │    Score = 压缩率得分 × 召回 × 重放
    │    另有人类可读性盲读，不进自动流水线
    ▼
 第三层  短 / 长 / 多死胡同 分档报分，禁止合并平均
+   │    均值只对 defined；另计 n_gate_fail
 ```
 
 ### 六项指标（及格线已定）
@@ -113,7 +115,7 @@ node script/run-distill.ts bench --dir benchmark/datasets
 
 产品口径：[PRD.md](../../PRD.md) §5、[milestones.md](../milestones.md)——**压缩率 + 保真度**。对应本表的 **指标 1 +（指标 2 关键步召回；日常亦可用指标 4 QA 或盲测 review）**。重放太贵，M1 不强制。处理成本比尽量算——**不是 M1 硬门禁**。
 
-实现：`composite` 仍为六项全过才计分（含 cost）；另有 `m1_score` = 压缩率得分 × 关键步召回，只看 compress+recall，便于过夜 demo 在 cost>0.3 时仍显示 M1 成功。
+实现：`composite` / `m1_score` **仅当该分所需门槛全过时才定义**（ADR-0014）；否则记分板 `—`（JSON `null`），不硬写成 0。`composite` 仍为六项全过才计分（含 cost；short/small 的 cost 只报不分）。`m1_score` = 压缩率得分 × 关键步召回，只看 compress+recall，便于过夜 demo 在 cost>0.3 时仍显示 M1 成功。档均值只对 defined 样本；`n_gate_fail` 另计。
 
 M1 操作清单：
 
@@ -138,7 +140,7 @@ M1 操作清单：
        └─ 重放：发布 / 定期校准（不要塞进每个打标窗）
 
 按赛道聚合：均值 ± 标准差，三档分表。
-六项全及格 → 复合分；否则该样本总分 0。
+六项全及格 → 复合分；否则该样本 composite 为 —（null），单项 pass/fail 仍可见。
 ```
 
 M2：六项齐全，复合分当发布门禁，短 / 长分开报。M3+：多死胡同加满；人类可读性每版本手跑；良好档按基线校准。

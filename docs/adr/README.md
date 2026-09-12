@@ -19,3 +19,4 @@
 | 0011 | **洞 A 多轮稀疏采样**（意图/场景/骨架；分层锚点池 + gaps 加权；不产出 keep/collapse/drop；硬预算 + 结构化 enough；向量分仅 bench） |
 | 0012 | **洞 B 单槽 + 渐进披露**（cut-brain 优化 v2；S0–S3；v1 focus 恒 1；disclose 触帽/低置信 → collapse_uncertain；0010 Keep 仅硬失败无 B 输出；预算耗尽默认 collapse_uncertain；Fake 禁默认 keep） |
 | 0013 | **训练效用先于 cut 美学**（现行复合分只是过程门禁；宣称训练基础设施前须跑完对照实验；无增益则定位 replay/editor；cut polish 是效用证据的下游） |
+| 0014 | **记分板 defined composite / m1**（过程门禁分仅在所需门槛全过时定义；fail 渲染 `—` 不硬写成 0；档均值只对 defined；另计 `n_gate_fail`。公式不变，见 0005） |

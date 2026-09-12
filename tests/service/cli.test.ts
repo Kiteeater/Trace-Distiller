@@ -868,22 +868,30 @@ describe('cli', { concurrency: 1 }, () => {
       bins: {
         short: {
           n: number
+          n_defined_composite: number
+          n_defined_m1: number
+          n_gate_fail: number
           samples: Array<{ trace_id: string; composite: number | null; notes?: string[] }>
         }
       }
     }
     assert.equal(payload.bins.short.n, 2)
+    assert.ok(payload.bins.short.n_gate_fail >= 1)
+    assert.equal(typeof payload.bins.short.n_defined_composite, 'number')
+    assert.equal(typeof payload.bins.short.n_defined_m1, 'number')
     const failed = payload.bins.short.samples.find((s) =>
       (s.notes ?? []).some((n) => n.startsWith('span_failure:')),
     )
     assert.ok(failed, 'expected a span_failure sample')
-    assert.equal(failed!.composite, 0)
+    assert.equal(failed!.composite, null)
     const survived = payload.bins.short.samples.find(
       (s) => !(s.notes ?? []).some((n) => n.startsWith('span_failure:')),
     )
     assert.ok(survived, 'expected a surviving sample')
     const md = readFileSync(join(outDir, 'scoreboard.md'), 'utf8')
     assert.match(md, /span_failure:/)
+    assert.match(md, /gate fails=/)
+    assert.match(md, /defined=/)
   })
 
 })

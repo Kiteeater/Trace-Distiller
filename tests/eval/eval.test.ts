@@ -242,7 +242,7 @@ describe('six-metric pure functions', () => {
     assert.equal(keyStepRecall({ gold_segment_ids: [], kept: ['a'] }), 0)
   })
 
-  it('compositeScore is 0 unless all six pass; missing stays null', () => {
+  it('compositeScore is defined only when all six pass; fail or missing stays null', () => {
     const passing = {
       compression_ratio: 0.2,
       key_step_recall: 0.96,
@@ -255,7 +255,7 @@ describe('six-metric pure functions', () => {
     const score = compositeScore(passing)
     assert.ok(score !== null)
     assert.equal(score, compressionScore(0.2) * 0.96 * 0.95)
-    assert.equal(compositeScore({ ...passing, replay: 0.1 }), 0)
+    assert.equal(compositeScore({ ...passing, replay: 0.1 }), null)
     assert.equal(
       compositeScore({ ...passing, key_step_recall: null }),
       null,
@@ -263,7 +263,7 @@ describe('six-metric pure functions', () => {
     assert.ok(BENCHMARK_PASS.qa_min <= passing.qa)
   })
 
-  it('m1Score is compress x recall only; cost fail does not zero M1', () => {
+  it('m1Score is compress x recall only; cost fail does not undefine M1', () => {
     const base = {
       compression_ratio: 0.2,
       key_step_recall: 0.96,
@@ -273,12 +273,12 @@ describe('six-metric pure functions', () => {
       distill_cost_ratio: 1.62,
     }
     assert.equal(sixMetricsPassed(base), false, 'cost>0.3 fails full composite')
-    assert.equal(compositeScore(base), 0)
+    assert.equal(compositeScore(base), null)
     assert.equal(m1Score(base), compressionScore(0.2) * 0.96)
-    assert.equal(m1Score({ ...base, compression_ratio: 0.9 }), 0)
-    assert.equal(m1Score({ ...base, key_step_recall: 0.5 }), 0)
+    assert.equal(m1Score({ ...base, compression_ratio: 0.9 }), null)
+    assert.equal(m1Score({ ...base, key_step_recall: 0.5 }), null)
     assert.equal(m1Score({ ...base, key_step_recall: null }), null)
-    assert.equal(m1Score({ compression_ratio: 0.9, key_step_recall: null }), 0)
+    assert.equal(m1Score({ compression_ratio: 0.9, key_step_recall: null }), null)
   })
 })
 
