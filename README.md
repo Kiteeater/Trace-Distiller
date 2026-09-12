@@ -19,6 +19,14 @@ ingest → Hole A（稀疏 intent / skeleton）→ Hole B cut-brain（打标裁�
 
 Agent session 主编裁剪；admission / span / warrant / I/O 仍是确定性 TypeScript。
 
+## 能干嘛
+
+- 离线把 Claude Code / coding-agent 的成功 traces 压成更短剪辑
+- warrant assemble 同时产出 Training Cut 与 Playback Cut
+- Hole A 抽 intent/skeleton，Hole B 打标裁剪（回灌走 tool mask）
+- Fake 或真 provider 跑 bench（m1 / L4 门禁）
+- 任意 OpenAI-compatible 网关，env 配置即可，不绑某一家
+
 ## 快速开始
 
 依赖用 **bun**，产物用 **node**（不要用 bun 跑 CLI）。
