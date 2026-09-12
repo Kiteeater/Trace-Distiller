@@ -527,6 +527,8 @@ export function keepIsLegal(input: {
   segment_id: string
   skeletonIds: ReadonlySet<string>
   from_keep_segment: boolean
+  /** Write-outlier focus. Non-skeleton outlier keep is rejected even with legal bits. */
+  outlier?: boolean
 }): { legal: true; bits: KeepEvidenceBit[] } | { legal: false; reason: string } {
   if (!isKeepProposalLabel(input.label) && !input.from_keep_segment) {
     return { legal: true, bits: [] }
@@ -537,6 +539,11 @@ export function keepIsLegal(input: {
   const bits = validatedKeepBits(input)
   if (bits.length === 0) {
     return { legal: false, reason: 'missing_keep_bits' }
+  }
+  // ADR-0012: over-threshold Write must not default keep. Skeleton protect (#53) wins:
+  // do not demote skeleton outliers here (illegal-keep / exhaust still force-keep).
+  if (input.outlier === true && !input.skeletonIds.has(input.segment_id)) {
+    return { legal: false, reason: 'non_skeleton_outlier_keep' }
   }
   return { legal: true, bits }
 }
