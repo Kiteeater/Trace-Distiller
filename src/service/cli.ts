@@ -77,6 +77,16 @@ import {
 import { error as logError, info as logInfo } from '../utils/logger.ts'
 import { dumpAllJobs, dumpJobSnapshot, registerJobFromResult, resetLiveState, type StageState } from './live.ts'
 import { startLiveSocket, stopLiveSocket } from './live_socket.ts'
+import {
+  DEFAULT_PROFILE_PATH,
+  DEFAULT_UTILITY_ARMS,
+  DEFAULT_UTILITY_OUT_DIR,
+  exportUtilityArms,
+  parseHumanKeepFile,
+  parseUtilityArms,
+  resolveDistillerSha,
+  type UtilityArm,
+} from './export_utility.ts'
 
 export const EXIT_OK = 0
 export const EXIT_OTHER = 1
@@ -84,7 +94,7 @@ export const EXIT_ADMISSION = 2
 export const EXIT_SPAN = 3
 
 export interface CliArgs {
-  command: 'distill' | 'eval' | 'report' | 'live-dump' | 'bench'
+  command: 'distill' | 'eval' | 'report' | 'live-dump' | 'bench' | 'export-utility'
   input_path: string
   profile_path?: string
   sqlite_path?: string
@@ -108,6 +118,12 @@ export interface CliArgs {
   vector_efficiency?: boolean
   qa?: boolean
   replay?: boolean
+  /** export-utility: arms to write. Default raw,distilled,tools_only. */
+  arms?: UtilityArm[]
+  /** export-utility: JSON map of trace_id → keep segment/turn ids. */
+  human_keep_path?: string
+  /** export-utility: only these admitted trace ids. */
+  trace_ids?: string[]
   help?: boolean
 }
 
@@ -117,6 +133,7 @@ const HELP = `Usage:
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
   node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
   node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--fake-l4] [--with-l4] [--bin short|long|multi_dead_end] [--bins a,b] [--vector-efficiency|--no-vector-efficiency]
+  node script/run-distill.ts export-utility <trace.jsonl|dir> [--out-dir benchmark/out-utility] [--arms raw,distilled,tools_only,human_curated] [--fake-l4] [--profile p.json] [--human-keep path] [--trace-ids id1,id2]
 
 Agent-led cut only (ADR-0010). --no-llm / pure rules-only mode was removed — passing it errors. Distill requires an agent path: injected FakeSessionBackend / --fake-l4 (CI), or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
@@ -129,6 +146,8 @@ eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a b
 bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample, scores six gates, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Default injects FakeSessionBackend when not --with-l4 so overnight/CI cannot hang on mint (ADR-0010 agent path, not rules-only). --with-l4 opts into real mint L4 (session calls have SESSION_CALL_TIMEOUT_MS hard timeout; for long mint set TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000). --fake-l4 also runs deterministic L4 heal + verify so composite can exceed 0 without mint. --bin / --bins select tracks so short and long are not forced into one hang-prone run; each selected bin uses its CutProfile valve (short=less aggressive dead_end + soft cost; long/multi=stronger collapse + keep floor ~8–15%) unless --profile overrides. Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces; unmapped traces skip replay (null, not fail=0); success is gated by workspace verify[] when present. QA near-JSON is repaired; still-unparseable after retries skips (null). Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). All six must pass or composite is 0; skipped metrics keep composite null. m1_score = compressionScore x key_step_recall (M1 gate; cost fail does not zero m1). Hole A vector efficiency (ADR-0011 b) is bench-only: a_eff = quality / log(1+tokens); quality = cosine(predicted intent vs optional gold intent_text) and optional skeleton_segment_ids recall. Default embedding is deterministic hash (no API key; TRACE_DISTILLER_EMBEDDING_PROVIDER=openai|http for a real provider). Not an online stop (sparse_intent still uses enough + hard budget). --no-vector-efficiency skips. L4/coherence failures surface as sample notes. Distill/SpanFailure per sample is recorded (composite 0) so the scoreboard still writes.
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
+
+export-utility writes ADR-0013 four-arm TrainingCut JSON (not SFT): <out>/manifest.json plus <out>/<arm>/<trace_id>.turns.json and tokens.json. Default arms: raw,distilled,tools_only. Distilled calls distill; injects FakeSessionBackend when --fake-l4 or Hole models unset (bench hang-safety). human_curated without --human-keep is skipped (stub + manifest), never silent raw. Token metric is ingest_raw_turn_tokens (sum of turn.tokens).
 
 Two products: Training Cut / JSONL (train) and Playback + live/report HTML (review). CutProfile is the customisation surface.
 
@@ -162,6 +181,9 @@ export function parseArgv(argv: string[]): CliArgs {
   let vector_efficiency: boolean | undefined
   let qa: boolean | undefined
   let replay: boolean | undefined
+  let arms: UtilityArm[] | undefined
+  let human_keep_path: string | undefined
+  let trace_ids: string[] | undefined
 
   const take = (i: number, flag: string): [string, number] => {
     const next = argv[i + 1]
@@ -179,7 +201,8 @@ export function parseArgv(argv: string[]): CliArgs {
       token === 'eval' ||
       token === 'report' ||
       token === 'live-dump' ||
-      token === 'bench'
+      token === 'bench' ||
+      token === 'export-utility'
     ) {
       if (command !== undefined) throw new Error(`重复的子命令 ${token}`)
       command = token
@@ -259,6 +282,24 @@ export function parseArgv(argv: string[]): CliArgs {
       vector_efficiency = false
       continue
     }
+    if (token === '--arms') {
+      const [raw, nextI] = take(i, token)
+      i = nextI
+      arms = parseUtilityArms(raw)
+      continue
+    }
+    if (token === '--human-keep') {
+      ;[human_keep_path, i] = take(i, token)
+      continue
+    }
+    if (token === '--trace-ids') {
+      const [raw, nextI] = take(i, token)
+      i = nextI
+      const parts = raw.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+      if (parts.length === 0) throw new Error(`${token} 需要至少一个 trace id`)
+      trace_ids = parts
+      continue
+    }
     if (token.startsWith('-')) {
       throw new Error(`未知参数 ${token}`)
     }
@@ -286,6 +327,9 @@ export function parseArgv(argv: string[]): CliArgs {
   if (vector_efficiency !== undefined) args.vector_efficiency = vector_efficiency
   if (qa !== undefined) args.qa = qa
   if (replay !== undefined) args.replay = replay
+  if (arms !== undefined) args.arms = arms
+  if (human_keep_path !== undefined) args.human_keep_path = human_keep_path
+  if (trace_ids !== undefined) args.trace_ids = trace_ids
   return args
 }
 
@@ -298,6 +342,7 @@ export async function runCli(args: CliArgs): Promise<number> {
   if (args.command === 'report') return runReport(args)
   if (args.command === 'live-dump') return runLiveDump(args)
   if (args.command === 'bench') return runBench(args)
+  if (args.command === 'export-utility') return runExportUtility(args)
   if (args.input_path.length === 0) {
     process.stderr.write(HELP)
     return EXIT_OTHER
@@ -392,6 +437,54 @@ export async function runCli(args: CliArgs): Promise<number> {
     return EXIT_OTHER
   } finally {
     if (socketStarted) await stopLiveSocket()
+  }
+}
+
+async function runExportUtility(args: CliArgs): Promise<number> {
+  if (args.input_path.length === 0) {
+    process.stderr.write(HELP)
+    return EXIT_OTHER
+  }
+  const outDir = args.out_dir ?? DEFAULT_UTILITY_OUT_DIR
+  const arms = args.arms ?? [...DEFAULT_UTILITY_ARMS]
+  const profile = loadProfile(args.profile_path)
+  const profilePath = args.profile_path ?? DEFAULT_PROFILE_PATH
+  const wantFake = args.fake_l4 === true || !holeModelsConfigured()
+  if (wantFake) {
+    setSessionBackend(new FakeSessionBackend())
+  }
+  try {
+    let humanKeepByTrace: Record<string, string[]> | undefined
+    if (args.human_keep_path !== undefined) {
+      humanKeepByTrace = parseHumanKeepFile(readFileSync(args.human_keep_path, 'utf8'))
+    }
+    const manifest = await exportUtilityArms({
+      inputPath: args.input_path,
+      outDir,
+      arms,
+      profile,
+      profilePath,
+      distillerSha: resolveDistillerSha(),
+      fakeL4: wantFake,
+      ...(humanKeepByTrace !== undefined ? { humanKeepByTrace } : {}),
+      ...(args.trace_ids !== undefined ? { traceIds: args.trace_ids } : {}),
+    })
+    process.stdout.write(`${JSON.stringify({ out_dir: outDir, ...manifest })}\n`)
+    return EXIT_OK
+  } catch (error) {
+    if (isAdmissionError(error)) {
+      logError(humanAdmission(error))
+      return EXIT_ADMISSION
+    }
+    if (isSpanFailure(error)) {
+      logError('span 约束失败：剪后相邻步不够得着')
+      return EXIT_SPAN
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    logError(message)
+    return EXIT_OTHER
+  } finally {
+    if (wantFake) setSessionBackend(undefined)
   }
 }
 

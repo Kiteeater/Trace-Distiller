@@ -71,7 +71,8 @@ trace-distiller/
 │  │  ├─ segmenter.ts
 │  │  ├─ rules.ts
 │  │  ├─ orchestrator.ts
-│  │  └─ assembler.ts
+│  │  ├─ assembler.ts
+│  │  └─ tools_only.ts          # ADR-0013 tools-only RawTurn 过滤（无 IO、不进洞）
 │  ├─ agent/
 │  │  ├─ sessions/              # 全仓库唯一可 import pi（含 tool_mask.ts）
 │  │  │  ├─ open_session.ts      # 工厂 + SessionBackend；createAgentSession 只在这里
@@ -96,6 +97,7 @@ trace-distiller/
 │  ├─ eval/                     # L4 数字 + 分档报分壳（benchmark.ts）+ Hole A 向量效率（vector_efficiency.ts，bench-only）；干净会话走 sessions 工厂
 │  ├─ service/
 │  │  ├─ cli.ts
+│  │  ├─ export_utility.ts      # ADR-0013 四臂 TrainingCut 导出脚手架
 │  │  ├─ live.ts                # 只读订阅，不进 pipeline；进程内 job 表
 │  │  └─ live_socket.ts         # 可选 Unix domain socket；禁止 HTTP / TCP 端口
 │  ├─ report/                   # 结果 JSON → 自包含 HTML；不要再开 service/report.ts
@@ -151,13 +153,14 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 | `src/constant/` 三文件 | 压缩率区间、窗口、skill 路由表 | **文件名已定；数字已拍板** | 见 [constant.md](../modules/constant.md) |
 | `src/domain/` 三文件 | LabelDecision / CutDecision / SpanViolation | **文件名已定** | 不变量跟 types 一起钉 |
 | `src/adapters/claude_code.ts` | L0 解析 + Admission Gate | **M1 文件已定** | 启发式阈值见 ingest 开放问题；SWE-bench parser MVP 不做 |
-| `src/pipeline/*.ts` 四文件 | 切段 / 规则 / 编排 / 组装 | **文件名已定** | Jaccard / span 数字已拍板；`writeWarrant` 已改纯代码 |
+| `src/pipeline/*.ts` 五文件 | 切段 / 规则 / 编排 / 组装 / tools-only 过滤 | **文件名已定** | Jaccard / span 数字已拍板；`writeWarrant` 已改纯代码；`tools_only.ts` 是 ADR-0013 对照臂纯函数 |
 | `src/agent/sessions/` | **唯一 pi 依赖点** | **文件名已定** | `open_session.ts` 工厂；`tool_mask.ts` / `cut_brain.ts`（ADR-0010）；洞 A/B；`write_warrant.ts`；L4 |
 | `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown | **路径已定** | LOCKED：`label_segment` / `check_continuity` / `keep_segment` / `read_segment` / `apply_rules_hint`（[tools.md](./tools.md)） |
 | `src/data/data_*.ts` 四文件 | SQLite：段 / 打标 / 凭证 / 指标 | **文件名已定** | **列级 schema OPEN**（P0） |
 | `src/eval/` | L4 数字 + 分档报分（`benchmark.ts`）+ Hole A 向量效率（`vector_efficiency.ts`） | **职责已定** | 盲测协议已拍板。QA/replay/review 经 sessions。`a_eff` 仅 bench，非在线停机。复合分见 [benchmark.md](./benchmark.md)；禁止跨赛道平均 |
 | `src/report/` | 结果 JSON → 单个 `.html` | **已定** | 视觉细节非契约 |
 | `src/service/cli.ts` | CLI 薄壳 | **已定** | argv 细节 OPEN |
+| `src/service/export_utility.ts` | ADR-0013 四臂 TrainingCut 导出 | **已定** | 仍非 SFT；human_curated v0 可 stub |
 | `src/service/live.ts` | 只读订阅 Distiller 裁剪进度 | **已定** | 源 = 进程内 `registerJobFromResult`；禁止 HTTP listen；禁止进 pipeline |
 | `src/service/live_socket.ts` | 可选 Unix domain socket 传输 | **已定** | 默认关闭；JSON lines 调 live 六工具；禁止 HTTP / TCP 端口；不替代进程内表 |
 | `src/utils/` | token 估算、jsonl、logger | **已定** | 计数库选型未锁（口径已在 ingest 收口） |

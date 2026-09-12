@@ -105,7 +105,13 @@ v0 若 Distiller **不赢** → 按 §1 收束到 replay/editor，不要靠 poli
 
 ## 8. Next eng package（四臂导出脚手架）
 
-只定 **接口**。不写实现、不进 `src/`（本页是 docs）。
+**已落地脚手架**（仍不是 SFT / trainer）。导出 TrainingCut 形状，不打包 `*.sft.jsonl`。
+
+```text
+node script/run-distill.ts export-utility <trace.jsonl|dir> [--out-dir benchmark/out-utility] [--arms raw,distilled,tools_only,human_curated] [--fake-l4] [--profile p.json] [--human-keep path] [--trace-ids id1,id2]
+```
+
+`bun run export:utility -- examples/add-fix.jsonl --fake-l4`。默认臂 `raw,distilled,tools_only`；无 Hole 模型时注入 Fake 防挂（过程门禁夹具，不是要上线的 distilled 臂）。`human_curated` 无 `--human-keep` 则 stub/skip，禁止静默 raw。
 
 **输入**
 
