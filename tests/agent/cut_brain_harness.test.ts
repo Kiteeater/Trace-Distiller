@@ -127,6 +127,43 @@ describe('cut-brain harness predicates', () => {
     assert.equal(collapse.legal, true)
   })
 
+  it('rejects non-skeleton write-outlier keep even with legal bits; skeleton outlier still legal', () => {
+    const skeleton = new Set(['s-sk'])
+    const nonSkelOutlier = keepIsLegal({
+      label: 'key_decision',
+      confidence: 0.9,
+      keep_bits: ['key_decision_flag'],
+      segment_id: 's-write',
+      skeletonIds: skeleton,
+      from_keep_segment: false,
+      outlier: true,
+    })
+    assert.equal(nonSkelOutlier.legal, false)
+    if (!nonSkelOutlier.legal) assert.equal(nonSkelOutlier.reason, 'non_skeleton_outlier_keep')
+
+    const skeletonOutlier = keepIsLegal({
+      label: 'key_decision',
+      confidence: 0.9,
+      keep_bits: ['skeleton_hit'],
+      segment_id: 's-sk',
+      skeletonIds: skeleton,
+      from_keep_segment: false,
+      outlier: true,
+    })
+    assert.equal(skeletonOutlier.legal, true)
+
+    const nonSkelKey = keepIsLegal({
+      label: 'key_decision',
+      confidence: 0.8,
+      keep_bits: ['key_decision_flag'],
+      segment_id: 's-key',
+      skeletonIds: skeleton,
+      from_keep_segment: false,
+      outlier: false,
+    })
+    assert.equal(nonSkelKey.legal, true)
+  })
+
   it('pickFocus prefers large write outlier, then error, then normal', () => {
     const cards = [
       card('s0001', { tokens: 8 }),

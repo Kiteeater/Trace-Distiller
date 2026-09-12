@@ -194,6 +194,61 @@ describe('writeWarrant', () => {
     assert.equal(entry?.source.name, 'draft_skill')
     assert.equal(entry?.confidence, 0.8)
   })
+
+  it('demotes non-skeleton collapse_uncertain to drop; skeleton keep stays keep', () => {
+    const segments: SegmentCard[] = ['s0001', 's0002', 's0003', 's0004', 's0005'].map((id, i) => ({
+      id,
+      tool: i === 1 ? 'Edit' : 'Read',
+      sig: `t:${id}`,
+      outcome: 'ok',
+      rep_of: null,
+      reads: [],
+      writes: i === 1 ? ['ok.ts'] : [],
+      tokens: 8,
+      focus: 'card',
+      head: `head-${id}`,
+      raw_refs: [id],
+    }))
+    const view: AgentView = {
+      meta: {
+        trace_id: 'warrant-skel',
+        source: 'claude-code',
+        ground_truth_ref: 'g',
+        total_tokens: 40,
+      },
+      intent_hypothesis: { version: 0, text: 'fix' },
+      skeleton: {
+        version: 0,
+        nodes: [{ id: 'n1', kind: 'turning_point', segment_ids: ['s0002'], note: 'edit' }],
+      },
+      segments,
+    }
+    const llm = (id: string, label: LabelDecision['label']): LabelDecision => ({
+      segment_id: id,
+      label,
+      source: { kind: 'llm', name: 'draft_skill' },
+      confidence: 0.8,
+    })
+    const warrant = writeWarrant({
+      skeleton: view.skeleton,
+      labels: [
+        llm('s0001', 'collapse_uncertain'),
+        llm('s0002', 'key_decision'),
+        llm('s0003', 'collapse_uncertain'),
+        llm('s0004', 'collapse_uncertain'),
+        llm('s0005', 'dead_end'),
+      ],
+      view,
+      profile: DEFAULT_CUT_PROFILE,
+    })
+    const byId = new Map(warrant.entries.map((e) => [e.segment_id, e]))
+    assert.equal(byId.get('s0002')?.action, 'keep')
+    assert.equal(byId.get('s0001')?.action, 'drop')
+    assert.equal(byId.get('s0003')?.action, 'drop')
+    assert.equal(byId.get('s0004')?.action, 'drop')
+    // trailing dead_end after last keep is dropped (no span value)
+    assert.equal(byId.get('s0005')?.action, 'drop')
+  })
 })
 
 afterEach(() => {

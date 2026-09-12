@@ -255,6 +255,7 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
         segment_id: parsed.segment_id,
         skeletonIds,
         from_keep_segment: parsed.from_keep_segment,
+        outlier: focus.outlier,
       })
 
       if (isKeepProposalLabel(parsed.label) || parsed.from_keep_segment) {

@@ -521,6 +521,90 @@ describe('cutBrain ADR-0012 decision table', () => {
     assert.ok((edit?.confidence ?? 0) >= CUT_BRAIN_LOW_CONFIDENCE)
   })
 
+  it('Fake does not blanket-keep non-skeleton write/verify; skeleton non-outlier keeps with skeleton_hit', async () => {
+    const cards = [
+      synthCard('s0001', { tool: 'Write', writes: ['small.ts'], tokens: 12 }),
+      synthCard('s0002', { tool: 'Edit', writes: ['ok.ts'], tokens: 10 }),
+      synthCard('s0003', { tool: 'Bash', outcome: 'ok', tokens: 8 }),
+      synthCard('s0004', { tokens: 8 }),
+    ]
+    const skeleton: Skeleton = {
+      version: 0,
+      nodes: [{ id: 'n1', kind: 'turning_point', segment_ids: ['s0002'], note: 'edit' }],
+    }
+    const { raw, view } = synthWorld(cards, skeleton)
+    const fake = new FakeSessionBackend()
+    const out = await cutBrain({
+      segment_ids: cards.map((c) => c.id),
+      view,
+      raw,
+      skeleton,
+      intent: intent(),
+      skill_path: skillPath,
+      backend: fake,
+    })
+    const write = out.decisions.find((d) => d.segment_id === 's0001')
+    const skel = out.decisions.find((d) => d.segment_id === 's0002')
+    const verify = out.decisions.find((d) => d.segment_id === 's0003')
+    assert.ok(write)
+    assert.notEqual(write!.label, 'key_decision')
+    assert.notEqual(write!.label, 'useful_exploration')
+    assert.equal(write!.label, 'collapse_uncertain')
+    assert.equal(skel?.label, 'key_decision')
+    assert.ok((skel?.confidence ?? 0) >= CUT_BRAIN_LOW_CONFIDENCE)
+    assert.ok(verify)
+    assert.notEqual(verify!.label, 'key_decision')
+    assert.notEqual(verify!.label, 'useful_exploration')
+    assert.ok(verify!.label === 'collapse_uncertain' || verify!.label === 'routine')
+  })
+
+  it('harness overrides non-skeleton write-outlier keep (with bits) to collapse_uncertain; skeleton protect still keeps', async () => {
+    const cards = [
+      synthCard('s0001', { tool: 'Write', writes: ['big.ts'], tokens: 400 }),
+      synthCard('s0002', { tokens: 8 }),
+      synthCard('s0003', { tokens: 8 }),
+      synthCard('s0004', { tokens: 8 }),
+    ]
+    const skeleton: Skeleton = {
+      version: 0,
+      nodes: [{ id: 'n1', kind: 'turning_point', segment_ids: ['s0002'], note: '' }],
+    }
+    const { raw, view } = synthWorld(cards, skeleton)
+    const backend = new FakeSessionBackend((input: SessionPromptInput) => {
+      const id = parseFocusId(input.text) ?? 's0001'
+      return fakeResult({
+        tool_calls: [
+          {
+            name: 'label_segment',
+            arguments: {
+              segment_id: id,
+              label: 'key_decision',
+              confidence: 0.9,
+              keep_bits: id === 's0002' ? ['skeleton_hit'] : ['key_decision_flag'],
+            },
+          },
+        ],
+      })
+    })
+    const out = await cutBrain({
+      segment_ids: cards.map((c) => c.id),
+      view,
+      raw,
+      skeleton,
+      intent: intent(),
+      skill_path: skillPath,
+      backend,
+    })
+    const outlier = out.decisions.find((d) => d.segment_id === 's0001')
+    const sk = out.decisions.find((d) => d.segment_id === 's0002')
+    assert.equal(outlier?.label, 'collapse_uncertain')
+    assert.equal(outlier?.source.name, COLLAPSE_UNCERTAIN_RULE)
+    assert.ok((out.metrics.illegal_keep_overrides ?? 0) >= 1)
+    assert.ok(sk)
+    assert.notEqual(sk!.label, 'collapse_uncertain')
+    assert.equal(sk!.label, 'key_decision')
+  })
+
   it('Fake does not encode 2 discloses → keep', async () => {
     const { raw, view } = synthWorld([synthCard('s0001', { outcome: 'error', tokens: 30 })])
     const backend = new FakeSessionBackend((input: SessionPromptInput) => {

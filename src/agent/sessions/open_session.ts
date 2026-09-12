@@ -750,23 +750,17 @@ function defaultFakeHoleB(input: SessionPromptInput, opts: ResolvedSessionOpts):
   const in_skeleton = focus?.in_skeleton === true
   const outlier = focus?.outlier === true
   const error = focus?.error === true || focus?.outcome === 'error'
-  const writes_n = typeof focus?.writes_n === 'number' ? focus.writes_n : 0
-  const tool = typeof focus?.tool === 'string' ? focus.tool : ''
-  const outcome = typeof focus?.outcome === 'string' ? focus.outcome : ''
-  const isWrite = writes_n > 0 || /^(write|edit)$/i.test(tool)
-  const isVerify = /^(bash|shell)$/i.test(tool) && outcome === 'ok'
   // Same S2 cap as the real path (ADR-0012 invariant). Fake never L4-full-reads.
+  // Keep only skeleton non-outliers. Non-skeleton write/edit/verify must not default-keep
+  // (ADR-0012: over-threshold Write must not default keep; #53 protect stays on skeleton).
 
   // Over-threshold Write must not default keep — even after discloses / skeleton hits.
+  // Skeleton+outlier via Fake label is a Fake decision, not harness collapse_uncertain override.
   if (outlier) {
     return fakeHoleBDecision(focusId, 'collapse_uncertain', 0.4, [], usage)
   }
   if (in_skeleton) {
     return fakeHoleBDecision(focusId, 'key_decision', 0.86, ['skeleton_hit'], usage)
-  }
-  // Non-outlier write/edit or passing verification: closed-set keep (not useful_exploration).
-  if (isWrite || isVerify) {
-    return fakeHoleBDecision(focusId, 'key_decision', 0.8, ['key_decision_flag'], usage)
   }
   // At most one disclose; never encode "2 discloses → keep".
   if (error && s2 === undefined) {
@@ -882,8 +876,74 @@ export function defaultFakeSkeletonJson(input?: SessionPromptInput): Record<stri
     enough: true,
     intent_v0: intent.slice(0, 200),
     scenario: 'implement',
-    skeleton_points: [],
+    skeleton_points: fakeSparseSkeletonPoints(text),
     uncertainty: 0.25,
+  }
+}
+
+/**
+ * Sparse Fake Hole A skeleton so Fake Hole B can keep via skeleton_hit (not blanket write/verify).
+ * At most one turning_point (last Write/Edit) + one verification_anchor (last ok Bash).
+ */
+function fakeSparseSkeletonPoints(text: string): Array<Record<string, unknown>> {
+  const cards = parseCardIndexFromPrompt(text)
+  if (cards.length === 0) return []
+  const points: Array<Record<string, unknown>> = []
+  const writes = cards.filter((c) => /^(write|edit)$/i.test(c.tool))
+  const write = writes.length > 0 ? writes[writes.length - 1] : undefined
+  if (write !== undefined) {
+    points.push({
+      id: 'n-fake-tp',
+      kind: 'turning_point',
+      segment_ids: [write.id],
+      note: 'fake skeleton turning point',
+    })
+  }
+  const verifies = cards.filter((c) => /^(bash|shell)$/i.test(c.tool) && c.outcome === 'ok')
+  const verify = verifies.length > 0 ? verifies[verifies.length - 1] : undefined
+  if (verify !== undefined && verify.id !== write?.id) {
+    points.push({
+      id: 'n-fake-ver',
+      kind: 'verification_anchor',
+      segment_ids: [verify.id],
+      note: 'fake skeleton verification',
+    })
+  }
+  if (points.length > 0) return points
+  const first = cards[0]
+  if (first === undefined) return []
+  return [
+    {
+      id: 'n-fake-tp',
+      kind: 'turning_point',
+      segment_ids: [first.id],
+      note: 'fake skeleton fallback',
+    },
+  ]
+}
+
+function parseCardIndexFromPrompt(text: string): Array<{ id: string; tool: string; outcome: string }> {
+  const marker = text.indexOf('CARD_INDEX')
+  const source = marker >= 0 ? text.slice(marker) : text
+  const extracted = extractJsonFromProse(source)
+  if (extracted === undefined) return []
+  try {
+    const parsed = JSON.parse(repairNearJson(extracted)) as unknown
+    if (!Array.isArray(parsed)) return []
+    const out: Array<{ id: string; tool: string; outcome: string }> = []
+    for (const item of parsed) {
+      if (typeof item !== 'object' || item === null || Array.isArray(item)) continue
+      const rec = item as Record<string, unknown>
+      if (typeof rec.id !== 'string' || rec.id.length === 0) continue
+      out.push({
+        id: rec.id,
+        tool: typeof rec.tool === 'string' ? rec.tool : '',
+        outcome: typeof rec.outcome === 'string' ? rec.outcome : '',
+      })
+    }
+    return out
+  } catch {
+    return []
   }
 }
 
