@@ -22,9 +22,10 @@ node script/run-distill.ts eval <trace_id> --sqlite path [--qa] [--replay]
 node script/run-distill.ts report <trace_id> --sqlite path --out out.html
 node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
 node script/run-distill.ts bench [--dir benchmark/datasets] [--fake-l4] [--with-l4] [--vector-efficiency|--no-vector-efficiency]
+node script/run-distill.ts export-utility <trace.jsonl|dir> [--out-dir benchmark/out-utility] [--arms raw,distilled,tools_only,human_curated] [--fake-l4] [--profile p.json] [--human-keep path] [--trace-ids id1,id2]
 ```
 
-Agent-led only（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）。`--no-llm` 已删除（传入即报错）。蒸馏需 agent 路径：`--fake-l4` / 注入 `FakeSessionBackend`，或 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B`。`eval` 读 SQLite 蒸馏指标；`--qa` / `--replay` 在有会话后端时跑 L4，否则跳过并注明。`bench` 无 `--with-l4` 时默认注入 FakeSessionBackend 防挂；`--fake-l4` 另打本地 L4 composite；`--with-l4` 才连真 mint（会话硬超时；长样建议 `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`）。`--bin` / `--bins` 选赛道并用 bin CutProfile 阀门。扫 `short` / `long` / `multi_dead_end` 分档报 JSON，禁止合并平均；无金标则召回 skipped；六项有 fail 则该样本总分 0。另有 m1_score（压缩率得分×关键步召回），cost 失败不归零 m1。pi 工厂 spike：`bun run pi-spike`。
+Agent-led only（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）。`--no-llm` 已删除（传入即报错）。蒸馏需 agent 路径：`--fake-l4` / 注入 `FakeSessionBackend`，或 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B`。`eval` 读 SQLite 蒸馏指标；`--qa` / `--replay` 在有会话后端时跑 L4，否则跳过并注明。`bench` 无 `--with-l4` 时默认注入 FakeSessionBackend 防挂；`--fake-l4` 另打本地 L4 composite；`--with-l4` 才连真 mint（会话硬超时；长样建议 `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`）。`--bin` / `--bins` 选赛道并用 bin CutProfile 阀门。扫 `short` / `long` / `multi_dead_end` 分档报 JSON，禁止合并平均；无金标则召回 skipped；六项有 fail 则该样本总分 0。另有 m1_score（压缩率得分×关键步召回），cost 失败不归零 m1。`export-utility` 写 ADR-0013 四臂 TrainingCut 脚手架（`manifest.json` + `<arm>/<trace_id>.turns.json` + `tokens.json`）；默认 `raw,distilled,tools_only`；无 Hole 模型时与 bench 一样注入 Fake 防挂；`human_curated` 无 `--human-keep` 则 stub/skip，禁止静默 raw。pi 工厂 spike：`bun run pi-spike`。
 
 ## 分层纪律
 
