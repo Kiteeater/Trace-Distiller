@@ -74,7 +74,7 @@ ingest（Admission Gate）
 另两层故意**不**进乘法：
 
 - **ROI**（ADR-0015）：单次 proxy_saved / spend_AB。1×1 常亏；摊薄后才可能 >1。质量门挂了的 ROI 无意义。
-- **训练效用**（ADR-0013）：同等 GPU-hours 的四臂 SFT。过程门禁绿只说明剪辑器没剪断因果，不说明学生模型更强。
+- **训练效用**（ADR-0013）：同等 GPU-hours 的四臂 SFT。过程门禁绿只说明剪辑器没剪断因果，不说明学生模型更强。**本交付不承诺此项结论**（对照 out of scope）。
 
 防 hack：不拿 Distiller 自己的标签评召回；不把 L4 token 算进「我们很省」；不给盲测看 warrant；不跨赛道平均。
 
@@ -104,7 +104,7 @@ ingest（Admission Gate）
 
 1. 剪辑器在合成赛道上 **过程门禁可绿**（Fake 稳定；mint 在 mapped fixture 上可绿）。
 2. 公开长会话上 **压缩可见、召回与重放未闭合**（金标粗、无 workspace）。
-3. **训练效用无结论**（SFT 未跑）。
+3. **本交付不承诺训练效用结论**；外部四臂 SFT 对照 out of scope（不是本包未完成项）。
 4. **单次 ROI 不是卖点**：short 1×1 亏；要靠多学生/多 epoch 摊薄，且须质量门先过。
 
 ---
@@ -127,7 +127,7 @@ ingest（Admission Gate）
 
 能力内：离线把带 GT 的 claude-code JSONL 蒸馏成双产物；规则先砍例行/相似重试；洞 A 抽 intent/skeleton；洞 B 打未决；span 拦住跳步；Fake 过夜可复现。
 
-能力外：失败轨迹、实时干预、本仓 GPU 训练、跨赛道排行榜、把 MIMO 当闭合重放集。
+能力外：失败轨迹、实时干预、本仓 GPU 训练、跨赛道排行榜、把 MIMO 当闭合重放集。外部四臂 SFT 对照不在本交付试验范围（optional future）。
 
 ---
 
@@ -168,4 +168,4 @@ mint-short 的 long-debug：`runReplay` 碰到 `"The bug is"... is not valid JSO
 
 ## 收束
 
-Distiller 作为 **成功轨迹的剪辑器**，在合成赛道上过程门禁成立，公开长会话上压缩可见但保真未闭合。作为 **训练基础设施**，证据尚未出现。下一步按 ADR-0013：用 P0 harness 把对齐后的四臂交给外部 SFT；无增益则定位 replay/editor，而不是继续 polish 压缩率。
+Distiller 作为 **成功轨迹的剪辑器**，在合成赛道上过程门禁成立，公开长会话上压缩可见但保真未闭合。已交付价值：剪辑器 + 过程门禁证据 + 效用导出/预算对齐脚手架。外部 SFT 对照属 ADR-0013 的 optional future path，**不是 incomplete deliverable**；本包不承诺训练效用结论。过程门禁绿 ≠ 学生模型更强。
