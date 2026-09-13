@@ -87,6 +87,7 @@ import {
   resolveDistillerSha,
   type UtilityArm,
 } from './export_utility.ts'
+import { finalizeUtilityExport } from './utility_budget.ts'
 
 export const EXIT_OK = 0
 export const EXIT_OTHER = 1
@@ -124,6 +125,10 @@ export interface CliArgs {
   human_keep_path?: string
   /** export-utility: only these admitted trace ids. */
   trace_ids?: string[]
+  /** export-utility: pool-level token budget align into <out>/budgeted. */
+  align_budget?: boolean
+  /** export-utility: explicit pool budget T (implies --align-budget). */
+  budget?: number
   help?: boolean
 }
 
@@ -133,7 +138,7 @@ const HELP = `Usage:
   node script/run-distill.ts report <trace_id> --sqlite path --out out.html
   node script/run-distill.ts live-dump --sqlite path [--out-dir dir] [trace_id]
   node script/run-distill.ts bench [--dir benchmark/datasets] [--out-dir benchmark/out] [--fake-l4] [--with-l4] [--bin short|long|multi_dead_end] [--bins a,b] [--vector-efficiency|--no-vector-efficiency]
-  node script/run-distill.ts export-utility <trace.jsonl|dir> [--out-dir benchmark/out-utility] [--arms raw,distilled,tools_only,human_curated] [--fake-l4] [--profile p.json] [--human-keep path] [--trace-ids id1,id2]
+  node script/run-distill.ts export-utility <trace.jsonl|dir> [--out-dir benchmark/out-utility] [--arms raw,distilled,tools_only,human_curated] [--fake-l4] [--profile p.json] [--human-keep path] [--trace-ids id1,id2] [--align-budget] [--budget N]
 
 Agent-led cut only (ADR-0010). --no-llm / pure rules-only mode was removed — passing it errors. Distill requires an agent path: injected FakeSessionBackend / --fake-l4 (CI), or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
@@ -147,7 +152,7 @@ bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample, sco
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
-export-utility writes ADR-0013 four-arm TrainingCut JSON (not SFT): <out>/manifest.json plus <out>/<arm>/<trace_id>.turns.json and tokens.json. Default arms: raw,distilled,tools_only. Distilled calls distill; injects FakeSessionBackend when --fake-l4 or Hole models unset (bench hang-safety). human_curated without --human-keep is skipped (stub + manifest), never silent raw. Token metric is ingest_raw_turn_tokens (sum of turn.tokens).
+export-utility writes ADR-0013 four-arm TrainingCut JSON (not SFT): <out>/manifest.json plus <out>/<arm>/<trace_id>.turns.json and tokens.json. Default arms: raw,distilled,tools_only. Distilled calls distill; injects FakeSessionBackend when --fake-l4 or Hole models unset (bench hang-safety). human_curated without --human-keep is skipped (stub + manifest), never silent raw. Token metric is ingest_raw_turn_tokens (sum of turn.tokens). Always writes handoff.json + utility-report.json (amortized 1x1/3x1/3x3 + quality-gated ROI; proxy_saved_trainingcut; 本仓库不内置大模型训练循环). --align-budget post-processes pool-level T=min(arm pool_tokens) or --budget N into <out>/budgeted/ (greedy lex skip-and-continue; whole traces; never truncate mid-turns).
 
 Two products: Training Cut / JSONL (train) and Playback + live/report HTML (review). CutProfile is the customisation surface.
 
@@ -184,6 +189,8 @@ export function parseArgv(argv: string[]): CliArgs {
   let arms: UtilityArm[] | undefined
   let human_keep_path: string | undefined
   let trace_ids: string[] | undefined
+  let align_budget: boolean | undefined
+  let budget: number | undefined
 
   const take = (i: number, flag: string): [string, number] => {
     const next = argv[i + 1]
@@ -300,6 +307,21 @@ export function parseArgv(argv: string[]): CliArgs {
       trace_ids = parts
       continue
     }
+    if (token === '--align-budget') {
+      align_budget = true
+      continue
+    }
+    if (token === '--budget') {
+      const [raw, nextI] = take(i, token)
+      i = nextI
+      const n = Number(raw)
+      if (!Number.isFinite(n) || n < 0) {
+        throw new Error(`${token} 需要非负数字`)
+      }
+      budget = n
+      align_budget = true
+      continue
+    }
     if (token.startsWith('-')) {
       throw new Error(`未知参数 ${token}`)
     }
@@ -330,6 +352,8 @@ export function parseArgv(argv: string[]): CliArgs {
   if (arms !== undefined) args.arms = arms
   if (human_keep_path !== undefined) args.human_keep_path = human_keep_path
   if (trace_ids !== undefined) args.trace_ids = trace_ids
+  if (align_budget !== undefined) args.align_budget = align_budget
+  if (budget !== undefined) args.budget = budget
   return args
 }
 
@@ -469,7 +493,17 @@ async function runExportUtility(args: CliArgs): Promise<number> {
       ...(humanKeepByTrace !== undefined ? { humanKeepByTrace } : {}),
       ...(args.trace_ids !== undefined ? { traceIds: args.trace_ids } : {}),
     })
-    process.stdout.write(`${JSON.stringify({ out_dir: outDir, ...manifest })}\n`)
+    const extra = finalizeUtilityExport({
+      exportDir: outDir,
+      ...(args.align_budget === true || args.budget !== undefined ? { alignBudget: true } : {}),
+      ...(args.budget !== undefined ? { budget: args.budget } : {}),
+    })
+    const summary: Record<string, unknown> = { out_dir: outDir, ...manifest }
+    if (extra.aligned !== undefined) {
+      summary.budgeted_dir = extra.aligned.outDir
+      summary.budget_tokens = extra.aligned.budget_tokens
+    }
+    process.stdout.write(`${JSON.stringify(summary)}\n`)
     return EXIT_OK
   } catch (error) {
     if (isAdmissionError(error)) {

@@ -54,7 +54,7 @@ ADR-0013 把 composite/m1 定性为过程门禁。蒸馏**自身**的 token 经�
 
 ## Consequences
 
-- 记分板 md/json 增加 `distill_tokens` / `sft_saved` / `roi`；BinTable 有 `mean_roi` / `n_defined_roi`（只对有限 defined ROI 取均值）。摊薄列（1×1 / 3×1 / 3×3）本 PR 不做，docs first。
+- 记分板 md/json 增加 `distill_tokens` / `sft_saved` / `roi`；BinTable 有 `mean_roi` / `n_defined_roi`（只对有限 defined ROI 取均值）。摊薄列（1×1 / 3×1 / 3×3）不进记分板样本行；P0 写在 `export-utility` 的 `utility-report.json`（质量门控 ROI 同文件）。
 - Fake / `--fake-l4` 同样填列（Fake 用量为 0 时 roi 为 `—`，列仍在）。span / distill 失败不编造经济学数字。
 - 不放松 `compress ≤ 0.3` / `BENCHMARK_PASS` / `key_step_recall≥0.95`；ROI 失败不归零 composite/m1。质量挂了的 ROI 无意义。
 - 规则覆盖是分档观测 hint，不是硬门禁；不得靠 Fail-Closed Keep 刷分子，也不得牺牲骨架 / 关键决策保护换覆盖率。

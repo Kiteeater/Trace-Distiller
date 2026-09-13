@@ -20,6 +20,7 @@ const repoRoot = join(here, '../..')
 const fixtures = join(here, '../fixtures/claude_code')
 const cliSrc = join(here, '../../src/service/cli.ts')
 const exportSrc = join(here, '../../src/service/export_utility.ts')
+const utilityBudgetSrc = join(here, '../../src/service/utility_budget.ts')
 const liveSrc = join(here, '../../src/service/live.ts')
 const livePageSrc = join(here, '../../src/report/live_page.ts')
 const scriptSrc = join(here, '../../script/run-distill.ts')
@@ -72,16 +73,19 @@ describe('cli', { concurrency: 1 }, () => {
     assert.match(help, /Agent-led/)
     assert.match(help, /export-utility/)
     assert.match(help, /human_curated/)
+    assert.match(help, /--align-budget/)
+    assert.match(help, /utility-report/)
     assert.doesNotMatch(help, /Default is --no-llm/)
   })
 
   it('does not import pi, createAgentSession, or listen', () => {
     const src = readFileSync(cliSrc, 'utf8')
     const exportUtil = readFileSync(exportSrc, 'utf8')
+    const utilityBudget = readFileSync(utilityBudgetSrc, 'utf8')
     const script = readFileSync(scriptSrc, 'utf8')
     const live = readFileSync(liveSrc, 'utf8')
     const page = readFileSync(livePageSrc, 'utf8')
-    for (const text of [src, exportUtil, script, live, page]) {
+    for (const text of [src, exportUtil, utilityBudget, script, live, page]) {
       assert.doesNotMatch(text, /@mariozechner\/pi/)
       assert.doesNotMatch(text, /createAgentSession/)
       assert.doesNotMatch(text, /from ['"]pi['"]/)
