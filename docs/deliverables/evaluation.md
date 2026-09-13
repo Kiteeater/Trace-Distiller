@@ -59,7 +59,7 @@ Admission Gate（[ADR-0001](../adr/0001-ground-truth-admission-gate.md)）：无
 | 层 | 回答什么 | 主指标 | 现状 |
 |----|----------|--------|------|
 | **过程门禁** | 剪辑有没有把因果路径剪断 | 压缩率 × 关键步召回 × 重放；记分板 `m1` / `composite` | Fake 可复现；真 mint 黄区 |
-| **训练效用** | 同等 GPU-hours 学生模型谁赢 | holdout 任务成功率（ADR-0013 四臂） | **未跑**（红区） |
+| **训练效用** | 同等 GPU-hours 学生模型谁赢 | holdout 任务成功率（ADR-0013 四臂） | **本交付范围外**（out of scope；设计见 training-utility-experiment.md） |
 | **ROI** | 蒸馏自身 token 账 | `sft_saved / distill_tokens`（proxy，不计 L4） | 记分板有列；摊薄在 `export-utility` |
 
 ### 过程门禁（ADR-0005 / 0014）
@@ -77,7 +77,7 @@ Hole A `a_eff`（ADR-0011 b）仅 bench，不是在线停机，不进 m1/composi
 
 ### 训练效用（ADR-0013）
 
-must-run：同 token budget 的 raw / distilled / tools-only /（宣称前）human-curated；换学生；挪分布。主指标 = 同等 GPU-hours 谁赢。复合分绿 ≠ 能训。实验设计见 [training-utility-experiment.md](../guides/training-utility-experiment.md)。**四臂 SFT 未跑。**
+must-run：同 token budget 的 raw / distilled / tools-only /（宣称前）human-curated；换学生；挪分布。主指标 = 同等 GPU-hours 谁赢。复合分绿 ≠ 能训。实验设计见 [training-utility-experiment.md](../guides/training-utility-experiment.md)。**本交付试验范围不含外部四臂 SFT**（out of scope）；该设计是可选未来路径，不是本包未完成项。
 
 P0 已落地的是 **导出脚手架 + 池级预算对齐**（`--align-budget`），不是训练循环。本仓库不内置大模型训练。
 

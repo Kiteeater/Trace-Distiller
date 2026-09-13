@@ -2,11 +2,11 @@
 
 | 字段 | 内容 |
 |------|------|
-| 状态 | **设计已锁；实验未跑**（maturity 红区 / M3+） |
+| 状态 | **设计已锁；实验未跑**（maturity 红区 / M3+）。对开源交付包而言，本实验为 **optional / out of scope**，不是交付包必交未完成项 |
 | 权威 | [ADR-0013](../adr/0013-training-utility-before-cut-polish.md) |
 | 过程门禁 | [ADR-0005](../adr/0005-benchmark-multiplicative-score.md)、[benchmark.md](./benchmark.md) |
 
-本页把 ADR-0013 的 must-run 写成可执行对照。**不**在此搭 trainer、**不**把 `*-training.json` 说成已定型 SFT。
+本页把 ADR-0013 的 must-run 写成可执行对照（可选未来路径）。**不**在此搭 trainer、**不**把 `*-training.json` 说成已定型 SFT。开源交付包不把本实验列为必交项。
 
 ## 1. Goal
 
@@ -185,4 +185,4 @@ node script/run-distill.ts export-utility <trace.jsonl|dir> --fake-l4 --out-dir 
 
 **utility-report** 含各臂 export / budgeted 池 token、`economics`（`proxy_saved_trainingcut` / spend_AB）、`amortized_roi` `{1x1,3x1,3x3}`、`quality_gated_roi`（缺 `key_step_recall` 或 compress 超门 → fail-closed `roi: null`）。记分板不另加三列摊薄，见 [ADR-0015](../adr/0015-distill-cost-roi.md)。
 
-这仍不是训练效用证据。maturity 红区「训练有效性对比」保持红，直到外部 SFT 按 §3–§4 跑完。
+这仍不是训练效用证据。maturity 红区「训练有效性对比」保持红，直到外部 SFT 按 §3–§4 跑完。开源交付包不要求跑完该项（out of scope）。

@@ -63,12 +63,12 @@ cp .env.example .env
 
 ## 开源交付包
 
-评测材料、有效性验证与分析报告：[docs/deliverables/](./docs/deliverables/)（中文；含 Fake / mint 记分板摘录）。
+评测材料、有效性验证与分析报告：[docs/deliverables/](./docs/deliverables/)（中文；含 Fake / mint 记分板摘录）。Training Cut / `export-utility` harness 已交付；完整外部 SFT 对照不在本交付试验范围。
 
 ## 延伸阅读
 
 - [AGENTS.md](./AGENTS.md) — 工程规则  
 - [docs/guides/](./docs/guides/) — 成熟度、benchmark、架构叶子等  
 - [docs/adr/](./docs/adr/) — 已拍板决定  
-- [ADR-0013](./docs/adr/0013-training-utility-before-cut-polish.md) — 训练效用先于 cut polish  
+- [ADR-0013](./docs/adr/0013-training-utility-before-cut-polish.md) — 训练效用先于 cut polish（交付包内为 optional / out of scope）  
 - [docs/architecture.md](./docs/architecture.md) — 流水线与两个 agent 洞

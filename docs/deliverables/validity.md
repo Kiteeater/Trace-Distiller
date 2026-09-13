@@ -48,18 +48,20 @@ Fake replay 的 note 写明 *deterministic workspace heal (CI only; not mint fid
 - **MIMO 重放**：无 workspace map → skip，不是 fail=0。真重放成功率在导入样上 **未测到**。
 - **MIMO 召回**：金标粗；Fake 板上多数 recall=0 或 0.33–0.5（fail）。long-mint 上少数条 recall=1（`mimo-d307bfb5`、`mimo-7201fdae`）。不能把 MIMO 召回当金标级结论。
 
-### 红：训练效用未证
+### 范围外：训练效用 / 四臂 SFT（非交付缺口）
+
+训练效用与外部四臂 SFT **不在本次交付试验范围内**。P0 harness（`export-utility` / `--align-budget`）是已交付的可选脚手架，不是「欠一次 SFT 实验」。下表否定错误声称（事实仍成立），不把范围排除写成交付失败。
 
 | 声称 | 实际 |
 |------|------|
 | 「composite / m1 绿 = 能训」 | **否**。ADR-0013：过程门禁 ≠ 训练效用 |
-| 「已跑四臂 SFT」 | **否**。设计锁在 [training-utility-experiment.md](../guides/training-utility-experiment.md)；maturity **红** |
+| 「已跑四臂 SFT」 | **否**。本交付不跑外部 SFT；设计见 [training-utility-experiment.md](../guides/training-utility-experiment.md)（optional / out of scope） |
 | 「`sft_saved` / `roi` = 真实训练节省」 | **否**。`sft_saved` 是 proxy_saved_trainingcut；单学生 1×1 常 ROI<1（Fake short mean roi=0.33） |
-| 「Training Cut 已是 SFT 模板」 | **否**。中间 `RawTurn[]`；聊天模板 / messages 映射属 M2 红区 |
+| 「Training Cut 已是 SFT 模板」 | **否**。中间 `RawTurn[]`；聊天模板 / messages 映射属 M2 |
 | 「已过盲测门禁」 | **否**。纯代码对照骨架已通；调 L4 `blindReview` 未接通 |
 | 「私有 3–5 条真实 GT 已齐」 | **否**。公开 MIMO 已适配；本地私有成功 Trace 仍待接入 |
 
-未跑：学生模型 SFT、holdout pass@1、换家族/换体量、挪任务分布、human-curated 对照、人类可读性盲读。
+范围外、因而本包不交：学生模型 SFT、holdout pass@1、换家族/换体量、挪任务分布、human-curated 对照、人类可读性盲读。
 
 ## 4. 成熟度对照（摘录）
 
@@ -68,12 +70,14 @@ Fake replay 的 note 写明 *deterministic workspace heal (CI only; not mint fid
 | 绿 | 离线蒸馏（`--fake-l4`）；假 L4 记分板 + m1 + `a_eff` | Fake 板；`bun run distill:example` / `bench:m1` |
 | 绿 | 同源 Training / Playback 中间表示 | assembler 已写；**不是**定型 SFT |
 | 黄 | 短/长样真 `with_llm`；真 mint L4 QA/replay | mint 诸板；贵、超时、JSON 脆 |
-| 红 | Training Cut → SFT 导出定型 | M2 |
-| 红 | 训练有效性对比 / 批量入口 | M3+；P0 只把 harness 交给外部 |
+| 红 | Training Cut → SFT 导出定型 | M2；本交付不承诺定型 SFT |
+| 红 | 训练有效性对比 / 批量入口 | M3+；P0 harness 已交付，外部 SFT 对照 out of scope |
 | 红 | 盲测调 L4 | 未接通 |
+
+上表红区描述仓库成熟度口径，**不是本交付包的失败项**。本包不承诺跑外部 SFT。
 
 ## 5. 结论（有效性）
 
 1. **作为剪辑器的过程门禁**：合成样 + 独立金标上，Fake 可复现；真 mint 在 mapped fixture 上重放过线。MIMO 只能谈压缩与粗召回，不能谈重放。
-2. **作为训练基础设施**：证据不足。P0 只证明「能导出并对齐预算」。在四臂 SFT 跑完之前，产品定位不得写成「已验证的 SFT 原料」；无增益时按 ADR-0013 收束为 replay/editor。
+2. **本包交付范围**：剪辑器 + 过程门禁证据 + 导出/预算对齐脚手架。外部/大模型 SFT 对照 **不在本次交付试验范围内**，属可选后续（ADR-0013 设计 + 已落地 P0 harness），**不是本包未完成项**。本包不把 Distiller 写成「已验证的 SFT 原料」——那是范围外问题，不是交付失败。
 3. **ROI**：可报单次 proxy 账和摊薄情景；质量门（召回/压缩）挂了的「省 token」无意义。
