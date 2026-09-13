@@ -62,6 +62,7 @@ export interface UtilitySkip {
 export interface UtilityTraceTokens {
   turn_count: number
   tokens: number
+  hole_a_plus_b_tokens?: number
 }
 
 export interface UtilityArmTokens {
@@ -71,6 +72,7 @@ export interface UtilityArmTokens {
   pool_turns: number
   skipped?: boolean
   skip_reason?: string
+  hole_a_plus_b_tokens?: number
 }
 
 export type ArmSkipNote = { skipped: true; reason: string } | UtilitySkip[]
@@ -264,19 +266,24 @@ export async function exportUtilityArms(input: ExportUtilityInput): Promise<Util
 
     for (const raw of admitted) {
       try {
-        const cut = await cutForArm(arm, raw, input)
+        const { cut, hole_a_plus_b_tokens } = await cutForArm(arm, raw, input)
         writeFileSync(
           join(armDir, `${sanitizeTraceId(raw.meta.trace_id)}.turns.json`),
           `${JSON.stringify(cut, null, 2)}\n`,
           'utf8',
         )
         const tok = sumTurnTokens(cut.turns)
-        tokens.traces[raw.meta.trace_id] = {
+        const row: UtilityTraceTokens = {
           turn_count: cut.turns.length,
           tokens: tok,
         }
+        if (hole_a_plus_b_tokens !== undefined) row.hole_a_plus_b_tokens = hole_a_plus_b_tokens
+        tokens.traces[raw.meta.trace_id] = row
         tokens.pool_tokens += tok
         tokens.pool_turns += cut.turns.length
+        if (hole_a_plus_b_tokens !== undefined) {
+          tokens.hole_a_plus_b_tokens = (tokens.hole_a_plus_b_tokens ?? 0) + hole_a_plus_b_tokens
+        }
         if (!exported.includes(raw.meta.trace_id)) exported.push(raw.meta.trace_id)
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
@@ -307,12 +314,12 @@ async function cutForArm(
   arm: UtilityArm,
   raw: RawTrace,
   input: ExportUtilityInput,
-): Promise<TrainingCut> {
+): Promise<{ cut: TrainingCut; hole_a_plus_b_tokens?: number }> {
   if (arm === 'raw') {
-    return wrapTrainingCut(raw.meta.trace_id, raw.turns, 'raw')
+    return { cut: wrapTrainingCut(raw.meta.trace_id, raw.turns, 'raw') }
   }
   if (arm === 'tools_only') {
-    return wrapTrainingCut(raw.meta.trace_id, filterToolsOnly(raw.turns), 'tools_only')
+    return { cut: wrapTrainingCut(raw.meta.trace_id, filterToolsOnly(raw.turns), 'tools_only') }
   }
   if (arm === 'human_curated') {
     const ids = input.humanKeepByTrace?.[raw.meta.trace_id]
@@ -323,14 +330,17 @@ async function cutForArm(
     if (missing.length > 0) {
       throw new Error(`missing_keep_ids:${missing.join(',')}`)
     }
-    return wrapTrainingCut(raw.meta.trace_id, turns, 'human_curated')
+    return { cut: wrapTrainingCut(raw.meta.trace_id, turns, 'human_curated') }
   }
   const mode = resolveDistillMode({})
   const result = await distill({ raw, profile: input.profile, mode })
   return {
-    trace_id: result.training.trace_id,
-    plan_ref: result.training.plan_ref,
-    turns: result.training.turns.map(cloneTurn),
+    cut: {
+      trace_id: result.training.trace_id,
+      plan_ref: result.training.plan_ref,
+      turns: result.training.turns.map(cloneTurn),
+    },
+    hole_a_plus_b_tokens: result.hole_a_plus_b_tokens ?? 0,
   }
 }
 
@@ -374,7 +384,7 @@ function walkJsonl(dir: string): string[] {
   return out
 }
 
-function sanitizeTraceId(traceId: string): string {
+export function sanitizeTraceId(traceId: string): string {
   const cleaned = traceId.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
   return cleaned.length > 0 ? cleaned : 'trace'
 }

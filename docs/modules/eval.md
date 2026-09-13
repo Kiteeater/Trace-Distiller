@@ -49,6 +49,18 @@ function sftTokensSaved(input: { original_tokens: number; training_cut_tokens: n
 function distillRoi(input: { hole_a_plus_b_tokens: number; sft_tokens_saved: number }): number | null
 // saved/spent when spent>0；spent=0 → null（不计 L4；不进 composite/m1）
 
+function amortizeRoi(roi: number | null, students: number, epochs: number): number | null
+// null in → null out；否则 roi * students * epochs（finite）
+
+function amortizedRoiScenarios(roi: number | null): { '1x1': number | null; '3x1': number | null; '3x3': number | null }
+
+function qualityGatedRoi(input: { roi: number | null; key_step_recall: number | null | undefined; compression_ratio: number | null | undefined; quality_ok?: boolean }): { roi: number | null; quality_ok: boolean; reason?: string }
+// 缺 recall/compress → fail-closed null；质量挂了不算省 token（ADR-0015）
+
+function choosePoolBudget(armPoolTokens: Record<string, number>): number
+function subsampleTraceIds(traces: Record<string, { tokens: number }>, budget: number): { selected: string[]; pool_tokens: number }
+// 池级 T；greedy lex skip-and-continue；不截断单条 trace
+
 interface ReviewInput {
   intent: IntentHypothesis
   playback: PlaybackCut        // 或中间剪后表示
@@ -153,3 +165,4 @@ eval → types, enums, constant, domain, data
 - [x] replay / QA / review 接口经 sessions（假后端可测；真模型 `TRACE_DISTILLER_MODEL_L4`）。真实重放成功率需仓库+模型，CI 不假装。
 - [x] 分档报分壳：`src/eval/benchmark.ts`；六项门槛；乘法分；一项 fail → composite/m1 `null`（—）；无金标 skipped；三档禁止合并平均；均值只对 defined；`n_gate_fail`（ADR-0014）。
 - [x] Hole A 向量效率（ADR-0011 b）：`src/eval/vector_efficiency.ts`；bench `a_eff`；默认确定性 embedding；不进 m1/composite；不进 sparse_intent 停机。
+- [x] ADR-0013 P0：`choosePoolBudget` / `subsampleTraceIds`（池级 T，greedy lex skip-and-continue）；`amortizeRoi` / `amortizedRoiScenarios` / `qualityGatedRoi`（1×1/3×1/3×3；缺 recall/compress fail-closed）。不进 composite/m1。本仓库不内置大模型训练循环。

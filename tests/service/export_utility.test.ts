@@ -48,6 +48,9 @@ describe('export-utility', { concurrency: 1 }, () => {
       'keep.json',
       '--trace-ids',
       'id1,id2',
+      '--align-budget',
+      '--budget',
+      '4000',
     ])
     assert.equal(args.command, 'export-utility')
     assert.equal(args.input_path, 'a.jsonl')
@@ -57,6 +60,8 @@ describe('export-utility', { concurrency: 1 }, () => {
     assert.equal(args.profile_path, 'p.json')
     assert.equal(args.human_keep_path, 'keep.json')
     assert.deepEqual(args.trace_ids, ['id1', 'id2'])
+    assert.equal(args.align_budget, true)
+    assert.equal(args.budget, 4000)
   })
 
   it('parseUtilityArms rejects unknown arms', () => {
@@ -197,5 +202,45 @@ describe('export-utility', { concurrency: 1 }, () => {
 
   it('default out-dir constant matches the CLI default', () => {
     assert.equal(DEFAULT_UTILITY_OUT_DIR, join('benchmark', 'out-utility'))
+  })
+
+  it('CLI --align-budget writes <out>/budgeted self-contained layout', async () => {
+    const outDir = tmp()
+    const code = await runCli({
+      command: 'export-utility',
+      input_path: pytestJsonl,
+      out_dir: outDir,
+      fake_l4: true,
+      align_budget: true,
+    })
+    assert.equal(code, EXIT_OK)
+    const budgeted = join(outDir, 'budgeted')
+    const bManifest = JSON.parse(readFileSync(join(budgeted, 'manifest.json'), 'utf8')) as {
+      budget_tokens: number
+      algorithm: string
+      distiller_sha: string
+      per_arm: Record<string, { trace_ids: string[]; pool_tokens: number }>
+    }
+    assert.ok(Number.isFinite(bManifest.budget_tokens))
+    assert.match(bManifest.algorithm, /skip-and-continue/)
+    assert.ok(bManifest.distiller_sha.length > 0)
+    // Single-trace fixture: distilled is the min pool so it fits; raw may be empty
+    // (whole-trace greedy never truncates a trace that exceeds T).
+    assert.ok((bManifest.per_arm.distilled?.trace_ids.length ?? 0) >= 1)
+    const handoff = JSON.parse(readFileSync(join(budgeted, 'handoff.json'), 'utf8')) as {
+      note: string
+      token_metric: string
+      budget_tokens: number
+      per_arm: Record<string, { path: string; pool_tokens: number; trace_ids: string[] }>
+    }
+    assert.match(handoff.note, /本仓库不内置大模型训练循环/)
+    assert.equal(handoff.token_metric, TOKEN_METRIC)
+    assert.equal(handoff.budget_tokens, bManifest.budget_tokens)
+    assert.equal(handoff.per_arm.raw?.path, 'raw')
+    readFileSync(join(outDir, 'handoff.json'), 'utf8')
+    readFileSync(join(outDir, 'utility-report.json'), 'utf8')
+    readFileSync(join(budgeted, 'utility-report.json'), 'utf8')
+    readFileSync(join(budgeted, 'raw', 'tokens.json'), 'utf8')
+    readFileSync(join(budgeted, 'raw', 'selected_trace_ids.json'), 'utf8')
   })
 })

@@ -99,7 +99,7 @@ v0 若 Distiller **不赢** → 按 §1 收束到 replay/editor，不要靠 poli
 |------|------|
 | cut-polish PR（洞 B 启发式、压缩率调参、cut 美学） | 效用证据的 **下游**（ADR-0013 §5） |
 | 在本仓发明新 workspace / 假 trainer / 假数据集 | maturity 红区：不要写半截 trainer 冒充出门 |
-| 本页搭完整训练 infra（聊天模板、打包 `*.sft.jsonl`、GPU launcher、训练循环） | SFT 定型属 M2；训练资源属 M3。下一包只做四臂 **导出脚手架**（§8） |
+| 本页搭完整训练 infra（聊天模板、打包 `*.sft.jsonl`、GPU launcher、训练循环） | SFT 定型属 M2；训练资源属 M3。导出脚手架见 §8；P0 预算对齐 / handoff 见 §9。**本仓库不内置大模型训练循环** |
 | 用 Playback Cut / HTML 报告当训练臂 | 训练臂只认 RawTurn 列 |
 | 把 `*-training.json` 改名成 `*.sft.jsonl` | 中间表示 ≠ 定型 SFT |
 
@@ -140,3 +140,49 @@ node script/run-distill.ts export-utility <trace.jsonl|dir> [--out-dir benchmark
 | 失败 | 无 GT / 不可解析 → 跳过并记入 manifest，不编造 turns |
 
 脚手架 **输出到此为止**。下游 SFT 打包、训练循环、评测 runner 另包；在那些包落地前，禁止把本输出称为训练集。
+
+## 9. P0 harness（预算对齐 + 摊薄 ROI + 交接）
+
+**本仓库不内置大模型训练循环。** 本节只把 §8 的四臂 TrainingCut 导出对齐到同等池级 token 预算 `T`，写出给外部 SFT 用的 `handoff.json` 与 `utility-report.json`。不打包 `*.sft.jsonl`、不跑 GPU trainer、不宣称训练基础设施。
+
+```text
+node script/run-distill.ts export-utility <trace.jsonl|dir> --fake-l4 --out-dir benchmark/out-utility --align-budget [--budget N]
+```
+
+`bun run export:utility -- examples/add-fix.jsonl --fake-l4 --align-budget`。`--align-budget` 是导出后的后处理（Option A）；默认 `T = min(included non-skipped arm pool_tokens)`，`--budget N` 覆盖。`--fake-l4` 仍是过程门禁夹具，不是要上线的 distilled 臂。
+
+**顺序**
+
+1. `export-utility` 写出 §8 布局，并在 `<out>/` 写 `handoff.json` + `utility-report.json`（+ `.md`）。
+2. `--align-budget` 再写 `<out>/budgeted/`：按池级 `T` 对每臂 **整条 trace 子采样**（greedy 字典序 skip-and-continue；**禁止**把单条 raw 截到 distilled 那么短——那是附录诊断，不是主对齐）。已 ≤ `T` 的臂全留，不 pad。单条 trace 自身大于 `T` 则跳过该条（v0 池须有多条才能把 raw 填满 `T`）。
+3. 读 `budgeted/handoff.json` 交给外部 SFT；读 `utility-report.json` 看摊薄 ROI，不要把记分板单次 `roi` 列当成训练效用。
+
+**budgeted 布局**
+
+```text
+<out>/handoff.json
+<out>/utility-report.json
+<out>/budgeted/manifest.json          # T、algorithm、per-arm selected ids、parent sha/profile
+<out>/budgeted/handoff.json
+<out>/budgeted/utility-report.json
+<out>/budgeted/<arm>/tokens.json
+<out>/budgeted/<arm>/selected_trace_ids.json
+<out>/budgeted/<arm>/<trace_id>.turns.json   # 拷贝，自包含
+```
+
+**handoff.json 字段**
+
+| 字段 | 含义 |
+|------|------|
+| `distiller_sha` | git SHA |
+| `profile_path` / `profile_id` | cut profile 冻结 |
+| `arms` | 纳入的臂 |
+| `per_arm` | `{ arm: { path, pool_tokens, trace_ids[], turn_files? } }` |
+| `token_metric` | `ingest_raw_turn_tokens` |
+| `budget_tokens` | 对齐后的 `T`（未 `--align-budget` 则无此字段） |
+| `fake_l4` | bool |
+| `note` | 本仓库不内置大模型训练循环；输出供外部 SFT |
+
+**utility-report** 含各臂 export / budgeted 池 token、`economics`（`proxy_saved_trainingcut` / spend_AB）、`amortized_roi` `{1x1,3x1,3x3}`、`quality_gated_roi`（缺 `key_step_recall` 或 compress 超门 → fail-closed `roi: null`）。记分板不另加三列摊薄，见 [ADR-0015](../adr/0015-distill-cost-roi.md)。
+
+这仍不是训练效用证据。maturity 红区「训练有效性对比」保持红，直到外部 SFT 按 §3–§4 跑完。

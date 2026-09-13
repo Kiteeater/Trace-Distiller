@@ -94,6 +94,8 @@ describe('scoreboard markdown', () => {
     assert.match(md, /ADR-0011 b/)
     assert.match(md, /ADR-0014/)
     assert.match(md, /ADR-0015/)
+    assert.match(md, /utility-report/)
+    assert.match(md, /1×1/)
     assert.doesNotMatch(md, /overall score/i)
     assert.doesNotMatch(md, /hard-?zero/i)
     assert.doesNotMatch(md, /fail → 0/)
