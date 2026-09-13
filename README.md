@@ -61,6 +61,10 @@ cp .env.example .env
 
 真模型 L4：`bench --with-l4`（opt-in）。日常 CI / 本地用 `--fake-l4`。
 
+## 开源交付包
+
+评测材料、有效性验证与分析报告：[docs/deliverables/](./docs/deliverables/)（中文；含 Fake / mint 记分板摘录）。
+
 ## 延伸阅读
 
 - [AGENTS.md](./AGENTS.md) — 工程规则  
