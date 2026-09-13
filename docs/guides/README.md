@@ -43,6 +43,8 @@
 | [benchmark.md](./benchmark.md) | 6 指标及格线、乘法复合分、分档赛道；M1 只强制压缩+保真 | 评测 / 接入 | **已收口** |
 | [training-utility-experiment.md](./training-utility-experiment.md) | ADR-0013 四臂训练效用对照（同等 GPU-hours）；复合分绿 ≠ 能训 | 评测 / 接入 | **红 / 设计已锁** |
 
+开源交付包（评测材料 / 有效性 / 分析）：[docs/deliverables/](../deliverables/)。
+
 本文件是索引。
 
 **本轮收口的四篇**：`file-architecture.md`、`pi-sdk.md`、`benchmark.md`、`datasets.md`。live / ingest / Gateway 以 058e32e 为准，本轮不重开。

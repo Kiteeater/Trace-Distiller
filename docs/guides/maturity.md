@@ -56,7 +56,8 @@ bun run bench:long:mint   # 真 mint long-only；默认 SESSION_TIMEOUT_MS=30000
 
 ## 相关入口
 
-- 一夜路径：[README.md](../../README.md)「一夜可跑通的路径」
+- 一夜路径：[README.md](../../README.md)
+- 开源交付包：[docs/deliverables/](../deliverables/)（评测 / 有效性 / 分析）
 - 工程规则：[AGENTS.md](../../AGENTS.md)
 - 分档公式：[guides/benchmark.md](./benchmark.md)
 - 产物目录约定：[data/distilled/README.md](../../data/distilled/README.md)
