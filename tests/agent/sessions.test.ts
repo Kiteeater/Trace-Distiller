@@ -772,19 +772,68 @@ describe('hole sessions', () => {
     assert.doesNotMatch(warrant, /createAgentSession/)
     assert.doesNotMatch(warrant, /@mariozechner\/pi/)
 
+    const toolsPiAllowed = new Set(['defineTool', 'ToolDefinition'])
+    const toolsDirMarker = join('src', 'agent', 'tools')
+    const sessionsDirMarker = join('src', 'agent', 'sessions')
+
     for (const root of [join(repoRoot, 'src'), join(repoRoot, 'script')]) {
       for (const path of walkTs(root)) {
-        if (path.includes(`${join('src', 'agent', 'sessions')}`)) continue
         const src = readFileSync(path, 'utf8')
         const imports = src
           .split('\n')
           .filter((line) => /^\s*import\s/.test(line))
-          .join('\n')
-        assert.doesNotMatch(imports, /createAgentSession/)
-        assert.doesNotMatch(imports, /@mariozechner\/pi/)
-        assert.doesNotMatch(imports, /from ['"]pi['"]/)
+        const importBlock = imports.join('\n')
+        assert.doesNotMatch(importBlock, /createAgentSession/)
+        if (path.includes(sessionsDirMarker)) continue
+        if (path.includes(toolsDirMarker)) {
+          assert.doesNotMatch(src, /createAgentSession/)
+          assert.doesNotMatch(src, /SessionManager/)
+          for (const line of imports) {
+            if (!/@mariozechner\/pi|from ['"]pi['"]/.test(line)) continue
+            assert.match(line, /@mariozechner\/pi-coding-agent/)
+            assert.doesNotMatch(line, /@mariozechner\/pi-ai/)
+            const named = line.match(/\{([^}]+)\}/)
+            assert.ok(named !== null, `tools/ must use named pi imports: ${line}`)
+            const inner = named[1]
+            assert.ok(inner !== undefined, `tools/ named pi import list is empty: ${line}`)
+            const names = inner
+              .split(',')
+              .map((part) => part.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0]?.trim() ?? '')
+              .filter((n) => n.length > 0)
+            for (const name of names) {
+              assert.ok(
+                toolsPiAllowed.has(name),
+                `tools/ pi import '${name}' is not allowlisted (only defineTool / ToolDefinition)`,
+              )
+            }
+          }
+          continue
+        }
+        assert.doesNotMatch(importBlock, /@mariozechner\/pi/)
+        assert.doesNotMatch(importBlock, /from ['"]pi['"]/)
       }
     }
+  })
+
+  it('hole loops dispatch tools via registry and compose prompts via prompt/', () => {
+    const promptCompose = readFileSync(join(repoRoot, 'src/agent/prompt/compose.ts'), 'utf8')
+    assert.match(promptCompose, /export function composeSessionPrompt/)
+    assert.match(promptCompose, /stable/)
+    assert.match(promptCompose, /state_pointers|skeleton_text/)
+    const openSrc = readFileSync(join(sessionsDir, 'open_session.ts'), 'utf8')
+    assert.doesNotMatch(openSrc, /export function composeSessionPrompt/)
+    assert.match(openSrc, /from ['"]\.\.\/prompt\/compose\.ts['"]/)
+
+    const handlerImport =
+      /handle(?:LabelSegment|CheckContinuity|KeepSegment|ReadSegment|ApplyRulesHint)\b/
+    for (const name of ['cut_brain.ts', 'sparse_intent.ts', 'label_window.ts']) {
+      const src = readFileSync(join(sessionsDir, name), 'utf8')
+      assert.doesNotMatch(src, handlerImport)
+      assert.match(src, /executeHoleTool/)
+      assert.match(src, /from ['"]\.\.\/tools\/registry\.ts['"]/)
+    }
+    const maskCanon = join(repoRoot, 'src/agent/prompt/tool_mask.ts')
+    assert.match(readFileSync(maskCanon, 'utf8'), /export function maskToolResult/)
   })
 
   it('registerProvider args match openai-completions gateway shape without a real key', () => {

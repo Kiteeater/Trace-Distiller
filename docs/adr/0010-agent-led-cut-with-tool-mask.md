@@ -25,7 +25,7 @@ ADR-0008 把 Distiller 定为「确定性流水线 + 两个 agent 洞」，并�
 1. **删除 `--no-llm` / 纯规则独立模式。** CLI 若传入 `--no-llm`，立即报错并指向本 ADR。蒸馏默认 / 强制走 **agent 路径**（`with_llm`）；CI / 无密钥用 `FakeSessionBackend` 或 `--fake-l4`，生产用洞模型 env。
 2. **Agent session = editor-in-chief**：深度理解意图并决定 **how to cut**（提议 keep / collapse / drop 与标签）。Tools **只执行操作**（规则打标提示、读段、衔接检查、segmenter 等），不拥有最终裁剪叙事权。
 3. **确定性 TS 保留**：Admission Gate、切段、span 检查、CutWarrant 组装、assemble 双产物、I/O / SQLite / report。Agent 提议之后，assembler / span 仍是校验器（hunch：规则可作为 agent 可调用工具；assemble/span 保持确定性）。
-4. **Tool mask 契约**：工具结果 **不得** 完整回到下一轮 agent prompt。`maskToolResult(raw) → masked` 做 summarize / truncate / structure；完整 payload 可写入 warrant / training store，不进下一 turn。实现见 `src/agent/sessions/tool_mask.ts`。
+4. **Tool mask 契约**：工具结果 **不得** 完整回到下一轮 agent prompt。`maskToolResult(raw) → masked` 做 summarize / truncate / structure；完整 payload 可写入 warrant / training store，不进下一 turn。实现见 `src/agent/prompt/tool_mask.ts`（sessions 路径为 re-export shim）。
 5. **Fail-Closed 策略调整**：不再等于「无洞则全 keep」。未决议段保持 unresolved，直到 agent 打标，或显式调用 keep 工具；agent/tool 失败时的保守策略仍由编排器执行，但语义是 **agent/tool failure policy**，不是规则优先模式。
 6. **pi 边界不变**：仍只允许出现在 `src/agent/sessions/`。该目录可托管 cut-brain 会话循环（非 pi-coding 产品循环）。
 

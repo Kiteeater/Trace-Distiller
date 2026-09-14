@@ -1,13 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  HOLE_TOOL_NAMES,
-  handleCheckContinuity,
-  handleLabelSegment,
-  handleReadSegment,
-  type HoleReadContext,
-} from '../extension.ts'
+import { HOLE_TOOL_NAMES, type HoleReadContext } from '../extension.ts'
+import { executeHoleTool } from '../tools/registry.ts'
 import { LABEL_WINDOW_SIZE } from '../../constant/window.ts'
 import type { LabelDecision } from '../../domain/label_decision.ts'
 import type { AgentView, IntentHypothesis, Skeleton, SkeletonNode } from '../../types/agent_view.ts'
@@ -168,7 +163,7 @@ function interpretLabelWindowResult(
   const readCtx: HoleReadContext = { cards: ctx.cards, raw: ctx.raw }
   for (const call of calls) {
     if (call.name === 'read_segment') {
-      handleReadSegment(readCtx, call.arguments)
+      executeHoleTool('read_segment', call.arguments, { read: readCtx })
     }
   }
 
@@ -180,15 +175,17 @@ function interpretLabelWindowResult(
   const decisions: LabelDecision[] = []
   const labeled = new Set<string>()
   for (const call of labelCalls) {
-    const accepted = handleLabelSegment(call.arguments, ctx.windowIds)
-    if (!accepted.ok) continue
-    if (labeled.has(accepted.segment_id)) continue
-    labeled.add(accepted.segment_id)
+    const accepted = executeHoleTool('label_segment', call.arguments, {
+      windowIds: ctx.windowIds,
+    })
+    if (!accepted.ok || accepted.name !== 'label_segment') continue
+    if (labeled.has(accepted.accepted.segment_id)) continue
+    labeled.add(accepted.accepted.segment_id)
     decisions.push({
-      segment_id: accepted.segment_id,
-      label: accepted.label,
+      segment_id: accepted.accepted.segment_id,
+      label: accepted.accepted.label,
       source: { kind: 'llm', name: ctx.skill },
-      confidence: accepted.confidence,
+      confidence: accepted.accepted.confidence,
     })
   }
 
@@ -217,17 +214,20 @@ function interpretContinuityResult(
   if (call === undefined) {
     throw new Error('checkContinuityPair: no check_continuity tool call; do not invent scores')
   }
-  const accepted = handleCheckContinuity(call.arguments)
+  const accepted = executeHoleTool('check_continuity', call.arguments)
   if (!accepted.ok) {
     throw new Error(`checkContinuityPair: ${accepted.error}`)
   }
-  if (accepted.left_id !== leftId || accepted.right_id !== rightId) {
+  if (accepted.name !== 'check_continuity') {
+    throw new Error('checkContinuityPair: unexpected tool dispatch')
+  }
+  if (accepted.accepted.left_id !== leftId || accepted.accepted.right_id !== rightId) {
     throw new Error('checkContinuityPair: tool call ids do not match the pair')
   }
   return {
-    ok: accepted.reachable,
-    score: accepted.score,
-    reason: accepted.reason,
+    ok: accepted.accepted.reachable,
+    score: accepted.accepted.score,
+    reason: accepted.accepted.reason,
     usage: {
       role,
       input_tokens: result.usage.input_tokens,
