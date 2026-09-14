@@ -76,6 +76,7 @@ trace-distiller/
 │  ├─ agent/
 │  │  ├─ sessions/              # 全仓库唯一可 import pi（含 tool_mask.ts）
 │  │  │  ├─ open_session.ts      # 工厂 + SessionBackend；createAgentSession 只在这里
+│  │  │  ├─ tool_mask.ts        # ADR-0010 ACK / maskToolResult；prompt 禁 raw tool body
 │  │  │  ├─ card_index.ts       # CARD_INDEX 紧凑序列化（洞 A/B 共用）
 │  │  │  ├─ candidate_pool.ts   # ADR-0011 分层候选池
 │  │  │  ├─ sparse_intent.ts    # ADR-0011 多轮稀疏采样（洞 A）

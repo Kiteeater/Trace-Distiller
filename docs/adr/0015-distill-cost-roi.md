@@ -59,3 +59,4 @@ ADR-0013 把 composite/m1 定性为过程门禁。蒸馏**自身**的 token 经�
 - 不放松 `compress ≤ 0.3` / `BENCHMARK_PASS` / `key_step_recall≥0.95`；ROI 失败不归零 composite/m1。质量挂了的 ROI 无意义。
 - 规则覆盖是分档观测 hint，不是硬门禁；不得靠 Fail-Closed Keep 刷分子，也不得牺牲骨架 / 关键决策保护换覆盖率。
 - [x] 流水线跟进：高精规则先决议并采纳；洞 B 只打未决；覆盖率为观测 hint；骨架禁砍；非 --no-llm。
+- Orchestrator 用 `mergeAdoptedWithBrain`：规则已定标的 id 不得被洞 B 静默覆盖（冲突抛 `RULED_OVERWRITE_REFUSED`）。

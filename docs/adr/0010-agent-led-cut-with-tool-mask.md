@@ -37,6 +37,7 @@ ADR-0008 把 Distiller 定为「确定性流水线 + 两个 agent 洞」，并�
 - **Phase 2（本 follow-up）**：cut-brain ReAct 会话拥有未决议标签；`apply_rules_hint` / `keep_segment` 经 tool_mask；orchestrator 不再静默 `applyRules` 并进最终 decisions。Admission / assemble / span 仍确定性。
 - **洞 A 演进**：固定头/验证点一枪采样由 [ADR-0011](./0011-hole-a-sparse-sampling-intent.md) 锁定为多轮稀疏采样（分层锚点池 + gaps；洞 A 不产出 keep/collapse/drop）。
 - **洞 B / cut-brain 演进**：单槽 + 渐进披露（S0–S3；v1 focus 恒 1；disclose 触帽/低置信 → collapse_uncertain；预算耗尽默认 collapse_uncertain；0010 Keep 仅硬失败无 B 输出）由 [ADR-0012](./0012-hole-b-single-slot-progressive-disclosure.md) 锁定。
+- **Architecture enforcement**：`mergeAdoptedWithBrain` 拒绝洞 B 静默覆盖 `isResolvedByRules` 已采纳标签（`assertNoRuledOverwrite` 抛 `RULED_OVERWRITE_REFUSED`）。`maskPromptMessageContent` 不只看长度：短 raw tool JSON 也走 `maskToolResult`；cut-brain `lastAck` 经 `assertAckOrMaskedToolMessage`（仅 ACK / 掩码摘要）。
 
 ## TODO / skeleton（follow-up）
 

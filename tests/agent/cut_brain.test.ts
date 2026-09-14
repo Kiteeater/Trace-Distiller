@@ -853,4 +853,39 @@ describe('cutBrain ADR-0012 decision table', () => {
       assert.notEqual(d.label, 'useful_exploration')
     }
   })
+
+  it('Fake same-turn multi-focus + disclose records violation metrics and does not sneak keep', async () => {
+    const { raw, view } = synthWorld([synthCard('s0001'), synthCard('s0002')])
+    const backend = new FakeSessionBackend(() =>
+      fakeResult({
+        json: { focus: 2, evidence_request: 'structure' },
+        tool_calls: [
+          { name: 'read_segment', arguments: { segment_id: 's0001', kind: 'structure' } },
+          {
+            name: 'label_segment',
+            arguments: {
+              segment_id: 's0002',
+              label: 'key_decision',
+              confidence: 0.9,
+              keep_bits: ['key_decision_flag'],
+            },
+          },
+        ],
+      }),
+    )
+    const out = await cutBrain({
+      segment_ids: ['s0001', 's0002'],
+      view,
+      raw,
+      skeleton: view.skeleton,
+      intent: intent(),
+      skill_path: skillPath,
+      backend,
+    })
+    assert.ok(out.metrics.single_slot_violations >= 1 || out.metrics.evidence_card_violations >= 1)
+    const sneaky = out.decisions.find((d) => d.segment_id === 's0002')
+    if (sneaky !== undefined) {
+      assert.notEqual(sneaky.label, 'key_decision')
+    }
+  })
 })

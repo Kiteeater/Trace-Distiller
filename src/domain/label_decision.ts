@@ -18,3 +18,46 @@ export interface LabelDecision {
 export function isResolvedByRules(d: LabelDecision): boolean {
   return d.source.kind === 'rule'
 }
+
+export const RULED_OVERWRITE_REFUSED_MESSAGE =
+  'RULED_OVERWRITE_REFUSED: Hole B must not overwrite rule-adopted labels (ADR-0010/0015; isResolvedByRules).'
+
+export interface MergeAdoptedWithBrainResult {
+  decisions: LabelDecision[]
+  rejected_overwrites: string[]
+}
+
+/**
+ * Merge L1 adopted labels with Hole B decisions.
+ * Rule-resolved ids in `adopted` are never overwritten; conflicts are listed in `rejected_overwrites`.
+ */
+export function mergeAdoptedWithBrain(
+  adopted: readonly LabelDecision[],
+  brainDecisions: readonly LabelDecision[],
+): MergeAdoptedWithBrainResult {
+  const merged = new Map<string, LabelDecision>()
+  for (const d of adopted) merged.set(d.segment_id, d)
+
+  const rejected_overwrites: string[] = []
+  for (const d of brainDecisions) {
+    const existing = merged.get(d.segment_id)
+    if (existing !== undefined && isResolvedByRules(existing)) {
+      if (!rejected_overwrites.includes(d.segment_id)) rejected_overwrites.push(d.segment_id)
+      continue
+    }
+    merged.set(d.segment_id, d)
+  }
+  return { decisions: [...merged.values()], rejected_overwrites }
+}
+
+/** Always-on: silent Hole B overwrite of ruled ids is a hard invariant failure. */
+export function assertNoRuledOverwrite(result: MergeAdoptedWithBrainResult): void {
+  if (result.rejected_overwrites.length === 0) return
+  throw new Error(
+    `${RULED_OVERWRITE_REFUSED_MESSAGE} ids=${result.rejected_overwrites.join(',')}`,
+  )
+}
+
+export function isRuledOverwriteError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('RULED_OVERWRITE_REFUSED')
+}

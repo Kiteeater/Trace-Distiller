@@ -15,7 +15,14 @@ import { L4_REPLAY_CODING_TOOLS, resolvePiToolRegistration } from './hole_tools.
 import type { AgentRole } from '../../enums/agent_role.ts'
 import { LABELS, type Label } from '../../enums/label.ts'
 import { type TokenUsage } from './skeleton_pass.ts'
-import { formatMaskedForPrompt, maskToolResult } from './tool_mask.ts'
+import {
+  formatMaskedForPrompt,
+  isMaskedToolSummary,
+  looksLikeRawToolPayload,
+  maskToolResult,
+  parseJsonIfStructured,
+  TOOL_MASK_DEFAULT_MAX_CHARS,
+} from './tool_mask.ts'
 
 /** 按 AgentRole 选模型档。模型名本身不进 constant。 */
 export const MODEL_ENV_BY_ROLE: Record<AgentRole, string> = {
@@ -335,9 +342,20 @@ export function composeSessionPrompt(input: SessionPromptInput): string {
   return chunks.join('\n\n')
 }
 
-/** Mask oversized or structured tool-like blobs before they re-enter a session prompt. */
+/**
+ * Mask tool-like blobs before they re-enter a session prompt (ADR-0010/0012).
+ * ACK / short human status / already-masked summaries pass through.
+ * Raw tool JSON (even ≤480 chars) is forced through maskToolResult.
+ */
 export function maskPromptMessageContent(content: string): string {
-  if (content.length <= 480) return content
+  const trimmed = content.trim()
+  if (/^ACK\b/.test(trimmed)) return content
+  if (isMaskedToolSummary(trimmed)) return content
+  if (looksLikeRawToolPayload(content)) {
+    const parsed = parseJsonIfStructured(content)
+    return formatMaskedForPrompt(maskToolResult(parsed ?? content))
+  }
+  if (content.length <= TOOL_MASK_DEFAULT_MAX_CHARS) return content
   return formatMaskedForPrompt(maskToolResult(content))
 }
 
