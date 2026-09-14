@@ -4,14 +4,23 @@
  */
 export {
   ackHoleTool,
+  defaultAfterDispatch,
+  defaultBeforeDispatch,
   executeHoleTool,
+  getRegistryHooks,
   isHoleToolName,
+  resetRegistryHooks,
+  setRegistryHooks,
+  type AfterDispatchHook,
+  type BeforeDispatchHook,
   type HoleToolAck,
   type HoleToolDispatchContext,
   type HoleToolDispatchErr,
   type HoleToolDispatchOk,
   type HoleToolDispatchResult,
+  type HoleToolHookContext,
   type HoleToolName,
+  type RegistryHooks,
 } from './registry.ts'
 export {
   L4_REPLAY_CODING_TOOLS,
