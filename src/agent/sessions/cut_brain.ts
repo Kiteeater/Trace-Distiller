@@ -1,7 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { CUT_BRAIN_TOOL_NAMES } from '../extension.ts'
+import { loadSkillText, skillSourceName } from '../skills/load.ts'
 import { executeHoleTool } from '../tools/registry.ts'
 import { DEFAULT_CUT_PROFILE } from '../../constant/compression.ts'
 import {
@@ -100,7 +98,7 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
     }
   }
 
-  loadSkillText(input)
+  const skill_text = loadSkillText(input)
   const skill = skillSourceName(input.skill_path)
   const unresolved0 = input.segment_ids.length
   const budget = roundBudget(unresolved0, input.max_rounds)
@@ -176,6 +174,7 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
               : ['Optional: call apply_rules_hint once to endorse deterministic L1 rule labels.']),
             TRACE_DATA_NOTICE,
           ].join(' '),
+          skill_text,
           messages,
           text: composeSingleSlotText({
             intent: input.intent,
@@ -407,32 +406,6 @@ function applyRulesHintCall(
     return { rules: ctx.rulesCache }
   }
   return { rules: applyRules({ view: ctx.view, raw: ctx.raw }) }
-}
-
-function loadSkillText(input: CutBrainInput): string {
-  if (input.skill_text !== undefined && input.skill_text.length > 0) return input.skill_text
-  const base = input.skill_path.split(/[\\/]/).pop() ?? input.skill_path
-  const here = dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    input.skill_path,
-    join(process.cwd(), input.skill_path),
-    join(process.cwd(), 'src', input.skill_path),
-    join(here, '..', 'skills', base),
-  ]
-  for (const path of candidates) {
-    try {
-      const text = readFileSync(path, 'utf8').trim()
-      if (text.length > 0) return text
-    } catch {
-      continue
-    }
-  }
-  throw new Error(`cutBrain: cannot load skill text from ${input.skill_path}`)
-}
-
-function skillSourceName(skill_path: string): string {
-  const base = skill_path.split(/[\\/]/).pop() ?? skill_path
-  return base.replace(/\.md$/i, '')
 }
 
 /** Test helper: expose prompt shape without running a session. */

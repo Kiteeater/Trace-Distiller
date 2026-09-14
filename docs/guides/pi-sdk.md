@@ -46,7 +46,7 @@
 | 自定义消息序列（骨架注入 system 或前置消息） | **pi**（待 spike） | 洞 B 每窗要带着骨架 context |
 | 结构化 / JSON 模式输出 | **pi**（待 spike） | 优先走 SDK；失败则 Fail-Closed，不在洞里猜标签 |
 | extension 工具挂载 | **pi** 提供挂载点；**我们**定义工具 | 蒸馏洞三工具已拍板闭集（[tools.md](./tools.md)）；handler 纯函数，本 PR 不挂 pi |
-| Skills / Markdown 注入 | **pi 或自读文件**（待 spike） | 策略内容是我们的 `agent/skills/` |
+| Skills / Markdown 注入 | **自读** `src/agent/skills/load.ts` | 策略内容是我们的 `agent/skills/`；`noSkills: true`，不走 pi Skills |
 | 流水线编排、切多少段、何时开洞、重试 | **Distiller** | orchestrator，纯 TS；**不**交给 pi agent loop |
 | Action Unit 切段 / 规则打标 / 执行凭证 | **Distiller** | `pipeline/*` |
 | SQLite / HTML 报告 / CutProfile / CLI / live 订阅 | **Distiller** | `data/`、`report/`、`service/`；sessions 只返回 `usage`，不写库 |
@@ -147,7 +147,7 @@ spike 用假 provider 或便宜档即可；要留下「三项打勾」的记录�
 
 1. **P0 spike 三项已通过（假后端保证；真 key 可选跑）。** 洞 A/B 正式打标仍 OPEN。
 2. 骨架注入本轮挂在前置文本（`skill_text` / `skeleton_text`），不是全量 RawTrace。system vs 独立消息可在打标 PR 再收。
-3. pi Skills vs 自读 `skills/*.md`：策略文件已定，加载机制未定。
+3. **已定**：自读 `skills/*.md` via `src/agent/skills/load.ts`；不是 pi Skills（`noSkills: true`）。
 4. 一窗一会话已拍板；成本未测，但不改成复用。
 5. `read_segment` 注册成 pi tool 还是 sessions 侧 RPC：handler 纯函数已落地，挂载点等 spike。
 6. 模型名只进 env（上表三变量），不进 constant。

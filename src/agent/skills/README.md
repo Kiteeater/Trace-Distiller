@@ -1,6 +1,6 @@
 # agent/skills
 
-分场景裁剪策略的 Markdown 目录。洞 B 按洞 A 给出的 `scenario` 查 `SKILL_ROUTE` 选用文件；本目录**不含** TypeScript，也不是编排脚本。
+分场景裁剪策略的 Markdown 目录。洞 B 按洞 A 给出的 `scenario` 查 `SKILL_ROUTE` 选用文件。`load.ts` 是本目录**唯一** TypeScript（确定性读盘）；模型不选文件。不是编排脚本，也不走 pi ResourceLoader / Skills 发现。
 
 场景名单已拍板：`debug` / `implement` / `refactor` / `test_fix` / `investigate`。查不到回退 `implement`（见 `src/constant/skill_route.ts`）。
 

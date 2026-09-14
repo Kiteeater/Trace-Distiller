@@ -17,6 +17,7 @@ describe('agent/skills', () => {
       'debug.md',
       'implement.md',
       'investigate.md',
+      'load.ts',
       'refactor.md',
       'test_fix.md',
     ])
