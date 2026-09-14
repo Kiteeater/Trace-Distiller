@@ -107,6 +107,78 @@ export function formatMaskedForPrompt(masked: MaskedToolResult): string {
   return masked.summary
 }
 
+export const ACK_OR_MASKED_REQUIRED_MESSAGE =
+  'ACK_OR_MASKED_REQUIRED: tool results must be ACK + card_id / maskToolResult summary (ADR-0010/0012); raw tool bodies are forbidden in agent messages.'
+
+const MASKED_TOOL_SUMMARY_PREFIXES = [
+  'read_segment ',
+  'label_segment ',
+  'check_continuity ',
+  'keep_segment ',
+  'apply_rules_hint ',
+] as const
+
+/** formatMaskedForPrompt / known-tool summary shape (not a raw JSON body). */
+export function isMaskedToolSummary(content: string): boolean {
+  const trimmed = content.trim()
+  return MASKED_TOOL_SUMMARY_PREFIXES.some((prefix) => trimmed.startsWith(prefix))
+}
+
+export function looksLikeToolResultValue(raw: unknown): boolean {
+  if (isReadSegmentShape(raw)) return true
+  if (isLabelSegmentShape(raw)) return true
+  if (isContinuityShape(raw)) return true
+  if (isKeepSegmentShape(raw)) return true
+  if (isApplyRulesHintShape(raw)) return true
+  const rec = asRecord(raw)
+  if (rec === undefined) return false
+  if (extractContentText(rec) !== undefined) return true
+  if (typeof rec.segment_id === 'string' && typeof rec.text === 'string') return true
+  if (typeof rec.card_id === 'string' && typeof rec.text === 'string') return true
+  return false
+}
+
+/**
+ * True when `content` looks like an unmasked tool payload / full segment body,
+ * including short JSON (≤480) that would previously skip the length-only gate.
+ */
+export function looksLikeRawToolPayload(content: string): boolean {
+  const trimmed = content.trim()
+  if (trimmed.length === 0) return false
+  if (/^ACK\b/.test(trimmed)) return false
+  if (isMaskedToolSummary(trimmed)) return false
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown
+      if (looksLikeToolResultValue(parsed)) return true
+      if (Array.isArray(parsed) && parsed.some((item) => looksLikeToolResultValue(item))) return true
+    } catch {
+      if (/"segment_id"\s*:/.test(trimmed) && /"(text|label|unresolved_ids|left_id)"\s*:/.test(trimmed)) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+export function parseJsonIfStructured(content: string): unknown | undefined {
+  const trimmed = content.trim()
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return undefined
+  try {
+    return JSON.parse(trimmed) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+/** Throws unless content is ACK-prefixed or an already-masked tool summary. */
+export function assertAckOrMaskedToolMessage(content: string): void {
+  const trimmed = content.trim()
+  if (/^ACK\b/.test(trimmed)) return
+  if (isMaskedToolSummary(trimmed)) return
+  throw new Error(ACK_OR_MASKED_REQUIRED_MESSAGE)
+}
+
 function maskReadSegment(raw: unknown, maxChars: number, raw_byte_len: number): MaskedToolResult {
   const rec = asRecord(raw) ?? {}
   const segment_id = typeof rec.segment_id === 'string' ? rec.segment_id : undefined

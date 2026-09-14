@@ -48,6 +48,7 @@ import {
   type SessionPromptResult,
   type SessionToolCall,
 } from './open_session.ts'
+import { assertAckOrMaskedToolMessage } from './tool_mask.ts'
 
 export interface CutBrainInput {
   /** Open segment ids the agent may label/keep (orchestrator: unresolved after rules). */
@@ -150,8 +151,11 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
       pendingEvidence = undefined
 
       const discloseLeft = Math.max(0, discloseCap() - (discloseCount.get(focus.card.id) ?? 0))
-      const messages: SessionMessage[] =
-        lastAck !== undefined ? [{ role: 'user', content: lastAck }] : []
+      const messages: SessionMessage[] = []
+      if (lastAck !== undefined) {
+        assertAckOrMaskedToolMessage(lastAck)
+        messages.push({ role: 'user', content: lastAck })
+      }
 
       let result: SessionPromptResult
       try {

@@ -307,6 +307,60 @@ describe('cut-brain harness predicates', () => {
     }
   })
 
+  it('parseHoleBTurn rejects same-turn multi-focus + disclose', () => {
+    const mixed = parseHoleBTurn(
+      {
+        json: { focus: 2, evidence_request: 'structure' },
+        tool_calls: [
+          { name: 'read_segment', arguments: { segment_id: 's0001', kind: 'structure' } },
+          {
+            name: 'label_segment',
+            arguments: {
+              segment_id: 's0002',
+              label: 'key_decision',
+              confidence: 0.9,
+              keep_bits: ['key_decision_flag'],
+            },
+          },
+        ],
+      },
+      's0001',
+    )
+    assert.equal(mixed.ok, false)
+    if (!mixed.ok) {
+      assert.ok(mixed.single_slot_violation || mixed.evidence_card_violation)
+    }
+
+    const twoIds = parseHoleBTurn(
+      {
+        json: null,
+        tool_calls: [
+          { name: 'read_segment', arguments: { segment_id: 's0001', kind: 'error' } },
+          {
+            name: 'label_segment',
+            arguments: { segment_id: 's0002', label: 'key_decision', confidence: 0.9 },
+          },
+        ],
+      },
+      's0001',
+    )
+    assert.equal(twoIds.ok, false)
+    if (!twoIds.ok) {
+      assert.equal(twoIds.single_slot_violation, true)
+    }
+  })
+
+  it('illegal keep: non-skel → collapse_uncertain; skel → skeleton_protect keep', () => {
+    const skeleton = new Set(['s-sk'])
+    const nonSkel = resolveUncertainOrProtect('s-other', 0.9, skeleton)
+    assert.equal(nonSkel.label, 'collapse_uncertain')
+    assert.equal(nonSkel.source.name, COLLAPSE_UNCERTAIN_RULE)
+    const skel = resolveUncertainOrProtect('s-sk', 0.2, skeleton)
+    assert.equal(skel.label, 'key_decision')
+    assert.equal(skel.source.name, SKELETON_PROTECT_RULE)
+    assert.notEqual(skel.label, 'collapse_uncertain')
+  })
+
   it('S1 prompt is single-slot and does not dump unresolved id walls', () => {
     const focusCard = card('s0002', { outcome: 'error' })
     const intent: IntentHypothesis = { text: 'fix', scenario: 'test_fix', version: 0 }

@@ -340,6 +340,15 @@ export function parseHoleBTurn(result: HoleBRawTurn, focusId: string): ParsedHol
     }
   }
 
+  if (single_slot_violation) {
+    return {
+      ok: false,
+      error: 'same-turn multi-id or non-focus id',
+      single_slot_violation: true,
+      evidence_card_violation: false,
+    }
+  }
+
   const jsonEvidence = json !== undefined ? json.evidence_request : undefined
   const wantsEvidenceFromJson =
     jsonEvidence !== undefined && jsonEvidence !== null && jsonEvidence !== ''

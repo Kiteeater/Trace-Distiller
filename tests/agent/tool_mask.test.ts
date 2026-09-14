@@ -1,12 +1,23 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
+  ACK_OR_MASKED_REQUIRED_MESSAGE,
+  assertAckOrMaskedToolMessage,
   formatMaskedForPrompt,
+  looksLikeRawToolPayload,
   maskToolResult,
   TOOL_MASK_DEFAULT_MAX_CHARS,
 } from '../../src/agent/sessions/tool_mask.ts'
-import { maskPromptMessageContent } from '../../src/agent/sessions/open_session.ts'
+import {
+  composeSessionPrompt,
+  maskPromptMessageContent,
+} from '../../src/agent/sessions/open_session.ts'
 import { buildHoleCustomTools } from '../../src/agent/sessions/hole_tools.ts'
+
+const here = dirname(fileURLToPath(import.meta.url))
 
 describe('tool_mask', () => {
   it('truncates long strings and marks truncated', () => {
@@ -70,6 +81,54 @@ describe('tool_mask', () => {
 
   it('maskPromptMessageContent leaves short content alone', () => {
     assert.equal(maskPromptMessageContent('short'), 'short')
+  })
+
+  it('maskPromptMessageContent masks short raw read_segment JSON (not length-only)', () => {
+    const uniqueTail = 'UNIQUE_TAIL_MUST_NOT_LEAK'
+    const text = `${'x'.repeat(130)}${uniqueTail}`
+    const raw = JSON.stringify({
+      segment_id: 's2',
+      focus: 'full',
+      text,
+    })
+    assert.ok(raw.length <= TOOL_MASK_DEFAULT_MAX_CHARS)
+    assert.equal(looksLikeRawToolPayload(raw), true)
+    const masked = maskPromptMessageContent(raw)
+    assert.match(masked, /read_segment/)
+    assert.doesNotMatch(masked, new RegExp(uniqueTail))
+    assert.notEqual(masked, raw)
+    const composed = composeSessionPrompt({
+      text: 'next turn',
+      messages: [{ role: 'user', content: raw }],
+    })
+    assert.doesNotMatch(composed, new RegExp(uniqueTail))
+    assert.match(composed, /read_segment/)
+  })
+
+  it('assertAckOrMaskedToolMessage accepts ACK / masked summary; rejects raw tool body', () => {
+    assert.doesNotThrow(() => assertAckOrMaskedToolMessage('ACK card_id=s2:s0001:structure'))
+    assert.doesNotThrow(() => assertAckOrMaskedToolMessage('ACK apply_rules_hint resolved=2 unresolved=1'))
+    assert.doesNotThrow(() =>
+      assertAckOrMaskedToolMessage('read_segment s0009 text_chars=12 head="LINE"'),
+    )
+    const raw = JSON.stringify({
+      segment_id: 's2',
+      text: 'full body',
+      focus: 'full',
+    })
+    assert.throws(
+      () => assertAckOrMaskedToolMessage(raw),
+      (err: unknown) =>
+        err instanceof Error && err.message === ACK_OR_MASKED_REQUIRED_MESSAGE,
+    )
+    assert.throws(() => assertAckOrMaskedToolMessage('short human leak of a tool body {not json}'))
+    const cutSrc = readFileSync(join(here, '../../src/agent/sessions/cut_brain.ts'), 'utf8')
+    assert.match(cutSrc, /assertAckOrMaskedToolMessage/)
+    const openSrc = readFileSync(join(here, '../../src/agent/sessions/open_session.ts'), 'utf8')
+    assert.doesNotMatch(
+      openSrc,
+      /export function maskPromptMessageContent\(content: string\): string \{\s*if \(content\.length <= 480\) return content/,
+    )
   })
 
   it('hole tool execute returns masked ack (no full payload)', async () => {

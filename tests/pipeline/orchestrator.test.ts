@@ -20,13 +20,21 @@ import { COLLAPSE_UNCERTAIN_RULE, SKELETON_PROTECT_RULE } from '../../src/domain
 import { FAIL_CLOSED_KEEP_RULE } from '../../src/domain/cut_decision.ts'
 import {
   assembleRepairingSpan,
+  assertAgentLedMode,
   distill,
   fillInKeepWarrant,
   NO_LLM_REMOVED_MESSAGE,
   AGENT_PATH_REQUIRED_MESSAGE,
   resolveDistillMode,
   runBlindReviewFillIn,
+  type DistillMode,
 } from '../../src/pipeline/orchestrator.ts'
+import {
+  assertNoRuledOverwrite,
+  mergeAdoptedWithBrain,
+  RULED_OVERWRITE_REFUSED_MESSAGE,
+  type LabelDecision,
+} from '../../src/domain/label_decision.ts'
 import { SPAN_MAX_GAP_SEGMENTS } from '../../src/constant/window.ts'
 import type { CutWarrant, CutWarrantEntry } from '../../src/types/cut_warrant.ts'
 import type { SegmentCard } from '../../src/types/segment.ts'
@@ -62,6 +70,11 @@ describe('orchestrator agent path (ADR-0010)', () => {
     assert.match(src, /from '\.\/rules/)
     assert.match(src, /applyRules/)
     assert.match(src, /filterRulesForSkeletonProtect/)
+    assert.match(src, /mergeAdoptedWithBrain/)
+    assert.match(src, /assertNoRuledOverwrite/)
+    assert.match(src, /assertAgentLedMode/)
+    assert.match(src, /export type DistillMode = 'with_llm'/)
+    assert.doesNotMatch(src, /for \(const d of brain\.decisions\) merged\.set/)
     assert.doesNotMatch(src, /l4_qa/)
     assert.doesNotMatch(src, /l4_replay/)
     assert.doesNotMatch(src, /l4_review/)
@@ -136,6 +149,84 @@ describe('orchestrator agent path (ADR-0010)', () => {
         err instanceof Error && err.message === AGENT_PATH_REQUIRED_MESSAGE,
     )
     assert.equal(NO_LLM_REMOVED_MESSAGE.includes('ADR-0010'), true)
+  })
+
+  it('mergeAdoptedWithBrain keeps rule labels; throws on Hole B overwrite of ruled ids', () => {
+    const adopted: LabelDecision[] = [
+      {
+        segment_id: 'sX',
+        label: 'routine',
+        source: { kind: 'rule', name: 'repeat_read' },
+        confidence: 1,
+        rule_name: 'repeat_read',
+      },
+    ]
+    const brainDecisions: LabelDecision[] = [
+      {
+        segment_id: 'sX',
+        label: 'key_decision',
+        source: { kind: 'llm', name: 'test_fix' },
+        confidence: 0.95,
+      },
+      {
+        segment_id: 'sY',
+        label: 'dead_end',
+        source: { kind: 'llm', name: 'test_fix' },
+        confidence: 0.7,
+      },
+    ]
+    const conflict = mergeAdoptedWithBrain(adopted, brainDecisions)
+    const sx = conflict.decisions.find((d) => d.segment_id === 'sX')
+    assert.equal(sx?.source.kind, 'rule')
+    assert.equal(sx?.label, 'routine')
+    assert.deepEqual(conflict.rejected_overwrites, ['sX'])
+    assert.throws(
+      () => assertNoRuledOverwrite(conflict),
+      (err: unknown) =>
+        err instanceof Error &&
+        err.message.startsWith('RULED_OVERWRITE_REFUSED') &&
+        err.message.includes('sX'),
+    )
+    assert.match(RULED_OVERWRITE_REFUSED_MESSAGE, /Hole B must not overwrite/)
+
+    const happy = mergeAdoptedWithBrain(adopted, [
+      {
+        segment_id: 'sY',
+        label: 'key_decision',
+        source: { kind: 'llm', name: 'test_fix' },
+        confidence: 0.8,
+      },
+    ])
+    assert.deepEqual(happy.rejected_overwrites, [])
+    assert.doesNotThrow(() => assertNoRuledOverwrite(happy))
+    assert.equal(happy.decisions.length, 2)
+    assert.equal(happy.decisions.find((d) => d.segment_id === 'sX')?.source.kind, 'rule')
+    assert.equal(happy.decisions.find((d) => d.segment_id === 'sY')?.source.kind, 'llm')
+  })
+
+  it('distill rejects non-with_llm; no silent rules-only resurrection', async () => {
+    const raw = parse(load('no_llm_conservative.jsonl'))
+    assert.throws(
+      () => assertAgentLedMode('no_llm'),
+      (err: unknown) => err instanceof Error && err.message === NO_LLM_REMOVED_MESSAGE,
+    )
+    assert.throws(
+      () => assertAgentLedMode('rules_only'),
+      (err: unknown) => err instanceof Error && err.message === NO_LLM_REMOVED_MESSAGE,
+    )
+    await assert.rejects(
+      () =>
+        distill({
+          raw,
+          profile: DEFAULT_CUT_PROFILE,
+          mode: 'no_llm' as unknown as DistillMode,
+        }),
+      (err: unknown) => err instanceof Error && err.message === NO_LLM_REMOVED_MESSAGE,
+    )
+    const src = readFileSync(pipelineSrc, 'utf8')
+    assert.match(src, /export type DistillMode = 'with_llm'/)
+    assert.doesNotMatch(src, /mode === 'no_llm'/)
+    assert.doesNotMatch(src, /export type DistillMode =[\s\S]*rules_only/)
   })
 })
 

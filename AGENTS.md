@@ -6,6 +6,8 @@
 
 裁剪决策权在 **agent session（editor-in-chief）**：理解意图并决定 how to cut。Tools 只执行操作；工具结果经 **tool mask** 回灌下一 turn（全量可进 warrant/training store）。Admission / span / warrant assemble / I/O 仍是确定性 TypeScript。pi 只经 `src/agent/sessions/`（可托管 cut-brain 会话，不是 pi-coding 产品循环）。不要引入 LangChain / CrewAI。`--no-llm` 已删除。L4 不计蒸馏成本。
 
+- **Architecture enforcement**：六条不变量由代码+测试锁死（不是新框架）：(1) `mergeAdoptedWithBrain` + `assertNoRuledOverwrite` — 洞 B 不得覆盖 `isResolvedByRules` 的规则已定标；(2) `assertAckOrMaskedToolMessage` / 非长度-only 的 `maskPromptMessageContent` — 工具回灌仅 ACK + card_id / `maskToolResult`；(3) cut-brain `focus=1`，同轮 multi-focus+disclose 计 violation；(4) 骨架段 `skeleton_protect`，规则禁 drop/collapse；(5) 无 `--no-llm` / 无静默 rules-only（`assertAgentLedMode`）；(6) 破坏上述不变量的测试必须红。禁止 LangChain / CrewAI。
+
 ## 命令
 
 - 装依赖：`bun install`（唯一锁文件 `bun.lock`）

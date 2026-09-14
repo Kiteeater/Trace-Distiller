@@ -61,6 +61,10 @@ interface SpanViolation {
 /** 规则已定标的段不再进洞 B */
 function isResolvedByRules(d: LabelDecision): boolean
 
+/** 洞 B 不得覆盖规则已定标；冲突记入 rejected_overwrites，assert 抛 RULED_OVERWRITE_REFUSED */
+function mergeAdoptedWithBrain(adopted, brain): { decisions: LabelDecision[]; rejected_overwrites: string[] }
+function assertNoRuledOverwrite(merged): void
+
 /** 窗输出解析失败 → 该段 keep，标签不做死胡同 */
 function failClosedKeep(segment_id: string): CutDecision
 

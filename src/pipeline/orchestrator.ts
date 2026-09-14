@@ -17,7 +17,12 @@ import {
 import { REVIEW_MAX_ROUNDS } from '../constant/window.ts'
 import { FAIL_CLOSED_KEEP_RULE } from '../domain/cut_decision.ts'
 import { isSpanFailure } from '../domain/span_violation.ts'
-import type { LabelDecision } from '../domain/label_decision.ts'
+import {
+  assertNoRuledOverwrite,
+  isRuledOverwriteError,
+  mergeAdoptedWithBrain,
+  type LabelDecision,
+} from '../domain/label_decision.ts'
 import { compressionRatio } from '../eval/metrics.ts'
 import { reviewAgainstPlan } from '../eval/review_fill.ts'
 import type { AgentView, Skeleton } from '../types/agent_view.ts'
@@ -105,6 +110,13 @@ export function resolveDistillMode(input: {
   throw new Error(AGENT_PATH_REQUIRED_MESSAGE)
 }
 
+/** Agent-led only. Any non-`with_llm` mode (including resurrected `--no-llm`) throws. */
+export function assertAgentLedMode(mode: string): asserts mode is DistillMode {
+  if (mode !== 'with_llm') {
+    throw new Error(NO_LLM_REMOVED_MESSAGE)
+  }
+}
+
 /**
  * Agent-led 编排（ADR-0010 + ADR-0015）：segment → 洞 A → 高精规则先决议并采纳 →
  * cut-brain 只打未决（可调 apply_rules_hint）→ writeWarrant → assemble。
@@ -114,9 +126,7 @@ export function resolveDistillMode(input: {
  */
 export async function distill(input: DistillInput): Promise<DistillResult> {
   const { raw, profile, mode } = input
-  if (mode !== 'with_llm') {
-    throw new Error(NO_LLM_REMOVED_MESSAGE)
-  }
+  assertAgentLedMode(mode)
   const backend = input.opts?.sessionBackend
   const segmented = segment(raw)
 
@@ -186,10 +196,11 @@ async function runWithLlm(input: {
         profile,
         ...(backend !== undefined ? { backend } : {}),
       })
-      const merged = new Map(adopted.map((d) => [d.segment_id, d]))
-      for (const d of brain.decisions) merged.set(d.segment_id, d)
+      const merged = mergeAdoptedWithBrain(adopted, brain.decisions)
+      assertNoRuledOverwrite(merged)
+      const byId = new Map(merged.decisions.map((d) => [d.segment_id, d]))
       decisions = view.segments.flatMap((s) => {
-        const d = merged.get(s.id)
+        const d = byId.get(s.id)
         return d === undefined ? [] : [d]
       })
       stillUnresolved = brain.still_unresolved
@@ -197,6 +208,7 @@ async function runWithLlm(input: {
       holeTokens += brain.usage.input_tokens + brain.usage.output_tokens
       if (brain.notes !== undefined) holeNotes.push(...brain.notes)
     } catch (error) {
+      if (isRuledOverwriteError(error)) throw error
       const message = error instanceof Error ? error.message : String(error)
       const note = `cut_brain_failed:${message}`
       holeNotes.push(note)
