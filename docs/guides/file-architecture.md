@@ -50,7 +50,8 @@ trace-distiller/
 │  │  ├─ segment.ts
 │  │  ├─ cut_plan.ts
 │  │  ├─ cut_warrant.ts
-│  │  └─ cut_profile.ts
+│  │  ├─ cut_profile.ts
+│  │  └─ thin_session_event.ts  # live 可选薄事件（role/round/tool name/usage；无工具原文）
 │  ├─ enums/                    # 每 enum 一文件，不要塞回 enums.ts
 │  │  ├─ label.ts
 │  │  ├─ scenario.ts

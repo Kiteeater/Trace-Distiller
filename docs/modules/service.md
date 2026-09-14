@@ -71,7 +71,7 @@ function writeReport(model: ReportModel, outPath: string): void
 - import pi。
 - 手写 SQL。
 - 在 cli.ts 里复制一份规则。
-- 启动 HTTP listen / TCP 端口。Unix domain socket 只走 `live_socket.ts`，默认关闭。
+- 启动 HTTP listen / TCP 端口。Unix domain socket 只走 `live_socket.ts`，默认关闭。`--live-dump` / `--live-socket` 时 CLI 把 session thin-event sink 接到 `live.recordThinSessionEvent`（sessions 不 import service）。
 
 ---
 

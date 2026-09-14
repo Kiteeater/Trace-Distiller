@@ -1,9 +1,10 @@
 /** 页头硬文案：live = Distiller 自己的裁剪，不是对方 coding agent。 */
 export const LIVE_PAGE_NOTICE = 'Distiller 裁剪过程，不是对方 agent'
 
-/** 与 `dumpAllJobs()` 同形；report 不 import service。 */
+/** 与 `dumpAllJobs()` 同形；report 不 import service。页忽略 thin events，不回显工具原文。 */
 export interface LivePageSnapshot {
   list_jobs: unknown[]
+  thin_session_events?: unknown[]
   jobs: Array<{
     list_jobs: unknown
     attach_job: { job_id?: string; trace_id?: string; status?: string }

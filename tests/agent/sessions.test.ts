@@ -1158,6 +1158,7 @@ describe('cooperative abort', () => {
         await inner.abort()
       },
       dispose: () => inner.dispose(),
+      subscribeThinEvents: (listener) => inner.subscribeThinEvents(listener),
     })
     await wrapped.abort()
     assert.equal(abortCalls, 1)
@@ -1176,6 +1177,7 @@ describe('cooperative abort', () => {
         throw new Error('already idle')
       },
       dispose: () => inner.dispose(),
+      subscribeThinEvents: () => () => {},
     })
     await assert.rejects(() => failing.abort(), /already idle/)
     assert.equal(failCalls, 1)
