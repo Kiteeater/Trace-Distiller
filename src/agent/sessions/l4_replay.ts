@@ -3,7 +3,9 @@ import type { PlaybackCut } from '../../types/cut_plan.ts'
 import { TRACE_DATA_NOTICE, type TokenUsage } from './skeleton_pass.ts'
 import {
   L4_REPLAY_JSON_KIND,
+  finalizePiSession,
   formatMarkedJson,
+  listenSessionAbort,
   openReplaySession,
   parseStructuredJson,
   playbackIndexForL4,
@@ -11,6 +13,7 @@ import {
   type SessionPromptInput,
   type SessionPromptResult,
 } from './open_session.ts'
+import { throwIfAborted } from '../../utils/timeout.ts'
 
 export { L4_REPLAY_JSON_KIND }
 export type { SessionBackend } from './open_session.ts'
@@ -27,6 +30,7 @@ export interface RunReplayInput {
   playback: PlaybackCut
   cwd?: string
   backend?: SessionBackend
+  signal?: AbortSignal
 }
 
 export interface RunReplayOutput {
@@ -46,8 +50,11 @@ export async function runReplay(input: RunReplayInput): Promise<RunReplayOutput>
   const session = openReplaySession({
     ...(input.backend !== undefined ? { backend: input.backend } : {}),
     ...(cwd !== undefined ? { cwd } : {}),
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
   })
+  const stopAbort = listenSessionAbort(session, input.signal)
   try {
+    throwIfAborted(input.signal)
     const prompt = composeReplayPrompt(input)
     const result = await session.prompt(prompt)
     try {
@@ -75,7 +82,8 @@ export async function runReplay(input: RunReplayInput): Promise<RunReplayOutput>
       }
     }
   } finally {
-    session.dispose()
+    stopAbort()
+    await finalizePiSession(session, input.signal)
   }
 }
 

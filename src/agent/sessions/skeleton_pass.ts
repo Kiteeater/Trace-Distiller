@@ -85,6 +85,7 @@ export interface SkeletonPassInput {
   max_tokens?: number
   round_sample_size?: number
   rng?: () => number
+  signal?: AbortSignal
 }
 
 export interface SkeletonPassOutput {
@@ -124,6 +125,7 @@ export async function skeletonPass(input: SkeletonPassInput): Promise<SkeletonPa
       ? { round_sample_size: input.round_sample_size }
       : {}),
     ...(input.rng !== undefined ? { rng: input.rng } : {}),
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
   })
   const out: SkeletonPassOutput = {
     intent: sparse.intent,

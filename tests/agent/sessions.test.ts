@@ -19,8 +19,10 @@ import {
   skeletonPass,
 } from '../../src/agent/sessions/skeleton_pass.ts'
 import { checkContinuityPair, labelWindow } from '../../src/agent/sessions/label_window.ts'
+import { sparseIntent } from '../../src/agent/sessions/sparse_intent.ts'
 import {
   FakeSessionBackend,
+  SESSION_DISPOSED_MESSAGE,
   composeSessionPrompt,
   resolveSessionTimeoutMs,
   applyCustomGateway,
@@ -29,9 +31,11 @@ import {
   readPiUsage,
   usageFromPiMessages,
   setSessionBackend,
+  wrapRetry,
   type CustomProviderRegisterConfig,
   type SessionPromptResult,
 } from '../../src/agent/sessions/open_session.ts'
+import { isAbortError } from '../../src/utils/timeout.ts'
 import { DEFAULT_CUT_PROFILE } from '../../src/constant/compression.ts'
 import {
   CARD_INDEX_CHARS_PER_SEGMENT_MAX,
@@ -1127,6 +1131,95 @@ describe('hole sessions', () => {
         assert.doesNotMatch(src, secret, path)
       }
     }
+  })
+})
+
+describe('cooperative abort', () => {
+  it('FakeSessionHandle.abort completes and subsequent prompt fails as disposed', async () => {
+    const fake = new FakeSessionBackend()
+    const handle = openSession({ role: 'l4_qa', backend: fake })
+    await handle.abort()
+    await assert.rejects(() => handle.prompt({ text: 'after abort' }), new RegExp(SESSION_DISPOSED_MESSAGE))
+  })
+
+  it('wrapRetry forwards abort without wrapping it in timeout/retry', async () => {
+    const fake = new FakeSessionBackend()
+    const inner = fake.open({ role: 'l4_qa', model: 'unspecified:l4_qa', tools: [] })
+    let abortCalls = 0
+    const wrapped = wrapRetry({
+      role: inner.role,
+      model: inner.model,
+      tools: inner.tools,
+      prompt: (input) => inner.prompt(input),
+      attach: () => inner.attach(),
+      activeToolNames: () => inner.activeToolNames(),
+      abort: async () => {
+        abortCalls += 1
+        await inner.abort()
+      },
+      dispose: () => inner.dispose(),
+    })
+    await wrapped.abort()
+    assert.equal(abortCalls, 1)
+    await assert.rejects(() => wrapped.prompt({ text: 'after abort' }), new RegExp(SESSION_DISPOSED_MESSAGE))
+
+    let failCalls = 0
+    const failing = wrapRetry({
+      role: inner.role,
+      model: inner.model,
+      tools: inner.tools,
+      prompt: (input) => inner.prompt(input),
+      attach: () => inner.attach(),
+      activeToolNames: () => inner.activeToolNames(),
+      abort: async () => {
+        failCalls += 1
+        throw new Error('already idle')
+      },
+      dispose: () => inner.dispose(),
+    })
+    await assert.rejects(() => failing.abort(), /already idle/)
+    assert.equal(failCalls, 1)
+  })
+
+  it('sparseIntent with AbortController aborts without hanging or leaking tool bodies', async () => {
+    const { raw, view } = holeFixture()
+    let started!: () => void
+    const startedAt = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const secret = 'TOOL_BODY_SECRET_MUST_NOT_LEAK'
+    const fake = new FakeSessionBackend(async () => {
+      started()
+      await new Promise(() => {})
+      return {
+        text: secret,
+        json: { secret },
+        tool_calls: [{ name: 'read_segment', arguments: { body: secret } }],
+        usage: { role: 'hole_a_skeleton', input_tokens: 1, output_tokens: 1 },
+      }
+    })
+    const controller = new AbortController()
+    const run = sparseIntent({
+      trace_id: raw.meta.trace_id,
+      raw,
+      view,
+      backend: fake,
+      signal: controller.signal,
+    })
+    await startedAt
+    const t0 = Date.now()
+    controller.abort()
+    let caught: unknown
+    try {
+      await run
+    } catch (err) {
+      caught = err
+    }
+    const elapsed = Date.now() - t0
+    assert.ok(isAbortError(caught), 'expected AbortError')
+    assert.ok(elapsed < 1000, `expected abort without hang, took ${elapsed}ms`)
+    const blob = caught instanceof Error ? `${caught.name}\n${caught.message}\n${caught.stack ?? ''}` : String(caught)
+    assert.equal(blob.includes(secret), false)
   })
 })
 

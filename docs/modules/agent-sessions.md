@@ -46,6 +46,8 @@ interface SessionFactoryOpts {
 function openSession(opts: SessionFactoryOpts): PiSessionHandle
 ```
 
+`PiSessionHandle.abort()` 协作取消当前等待并 dispose（Fail-Closed；不泄露工具原文）。`withTimeout` 可接 `AbortSignal`。
+
 ### 洞 A — skeletonPass
 
 ADR-0009：主过程只读头 1–2 turn + **验证点附近** turn（不是死板末尾），约 2k token，一次调用。输出意图假设 v0 + 场景分类 + 骨架 v0。

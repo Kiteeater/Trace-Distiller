@@ -5,7 +5,9 @@ import { TRACE_DATA_NOTICE, type TokenUsage } from './skeleton_pass.ts'
 import {
   L4_REVIEW_JSON_KIND,
   composeSessionPrompt,
+  finalizePiSession,
   formatMarkedJson,
+  listenSessionAbort,
   openReviewSession,
   parseStructuredJson,
   playbackIndexForL4,
@@ -13,6 +15,7 @@ import {
   type SessionPromptInput,
   type SessionPromptResult,
 } from './open_session.ts'
+import { throwIfAborted } from '../../utils/timeout.ts'
 
 export { L4_REVIEW_JSON_KIND }
 
@@ -22,6 +25,7 @@ export interface RunBlindReviewInput {
   intent: IntentHypothesis
   playback: PlaybackCut
   backend?: SessionBackend
+  signal?: AbortSignal
 }
 
 export interface ReviewAnswer {
@@ -43,14 +47,18 @@ export interface RunBlindReviewOutput {
 export async function runBlindReview(input: RunBlindReviewInput): Promise<RunBlindReviewOutput> {
   const session = openReviewSession({
     ...(input.backend !== undefined ? { backend: input.backend } : {}),
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
   })
+  const stopAbort = listenSessionAbort(session, input.signal)
   try {
+    throwIfAborted(input.signal)
     const prompt = composeReviewPrompt(input)
     assertBlindReviewPrompt(composeSessionPrompt(prompt))
     const result = await session.prompt(prompt)
     return interpretReviewResult(result, session.role)
   } finally {
-    session.dispose()
+    stopAbort()
+    await finalizePiSession(session, input.signal)
   }
 }
 

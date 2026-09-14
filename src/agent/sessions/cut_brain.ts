@@ -40,6 +40,8 @@ import {
   type FocusPick,
 } from './cut_brain_harness.ts'
 import {
+  finalizePiSession,
+  listenSessionAbort,
   openSession,
   type SessionBackend,
   type SessionMessage,
@@ -47,6 +49,7 @@ import {
   type SessionToolCall,
 } from './open_session.ts'
 import { assertAckOrMaskedToolMessage } from '../prompt/tool_mask.ts'
+import { rethrowIfAborted, throwIfAborted } from '../../utils/timeout.ts'
 
 export interface CutBrainInput {
   /** Open segment ids the agent may label/keep (orchestrator: unresolved after rules). */
@@ -64,6 +67,7 @@ export interface CutBrainInput {
   rules_already_applied?: boolean
   /** Profile for refusing rule drop/collapse on skeleton if apply_rules_hint is still called. */
   profile?: CutProfile
+  signal?: AbortSignal
 }
 
 export interface CutBrainOutput {
@@ -107,7 +111,9 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
     role: 'hole_b_label',
     tools: CUT_BRAIN_TOOL_NAMES,
     ...(input.backend !== undefined ? { backend: input.backend } : {}),
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
   })
+  const stopAbort = listenSessionAbort(session, input.signal)
 
   let view = input.view
   let rulesHintApplied = input.rules_already_applied === true
@@ -131,6 +137,7 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
 
   try {
     for (let round = 0; round < budget; round += 1) {
+      throwIfAborted(input.signal)
       const unresolved = input.segment_ids.filter((id) => !decisions.has(id))
       if (unresolved.length === 0) break
 
@@ -185,6 +192,7 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
           }),
         })
       } catch (error) {
+        rethrowIfAborted(input.signal, error)
         const message = error instanceof Error ? error.message : String(error)
         notes.push(`cut_brain_round_${String(round)}_failed:${message}`)
         hardFailed = true
@@ -304,7 +312,8 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
       lastAck = `ACK card_id=none segment_id=${parsed.segment_id} label=${parsed.label}`
     }
   } finally {
-    session.dispose()
+    stopAbort()
+    await finalizePiSession(session, input.signal)
   }
 
   const leftover = input.segment_ids.filter((id) => !decisions.has(id))

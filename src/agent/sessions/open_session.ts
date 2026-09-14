@@ -2,7 +2,13 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { estimateTokens } from '../../utils/tokens.ts'
-import { resolveTimeoutMs, withTimeout } from '../../utils/timeout.ts'
+import {
+  abortErrorFromSignal,
+  isAbortError,
+  resolveTimeoutMs,
+  throwIfAborted,
+  withTimeout,
+} from '../../utils/timeout.ts'
 import {
   EVIDENCE_CARD_KINDS,
   PI_FAILURE_RETRY,
@@ -123,6 +129,8 @@ export interface SessionFactoryOpts {
   tools?: readonly string[]
   /** L4 replay 工作目录（真仓库副本）。洞 A/B 忽略。 */
   cwd?: string
+  /** Cooperative abort for timed prompt/attach waits (wrapRetry → withTimeout). */
+  signal?: AbortSignal
 }
 
 export interface ResolvedSessionOpts {
@@ -132,6 +140,8 @@ export interface ResolvedSessionOpts {
   cwd?: string
 }
 
+export const SESSION_DISPOSED_MESSAGE = 'session already disposed'
+
 export interface PiSessionHandle {
   readonly role: AgentRole
   readonly model: string
@@ -140,6 +150,8 @@ export interface PiSessionHandle {
   /** 触发内核建会话。假后端立即完成。 */
   attach(): Promise<void>
   activeToolNames(): Promise<readonly string[]>
+  /** Cooperative abort: cancel in-flight wait, then dispose. Must not hang. */
+  abort(): Promise<void>
   dispose(): void
 }
 
@@ -602,14 +614,18 @@ export function isSpikeLabelJson(value: unknown): value is SpikeLabelJson {
   return typeof rec.confidence === 'number' && Number.isFinite(rec.confidence) && rec.confidence >= 0 && rec.confidence <= 1
 }
 
-export async function withPiRetry<T>(op: () => Promise<T>): Promise<T> {
+export async function withPiRetry<T>(op: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   const attempts = PI_FAILURE_RETRY + 1
   let last: unknown
   for (let i = 0; i < attempts; i++) {
+    throwIfAborted(signal)
     try {
       return await op()
     } catch (err) {
       last = err
+      if (isAbortError(err)) throw err
+      if (signal?.aborted) throw abortErrorFromSignal(signal)
+      if (err instanceof Error && err.message === SESSION_DISPOSED_MESSAGE) throw err
     }
   }
   throw last
@@ -1121,6 +1137,8 @@ class FakeSessionHandle implements PiSessionHandle {
   readonly tools: readonly string[]
   private readonly backend: FakeSessionBackend
   private readonly opts: ResolvedSessionOpts
+  private disposed = false
+  private readonly abortWaiters = new Set<(err: Error) => void>()
 
   constructor(backend: FakeSessionBackend, opts: ResolvedSessionOpts) {
     this.backend = backend
@@ -1130,19 +1148,64 @@ class FakeSessionHandle implements PiSessionHandle {
     this.tools = opts.tools
   }
 
-  async attach(): Promise<void> {}
+  async attach(): Promise<void> {
+    this.assertOpen()
+  }
 
   async activeToolNames(): Promise<readonly string[]> {
+    this.assertOpen()
     return this.tools
   }
 
   async prompt(input: SessionPromptInput): Promise<SessionPromptResult> {
+    this.assertOpen()
     const composed = composeSessionPrompt(input)
     this.backend.record(this.opts, input, composed)
-    return this.backend.reply(input, this.opts)
+    return this.raceAbort(Promise.resolve(this.backend.reply(input, this.opts)))
   }
 
-  dispose(): void {}
+  async abort(): Promise<void> {
+    this.markDisposed()
+  }
+
+  dispose(): void {
+    this.markDisposed()
+  }
+
+  private assertOpen(): void {
+    if (this.disposed) throw new Error(SESSION_DISPOSED_MESSAGE)
+  }
+
+  private markDisposed(): void {
+    if (this.disposed) return
+    this.disposed = true
+    const err = new Error(SESSION_DISPOSED_MESSAGE)
+    for (const reject of this.abortWaiters) reject(err)
+    this.abortWaiters.clear()
+  }
+
+  private raceAbort<T>(promise: Promise<T>): Promise<T> {
+    if (this.disposed) return Promise.reject(new Error(SESSION_DISPOSED_MESSAGE))
+    return new Promise<T>((resolve, reject) => {
+      let settled = false
+      const finish = (fn: () => void): void => {
+        if (settled) return
+        settled = true
+        this.abortWaiters.delete(onAbort)
+        fn()
+      }
+      const onAbort = (err: Error): void => finish(() => reject(err))
+      this.abortWaiters.add(onAbort)
+      promise.then(
+        (value) =>
+          finish(() => {
+            if (this.disposed) reject(new Error(SESSION_DISPOSED_MESSAGE))
+            else resolve(value)
+          }),
+        (err: unknown) => finish(() => reject(err)),
+      )
+    })
+  }
 }
 
 export class PiSessionBackend implements SessionBackend {
@@ -1215,6 +1278,20 @@ class PiSessionHandleImpl implements PiSessionHandle {
     }
   }
 
+  async abort(): Promise<void> {
+    if (this.disposed) return
+    try {
+      const session = this.session
+      if (session !== undefined && session.abort !== undefined) {
+        await session.abort()
+      }
+    } catch {
+      // already idle / never started
+    } finally {
+      this.dispose()
+    }
+  }
+
   dispose(): void {
     this.disposed = true
     this.session?.dispose()
@@ -1222,7 +1299,7 @@ class PiSessionHandleImpl implements PiSessionHandle {
   }
 
   private async ensureSession(): Promise<PiAgentSession> {
-    if (this.disposed) throw new Error('session already disposed')
+    if (this.disposed) throw new Error(SESSION_DISPOSED_MESSAGE)
     if (this.session !== undefined) return this.session
     this.session = await createPiKernelSession(this.opts)
     return this.session
@@ -1234,6 +1311,7 @@ interface PiAgentSession {
   dispose(): void
   getActiveToolNames(): string[]
   readonly messages: readonly unknown[]
+  abort?: () => Promise<void>
 }
 
 async function createPiKernelSession(opts: ResolvedSessionOpts): Promise<PiAgentSession> {
@@ -1411,9 +1489,43 @@ export function usageFromPiMessages(
   return extractPiResult(messages, role).usage
 }
 
-function wrapRetry(handle: PiSessionHandle, timeoutMs: number = resolveSessionTimeoutMs()): PiSessionHandle {
+/**
+ * Listen for AbortSignal and abort the handle immediately (unblocks Fake / pi waits).
+ * Returns a detach function; always call it from `finally`.
+ */
+export function listenSessionAbort(handle: PiSessionHandle, signal?: AbortSignal): () => void {
+  if (signal === undefined) return () => {}
+  const onAbort = (): void => {
+    void handle.abort()
+  }
+  if (signal.aborted) {
+    onAbort()
+    return () => {}
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+  return () => {
+    signal.removeEventListener('abort', onAbort)
+  }
+}
+
+/** On abort: handle.abort() then dispose. Otherwise dispose only. Idempotent. */
+export async function finalizePiSession(handle: PiSessionHandle, signal?: AbortSignal): Promise<void> {
+  try {
+    if (signal?.aborted) await handle.abort()
+  } catch {
+    // already idle
+  } finally {
+    handle.dispose()
+  }
+}
+
+export function wrapRetry(
+  handle: PiSessionHandle,
+  timeoutMs: number = resolveSessionTimeoutMs(),
+  signal?: AbortSignal,
+): PiSessionHandle {
   const timed = <T>(label: string, op: () => Promise<T>): Promise<T> =>
-    withTimeout(withPiRetry(op), timeoutMs, label)
+    withTimeout(withPiRetry(op, signal), timeoutMs, label, signal)
   return {
     role: handle.role,
     model: handle.model,
@@ -1421,6 +1533,7 @@ function wrapRetry(handle: PiSessionHandle, timeoutMs: number = resolveSessionTi
     prompt: (input) => timed(`session.prompt(${handle.role})`, () => handle.prompt(input)),
     attach: () => timed(`session.attach(${handle.role})`, () => handle.attach()),
     activeToolNames: () => timed(`session.activeToolNames(${handle.role})`, () => handle.activeToolNames()),
+    abort: () => handle.abort(),
     dispose: () => handle.dispose(),
   }
 }
@@ -1430,6 +1543,7 @@ function wrapRetry(handle: PiSessionHandle, timeoutMs: number = resolveSessionTi
  * 生产默认 PiSessionBackend（createAgentSession + SessionManager.inMemory，无 codingTools）。
  * 测试注入 FakeSessionBackend。失败重试 PI_FAILURE_RETRY 次再向上抛。
  * 每次 prompt/attach 有 SESSION_CALL_TIMEOUT_MS 硬超时（可 env 覆盖），避免 mint 无限挂起。
+ * Cooperative abort(): 取消当前等待并 dispose（Fail-Closed；不把工具原文写进错误）。
  */
 export function openSession(opts: SessionFactoryOpts): PiSessionHandle {
   const resolved: ResolvedSessionOpts = {
@@ -1441,7 +1555,7 @@ export function openSession(opts: SessionFactoryOpts): PiSessionHandle {
     resolved.cwd = opts.cwd
   }
   const backend = opts.backend ?? injectedBackend ?? new PiSessionBackend()
-  return wrapRetry(backend.open(resolved))
+  return wrapRetry(backend.open(resolved), resolveSessionTimeoutMs(), opts.signal)
 }
 
 export function openReviewSession(opts?: Omit<SessionFactoryOpts, 'role'>): PiSessionHandle {

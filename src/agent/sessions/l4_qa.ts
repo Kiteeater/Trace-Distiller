@@ -5,7 +5,9 @@ import { BENCHMARK_PASS } from '../../constant/compression.ts'
 import { TRACE_DATA_NOTICE, type TokenUsage } from './skeleton_pass.ts'
 import {
   L4_QA_JSON_KIND,
+  finalizePiSession,
   formatMarkedJson,
+  listenSessionAbort,
   openQaSession,
   parseStructuredJson,
   playbackIndexForL4,
@@ -13,6 +15,7 @@ import {
   type SessionPromptInput,
   type SessionPromptResult,
 } from './open_session.ts'
+import { throwIfAborted } from '../../utils/timeout.ts'
 
 export { L4_QA_JSON_KIND }
 export type { SessionBackend } from './open_session.ts'
@@ -36,6 +39,7 @@ export interface RunQaInput {
   /** 可选：用 Training Cut 原文作答。与 playback 二选一优先 playback。 */
   training?: TrainingCut
   backend?: SessionBackend
+  signal?: AbortSignal
 }
 
 export interface QaAnswerItem {
@@ -75,8 +79,11 @@ export const QA_MALFORMED_RETRIES = 2
 export async function runQa(input: RunQaInput): Promise<RunQaOutput> {
   const session = openQaSession({
     ...(input.backend !== undefined ? { backend: input.backend } : {}),
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
   })
+  const stopAbort = listenSessionAbort(session, input.signal)
   try {
+    throwIfAborted(input.signal)
     const prompt = composeQaPrompt(input)
     const first = await session.prompt(prompt)
     let out: RunQaOutput | undefined
@@ -119,7 +126,8 @@ export async function runQa(input: RunQaInput): Promise<RunQaOutput> {
     if (retried) out.retried = true
     return out
   } finally {
-    session.dispose()
+    stopAbort()
+    await finalizePiSession(session, input.signal)
   }
 }
 
