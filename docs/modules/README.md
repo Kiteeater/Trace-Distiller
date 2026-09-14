@@ -74,7 +74,7 @@ pipeline/orchestrator          纯 TS 控制流（无 LLM）
 | 展示 | `report/` | 无 |
 | 入口 | `service/` + `script/run-distill.ts` | 无 |
 
-洞 A / 洞 B 的会话封装是 **唯一允许 `import` pi SDK 的地方**。`eval/` 要起干净会话，也必须走 `agent/sessions` 提供的工厂，不能自己 `createAgentSession()`。
+洞 A / 洞 B 的会话封装是 **唯一允许开会话**（`createAgentSession`）的地方。`eval/` 要起干净会话，也必须走 `agent/sessions` 提供的工厂。[ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md)：`src/agent/tools/` 可收窄 import `defineTool` / `ToolDefinition`。
 
 ---
 

@@ -10,7 +10,7 @@ labelWindow(...)    → 四类标签 + 置信度           【洞 B 逐窗，仍
 
 洞流程以 [ADR-0009](../adr/0009-agent-view-and-cut-warrant.md) 为准：**洞 A 不是全量读 Trace**，是头尾意图 + 增量骨架。
 
-本目录是全仓库 **唯一允许 import pi SDK**（`createAgentSession` 等）的地方。eval 的干净会话也走这里的工厂函数。
+本目录是全仓库 **唯一允许开会话**（`createAgentSession` 等 pi session API）的地方。eval 的干净会话也走这里的工厂函数。洞工具经 `src/agent/tools/` registry；prompt 经 `src/agent/prompt/` composer（[ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md)）。`tools/` 可收窄 import `defineTool` / `ToolDefinition`。
 
 ---
 
@@ -168,8 +168,10 @@ function openQaSession(): PiSessionHandle       // role = l4_qa，可降档模�
 
 ```text
 agent/sessions
-  → pi SDK
-  → agent/extension（注册工具）
+  → pi SDK（createAgentSession 只在本目录）
+  → agent/tools（registry；洞工具唯一入口）
+  → agent/prompt（compose + tool_mask）
+  → agent/extension（纯 handlers；经 registry dispatch）
   → agent/skills（读 Markdown 文本，或由调用方传入已读字符串）
   → types, enums, constant, domain
   ✗ pipeline（反向：pipeline 调 sessions）

@@ -124,11 +124,12 @@ describe('tool_mask', () => {
     assert.throws(() => assertAckOrMaskedToolMessage('short human leak of a tool body {not json}'))
     const cutSrc = readFileSync(join(here, '../../src/agent/sessions/cut_brain.ts'), 'utf8')
     assert.match(cutSrc, /assertAckOrMaskedToolMessage/)
-    const openSrc = readFileSync(join(here, '../../src/agent/sessions/open_session.ts'), 'utf8')
+    const composeSrc = readFileSync(join(here, '../../src/agent/prompt/compose.ts'), 'utf8')
     assert.doesNotMatch(
-      openSrc,
+      composeSrc,
       /export function maskPromptMessageContent\(content: string\): string \{\s*if \(content\.length <= 480\) return content/,
     )
+    assert.match(composeSrc, /looksLikeRawToolPayload/)
   })
 
   it('hole tool execute returns masked ack (no full payload)', async () => {
@@ -188,5 +189,25 @@ describe('tool_mask', () => {
     assert.equal(hint.structure.resolved_count, 3)
     assert.ok(hint.summary.length <= TOOL_MASK_DEFAULT_MAX_CHARS)
     assert.match(hint.summary, /apply_rules_hint/)
+  })
+
+  it('composeSessionPrompt orders stable prefix before state pointers before unstable text', () => {
+    const composed = composeSessionPrompt({
+      system: 'SYS_STABLE',
+      skill_text: 'SKILL_STABLE',
+      skeleton_text: 'SKELETON_PTR',
+      state_pointers: 'FOCUS_PTR',
+      messages: [{ role: 'user', content: 'PRIOR_UNSTABLE' }],
+      text: 'USER_UNSTABLE evidence=secret',
+    })
+    const sys = composed.indexOf('SYS_STABLE')
+    const skill = composed.indexOf('SKILL_STABLE')
+    const skel = composed.indexOf('SKELETON_PTR')
+    const focus = composed.indexOf('FOCUS_PTR')
+    const prior = composed.indexOf('PRIOR_UNSTABLE')
+    const user = composed.indexOf('USER_UNSTABLE')
+    assert.ok(sys >= 0 && skill > sys && skel > skill && focus > skel && prior > focus && user > prior)
+    const stableEnd = composed.indexOf('SKELETON_PTR')
+    assert.doesNotMatch(composed.slice(0, stableEnd), /USER_UNSTABLE|evidence=secret|PRIOR_UNSTABLE/)
   })
 })

@@ -11,18 +11,20 @@ import {
   SESSION_TIMEOUT_ENV,
   type EvidenceCardKind,
 } from '../../constant/window.ts'
-import { L4_REPLAY_CODING_TOOLS, resolvePiToolRegistration } from './hole_tools.ts'
+import {
+  composeSessionPrompt,
+  type SessionPromptInput,
+} from '../prompt/compose.ts'
+import { L4_REPLAY_CODING_TOOLS, resolvePiToolRegistration } from '../tools/pi_tools.ts'
 import type { AgentRole } from '../../enums/agent_role.ts'
 import { LABELS, type Label } from '../../enums/label.ts'
 import { type TokenUsage } from './skeleton_pass.ts'
-import {
-  formatMaskedForPrompt,
-  isMaskedToolSummary,
-  looksLikeRawToolPayload,
-  maskToolResult,
-  parseJsonIfStructured,
-  TOOL_MASK_DEFAULT_MAX_CHARS,
-} from './tool_mask.ts'
+
+export {
+  composeSessionPrompt,
+  maskPromptMessageContent,
+} from '../prompt/compose.ts'
+export type { SessionMessage, SessionPromptInput } from '../prompt/compose.ts'
 
 /** 按 AgentRole 选模型档。模型名本身不进 constant。 */
 export const MODEL_ENV_BY_ROLE: Record<AgentRole, string> = {
@@ -100,19 +102,6 @@ export type ApplyCustomGatewayResult<T> = { used: false } | { used: true; model:
 export const DEFAULT_HOLE_TOOL_NAMES: readonly string[] = []
 
 const BANNED_CODING_TOOLS = ['read', 'bash', 'edit', 'write'] as const
-
-export interface SessionMessage {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
-
-export interface SessionPromptInput {
-  text: string
-  system?: string
-  skill_text?: string
-  skeleton_text?: string
-  messages?: readonly SessionMessage[]
-}
 
 export interface SessionToolCall {
   name: string
@@ -325,38 +314,6 @@ export function applyCustomGateway<T>(
   authStorage.set(ref.provider, { type: 'api_key', key: gateway.apiKey })
   registry.registerProvider(registration.provider, registration.config)
   return { used: true, model: registry.find(ref.provider, ref.id) }
-}
-
-export function composeSessionPrompt(input: SessionPromptInput): string {
-  const chunks: string[] = []
-  const preamble = [input.system, input.skill_text, input.skeleton_text].filter(
-    (part): part is string => typeof part === 'string' && part.length > 0,
-  )
-  if (preamble.length > 0) chunks.push(preamble.join('\n\n'))
-  for (const msg of input.messages ?? []) {
-    // ADR-0010: prior tool/assistant blobs that look like tool payloads get masked.
-    const content = maskPromptMessageContent(msg.content)
-    chunks.push(`${msg.role}:\n${content}`)
-  }
-  chunks.push(input.text)
-  return chunks.join('\n\n')
-}
-
-/**
- * Mask tool-like blobs before they re-enter a session prompt (ADR-0010/0012).
- * ACK / short human status / already-masked summaries pass through.
- * Raw tool JSON (even ≤480 chars) is forced through maskToolResult.
- */
-export function maskPromptMessageContent(content: string): string {
-  const trimmed = content.trim()
-  if (/^ACK\b/.test(trimmed)) return content
-  if (isMaskedToolSummary(trimmed)) return content
-  if (looksLikeRawToolPayload(content)) {
-    const parsed = parseJsonIfStructured(content)
-    return formatMaskedForPrompt(maskToolResult(parsed ?? content))
-  }
-  if (content.length <= TOOL_MASK_DEFAULT_MAX_CHARS) return content
-  return formatMaskedForPrompt(maskToolResult(content))
 }
 
 /**

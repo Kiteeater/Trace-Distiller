@@ -1,10 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  CUT_BRAIN_TOOL_NAMES,
-  handleApplyRulesHint,
-} from '../extension.ts'
+import { CUT_BRAIN_TOOL_NAMES } from '../extension.ts'
+import { executeHoleTool } from '../tools/registry.ts'
 import { DEFAULT_CUT_PROFILE } from '../../constant/compression.ts'
 import {
   CUT_BRAIN_FOCUS_SLOT,
@@ -48,7 +46,7 @@ import {
   type SessionPromptResult,
   type SessionToolCall,
 } from './open_session.ts'
-import { assertAckOrMaskedToolMessage } from './tool_mask.ts'
+import { assertAckOrMaskedToolMessage } from '../prompt/tool_mask.ts'
 
 export interface CutBrainInput {
   /** Open segment ids the agent may label/keep (orchestrator: unresolved after rules). */
@@ -392,7 +390,7 @@ function applyRulesHintCall(
   rules?: RulesOutput
   note?: string
 } {
-  const accepted = handleApplyRulesHint(call.arguments)
+  const accepted = executeHoleTool('apply_rules_hint', call.arguments)
   if (!accepted.ok) {
     return { note: `apply_rules_hint_rejected:${accepted.error}` }
   }

@@ -21,7 +21,8 @@ import type {
 } from '../../types/agent_view.ts'
 import type { RawTrace, TraceId } from '../../types/raw_trace.ts'
 import type { SegmentCard } from '../../types/segment.ts'
-import { HOLE_A_TOOL_NAMES, handleReadSegment, type HoleReadContext } from '../extension.ts'
+import { HOLE_A_TOOL_NAMES, type HoleReadContext } from '../extension.ts'
+import { executeHoleTool } from '../tools/registry.ts'
 import {
   buildCandidatePool,
   sampleCandidates,
@@ -37,7 +38,7 @@ import {
   type SessionPromptResult,
   type SessionToolCall,
 } from './open_session.ts'
-import { formatMaskedForPrompt, maskToolResult } from './tool_mask.ts'
+import { formatMaskedForPrompt, maskToolResult } from '../prompt/tool_mask.ts'
 import { estimateTokens } from '../../utils/tokens.ts'
 import type { TokenUsage } from './skeleton_pass.ts'
 
@@ -488,30 +489,37 @@ function interpretRead(
       note: 'read_segment_budget',
     }
   }
-  const accepted = handleReadSegment(readCtx, call.arguments)
+  const accepted = executeHoleTool('read_segment', call.arguments, { read: readCtx })
   if (!accepted.ok) {
     return {
       maskPayload: { segment_id: null, focus: 'full', text: '', error: accepted.error },
       note: `read_segment_rejected:${accepted.error}`,
     }
   }
-  if (!openIds.has(accepted.segment_id)) {
+  if (accepted.name !== 'read_segment') {
     return {
-      maskPayload: { segment_id: accepted.segment_id, focus: 'full', text: '', error: 'not in view' },
+      maskPayload: { segment_id: null, focus: 'full', text: '', error: 'not read_segment' },
+      note: 'read_segment_rejected:not read_segment',
+    }
+  }
+  const read = accepted.accepted
+  if (!openIds.has(read.segment_id)) {
+    return {
+      maskPayload: { segment_id: read.segment_id, focus: 'full', text: '', error: 'not in view' },
       note: `read_segment_rejected:not_in_view`,
     }
   }
-  if (!readSet.has(accepted.segment_id)) {
-    readSet.add(accepted.segment_id)
-    segmentsRead.push(accepted.segment_id)
+  if (!readSet.has(read.segment_id)) {
+    readSet.add(read.segment_id)
+    segmentsRead.push(read.segment_id)
   }
   // Mask path: do not put full text into maskPayload for prompt; maskToolResult will head-truncate.
   // Still pass text so mask can report text_chars/head; full may go store later (out of scope).
   return {
     maskPayload: {
-      segment_id: accepted.segment_id,
-      focus: accepted.focus,
-      text: accepted.text,
+      segment_id: read.segment_id,
+      focus: read.focus,
+      text: read.text,
     },
   }
 }

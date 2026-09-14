@@ -32,7 +32,7 @@
 
 # 一、蒸馏洞工具
 
-> **状态：LOCKED 闭集（ADR-0010 Phase 2）。** 判断力：`label_segment` / `check_continuity` / `keep_segment`。取数 / hint：`read_segment` / `apply_rules_hint`。handler 是纯函数，不接 pi。ACK 经 `tool_mask`。[ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md)：洞工具调用的**唯一入口**是 `src/agent/tools/` registry（代码搬家 follow-up；今日仍经 `sessions/hole_tools.ts`）。sessions / cut-brain / sparse_intent / L4 禁止绕过 registry 对洞工具 ad-hoc `defineTool` 或直调 raw handlers。
+> **状态：LOCKED 闭集（ADR-0010 Phase 2）。** 判断力：`label_segment` / `check_continuity` / `keep_segment`。取数 / hint：`read_segment` / `apply_rules_hint`。handler 是纯函数，不接 pi。ACK 经 `src/agent/prompt/tool_mask.ts`。[ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md)：洞工具调用的**唯一入口**是 `src/agent/tools/` registry（`executeHoleTool` / `ackHoleTool`；pi `defineTool` 在 `tools/pi_tools.ts`）。sessions / cut-brain / sparse_intent / L4 禁止绕过 registry 对洞工具 ad-hoc `defineTool` 或直调 raw handlers。
 
 流水线里唯一允许 LLM 动手的地方是两个 **Agent 洞**（[ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)）。洞里的模型不能「写一篇我认为该删什么」，只能通过工具交结构化判断。判断力工具只有两个；另有一个确定性取数通道。
 

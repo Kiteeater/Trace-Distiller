@@ -14,7 +14,7 @@ accepted（2026-09-14）
 - [file-architecture.md](../guides/file-architecture.md)（叶子树；改目录先改那一页）
 - PR#68 architecture enforcement（`createAgentSession` / `@mariozechner/pi*` 仅 `src/agent/sessions/`；extension 不 import pi）
 
-本 ADR **只授权目录与层边界**。`src/agent/**` TypeScript 搬家是 follow-up PR，必须引用本 ADR；本文件合入时不移动生产代码。
+本 ADR **授权目录与层边界**。代码搬家已在 follow-up 落地：`src/agent/tools/`（registry + `defineTool` 适配）与 `src/agent/prompt/`（compose + tool_mask）；旧路径留 re-export shim。
 
 ## Context
 
@@ -65,7 +65,7 @@ src/agent/
 
 **仍禁止**：`src/gateway/`、`src/runtime/`、`src/biz/`、`src/agents/`。接入门面仍是 `adapters/`；macaron 的 `biz/` 仍是 `pipeline/` + `agent/`。本拆分 **不是** 复活 runtime agent 产品叙事。
 
-本 ADR 合入时叶子已授权；`tools/` / `prompt/` 可以暂时为空，直到 follow-up 搬家。现有 `sessions/hole_tools.ts`、`sessions/tool_mask.ts`、`open_session.ts` 内 compose 在迁移前保持原位。
+本 ADR 合入时叶子已授权；follow-up 已把 `hole_tools` / `tool_mask` / `composeSessionPrompt` 迁入 `tools/` 与 `prompt/`。`sessions/hole_tools.ts` 与 `sessions/tool_mask.ts` 现为 re-export shim。
 
 ### 2. 工具层
 
@@ -123,10 +123,10 @@ Composer 落在 `src/agent/prompt/`。顺序 **稳定 → 不稳定**，禁止�
 
 Follow-up PR 必须引用本 ADR，并保持测试绿（含 architecture enforcement）：
 
-- [ ] 新增 `src/agent/tools/` 与 `src/agent/prompt/`；把 `hole_tools` / mask / compose 片段迁入，旧路径留 re-export shim **或**干净改 import。
-- [ ] 落地 registry：dispatch 到 extension handlers；pi `customTools` execute 走 registry（ACK + mask 强制）。
-- [ ] `open_session` / cut-brain / sparse_intent / L4 **只**经 registry 调洞工具，**只**经 prompt composer 组 prompt。
-- [ ] Composer 按稳定前缀 → 状态指针 → 不稳定证据的顺序拼装；不稳定内容不进稳定前缀。
-- [ ] 若 `defineTool` / `ToolDefinition` 落在 `tools/`：收窄更新 architecture 测试 allowlist（仅这些符号；`createAgentSession` 仍只在 `sessions/`）。若 adapter 留在 `sessions/`，测试 allowlist 不扩。
-- [ ] 同步 [file-architecture.md](../guides/file-architecture.md) 叶子文件名、[AGENTS.md](../../AGENTS.md)、[pi-sdk.md](../guides/pi-sdk.md) 与实际路径（本 ADR 已授权目录；搬家后改文件名行）。
-- [ ] 行为保持：不复活 `--no-llm`；不放松 compress / SFT 范围；不削弱 ruled-overwrite / focus=1 / ACK-mask / skeleton_protect / agent-path。
+- [x] 新增 `src/agent/tools/` 与 `src/agent/prompt/`；把 `hole_tools` / mask / compose 片段迁入，旧路径留 re-export shim **或**干净改 import。
+- [x] 落地 registry：dispatch 到 extension handlers；pi `customTools` execute 走 registry（ACK + mask 强制）。
+- [x] `open_session` / cut-brain / sparse_intent / L4 **只**经 registry 调洞工具，**只**经 prompt composer 组 prompt。
+- [x] Composer 按稳定前缀 → 状态指针 → 不稳定证据的顺序拼装；不稳定内容不进稳定前缀。
+- [x] 若 `defineTool` / `ToolDefinition` 落在 `tools/`：收窄更新 architecture 测试 allowlist（仅这些符号；`createAgentSession` 仍只在 `sessions/`）。若 adapter 留在 `sessions/`，测试 allowlist 不扩。
+- [x] 同步 [file-architecture.md](../guides/file-architecture.md) 叶子文件名、[AGENTS.md](../../AGENTS.md)、[pi-sdk.md](../guides/pi-sdk.md) 与实际路径（本 ADR 已授权目录；搬家后改文件名行）。
+- [x] 行为保持：不复活 `--no-llm`；不放松 compress / SFT 范围；不削弱 ruled-overwrite / focus=1 / ACK-mask / skeleton_protect / agent-path。
