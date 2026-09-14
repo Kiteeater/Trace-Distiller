@@ -1,8 +1,10 @@
 /**
  * pi defineTool adapter (ADR-0016).
  * Builds customTools from the closed-set registry. execute only ACK+mask
- * via ackHoleTool; hole loops dispatch handlers through executeHoleTool.
+ * via ackHoleTool (Distiller registry afterDispatch asserts ACK/mask).
+ * Hole loops dispatch handlers through executeHoleTool.
  * Allowed pi imports in this directory: defineTool / ToolDefinition only.
+ * Do not register pi Extension `on(...)` handlers or rewrite systemPrompt.
  */
 import { defineTool, type ToolDefinition } from '@mariozechner/pi-coding-agent'
 import { Type } from 'typebox'
@@ -12,7 +14,7 @@ import { ackHoleTool, isHoleToolName } from './registry.ts'
 
 const LABEL_ENUM = Type.Union(LABELS.map((v) => Type.Literal(v)))
 
-/** pi customTools 闭集；execute 只 ACK（经 registry + tool_mask），编排器事后从 messages 抽 tool_calls 再跑 registry dispatch。 */
+/** pi customTools 闭集；execute 只 ACK（经 registry + tool_mask + Distiller afterDispatch）。编排器事后从 messages 抽 tool_calls 再跑 registry dispatch。禁止 pi Extension `on` / systemPrompt rewrite。 */
 export function buildHoleCustomTools(
   requested: readonly string[],
 ): ToolDefinition[] {

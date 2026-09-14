@@ -115,6 +115,7 @@ Composer 落在 `src/agent/prompt/`。顺序 **稳定 → 不稳定**，禁止�
 
 - [file-architecture.md](../guides/file-architecture.md) 授权 `src/agent/tools/` 与 `src/agent/prompt/`；树与叶子表同步本 ADR。代码未搬家前，目录可以空。
 - Distiller-owned prompt history prune 落在 `prompt/compact.ts`（保留 S0 指针 + 最近 ACK/masked 轮次；旧证据只在 compose 丢掉）。这不是 pi compact / LLM 摘要；store/warrant 仍保留全量 payload。
+- Distiller registry 可选 `beforeDispatch` / `afterDispatch`（`src/agent/tools/registry.ts`）**不是** pi Extension `on` 链：闭集 + 可选 focus=1/single-id 在 dispatch 前拒绝；ACK/mask 在 registry 边界用 `assertAckOrMaskedToolMessage` 强制。禁止用这些 hook rewrite `systemPrompt`。
 - [AGENTS.md](../../AGENTS.md) 把 agent 布局写成 tools（registry）/ prompt（KV-friendly compose+mask）/ sessions（洞循环）；registry 为洞工具唯一入口。
 - pi 边界文档（[pi-sdk.md](../guides/pi-sdk.md)）：`createAgentSession` 仍只在 `sessions/`。若迁移把 `defineTool` 放进 `tools/`，architecture 测试 **故意**收窄放行那两个符号，而不是把 `@mariozechner/pi*` 整包放开。
 - 洞工具闭集、ACK/mask、单槽、骨架保护、agent-led、L4 不计蒸馏成本——全部原样。本 ADR 不改 CutPlan / warrant / 记分板公式。
