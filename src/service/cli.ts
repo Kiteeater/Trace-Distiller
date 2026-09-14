@@ -51,6 +51,7 @@ import {
   holeModelsConfigured,
   l4BackendAvailable,
   setSessionBackend,
+  setThinSessionEventSink,
 } from '../agent/sessions/open_session.ts'
 import {
   distill,
@@ -75,7 +76,14 @@ import {
   type RawTrace,
 } from '../types/raw_trace.ts'
 import { error as logError, info as logInfo } from '../utils/logger.ts'
-import { dumpAllJobs, dumpJobSnapshot, registerJobFromResult, resetLiveState, type StageState } from './live.ts'
+import {
+  dumpAllJobs,
+  dumpJobSnapshot,
+  recordThinSessionEvent,
+  registerJobFromResult,
+  resetLiveState,
+  type StageState,
+} from './live.ts'
 import { startLiveSocket, stopLiveSocket } from './live_socket.ts'
 import {
   DEFAULT_PROFILE_PATH,
@@ -373,7 +381,11 @@ export async function runCli(args: CliArgs): Promise<number> {
   }
 
   let socketStarted = false
+  const liveObserving = args.live_dump_dir !== undefined || args.live_socket_path !== undefined
   try {
+    if (liveObserving) {
+      setThinSessionEventSink(recordThinSessionEvent)
+    }
     if (args.live_socket_path !== undefined) {
       await startLiveSocket({ path: args.live_socket_path })
       socketStarted = true
@@ -460,6 +472,7 @@ export async function runCli(args: CliArgs): Promise<number> {
     logError(message)
     return EXIT_OTHER
   } finally {
+    setThinSessionEventSink(undefined)
     if (socketStarted) await stopLiveSocket()
   }
 }

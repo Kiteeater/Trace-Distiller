@@ -3,6 +3,7 @@ import type { DistillResult } from '../pipeline/orchestrator.ts'
 import type { PlaybackCut } from '../types/cut_plan.ts'
 import type { CutWarrantEntry } from '../types/cut_warrant.ts'
 import type { SegmentCard } from '../types/segment.ts'
+import type { ThinSessionEvent } from '../types/thin_session_event.ts'
 
 /**
  * Live 复盘工具闭集（已拍板）。只读订阅 Distiller 自己的裁剪 job，不是对方 agent。
@@ -64,12 +65,27 @@ interface StoredJob {
 
 const jobs = new Map<string, StoredJob>()
 const attached = new Set<string>()
+const thinSessionEvents: ThinSessionEvent[] = []
 let seq = 0
 
 export function resetLiveState(): void {
   jobs.clear()
   attached.clear()
+  thinSessionEvents.length = 0
   seq = 0
+}
+
+/**
+ * Thin session progress buffer. Always accepts records (no-op list when empty).
+ * Enablement is CLI: `--live-dump` / `--live-socket` sets the session sink.
+ * `attach_job` / `detach_job` only mark a job attached for the six-tool snapshot.
+ */
+export function recordThinSessionEvent(event: ThinSessionEvent): void {
+  thinSessionEvents.push(event)
+}
+
+export function listThinSessionEvents(): readonly ThinSessionEvent[] {
+  return thinSessionEvents
 }
 
 /** 从已完成的 DistillResult 登记一条可订阅 job。不进 pipeline，不调 LLM。 */
@@ -168,6 +184,8 @@ export interface LiveJobSnapshot {
 export interface LiveDump {
   list_jobs: DistillJobSummary[]
   jobs: LiveJobSnapshot[]
+  /** Top-level only. Never expand LiveJobSnapshot / LIVE_TOOL_NAMES. */
+  thin_session_events?: ThinSessionEvent[]
 }
 
 export function dumpJobSnapshot(job_id: string): LiveJobSnapshot {
@@ -188,5 +206,6 @@ export function dumpAllJobs(): LiveDump {
   return {
     list_jobs: listed,
     jobs: listed.map((row) => dumpJobSnapshot(row.job_id)),
+    thin_session_events: thinSessionEvents.slice(),
   }
 }

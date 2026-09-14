@@ -46,7 +46,7 @@ interface SessionFactoryOpts {
 function openSession(opts: SessionFactoryOpts): PiSessionHandle
 ```
 
-`PiSessionHandle.abort()` 协作取消当前等待并 dispose（Fail-Closed；不泄露工具原文）。`withTimeout` 可接 `AbortSignal`。
+`PiSessionHandle.abort()` 协作取消当前等待并 dispose（Fail-Closed；不泄露工具原文）。`withTimeout` 可接 `AbortSignal`。可选 `subscribeThinEvents` / `onThinEvent` / 模块 sink：只发 role/round/tool name/usage deltas，默认关。
 
 ### 洞 A — skeletonPass
 

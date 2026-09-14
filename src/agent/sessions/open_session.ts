@@ -24,6 +24,10 @@ import {
 import { L4_REPLAY_CODING_TOOLS, resolvePiToolRegistration } from '../tools/pi_tools.ts'
 import type { AgentRole } from '../../enums/agent_role.ts'
 import { LABELS, type Label } from '../../enums/label.ts'
+import {
+  sanitizeThinSessionEvent,
+  type ThinSessionEvent,
+} from '../../types/thin_session_event.ts'
 import { type TokenUsage } from './skeleton_pass.ts'
 
 export {
@@ -121,6 +125,38 @@ export interface SessionPromptResult {
   usage: TokenUsage
 }
 
+export type ThinSessionEventListener = (event: ThinSessionEvent) => void
+
+let thinSessionEventSink: ThinSessionEventListener | undefined
+
+export function setThinSessionEventSink(listener?: ThinSessionEventListener): void {
+  thinSessionEventSink = listener
+}
+
+export function getThinSessionEventSink(): ThinSessionEventListener | undefined {
+  return thinSessionEventSink
+}
+
+function invokeThinListener(listener: ThinSessionEventListener, event: ThinSessionEvent): void {
+  try {
+    listener(event)
+  } catch {
+    // live listeners must never fail the prompt
+  }
+}
+
+/** Fan-out: per-handle listeners, opts.onThinEvent, module sink. Swallows listener errors. */
+function emitThin(
+  event: ThinSessionEvent,
+  handleListeners: Iterable<ThinSessionEventListener>,
+  onThinEvent?: ThinSessionEventListener,
+): void {
+  const thin = sanitizeThinSessionEvent(event)
+  for (const listener of handleListeners) invokeThinListener(listener, thin)
+  if (onThinEvent !== undefined) invokeThinListener(onThinEvent, thin)
+  if (thinSessionEventSink !== undefined) invokeThinListener(thinSessionEventSink, thin)
+}
+
 export interface SessionFactoryOpts {
   role: AgentRole
   model?: string
@@ -131,6 +167,8 @@ export interface SessionFactoryOpts {
   cwd?: string
   /** Cooperative abort for timed prompt/attach waits (wrapRetry → withTimeout). */
   signal?: AbortSignal
+  /** Optional per-handle thin live events (role/round/tool name/usage deltas). */
+  onThinEvent?: ThinSessionEventListener
 }
 
 export interface ResolvedSessionOpts {
@@ -138,6 +176,7 @@ export interface ResolvedSessionOpts {
   model: string
   tools: readonly string[]
   cwd?: string
+  onThinEvent?: ThinSessionEventListener
 }
 
 export const SESSION_DISPOSED_MESSAGE = 'session already disposed'
@@ -153,6 +192,8 @@ export interface PiSessionHandle {
   /** Cooperative abort: cancel in-flight wait, then dispose. Must not hang. */
   abort(): Promise<void>
   dispose(): void
+  /** Thin live events only (name/usage deltas). Multiple listeners; dispose clears. */
+  subscribeThinEvents(listener: ThinSessionEventListener): () => void
 }
 
 export interface SessionBackend {
@@ -1138,6 +1179,9 @@ class FakeSessionHandle implements PiSessionHandle {
   private readonly backend: FakeSessionBackend
   private readonly opts: ResolvedSessionOpts
   private disposed = false
+  /** 1-based; incremented on each successful-path prompt start. */
+  private round = 0
+  private readonly thinListeners = new Set<ThinSessionEventListener>()
   private readonly abortWaiters = new Set<(err: Error) => void>()
 
   constructor(backend: FakeSessionBackend, opts: ResolvedSessionOpts) {
@@ -1146,6 +1190,13 @@ class FakeSessionHandle implements PiSessionHandle {
     this.role = opts.role
     this.model = opts.model
     this.tools = opts.tools
+  }
+
+  subscribeThinEvents(listener: ThinSessionEventListener): () => void {
+    this.thinListeners.add(listener)
+    return () => {
+      this.thinListeners.delete(listener)
+    }
   }
 
   async attach(): Promise<void> {
@@ -1159,9 +1210,31 @@ class FakeSessionHandle implements PiSessionHandle {
 
   async prompt(input: SessionPromptInput): Promise<SessionPromptResult> {
     this.assertOpen()
-    const composed = composeSessionPrompt(input)
-    this.backend.record(this.opts, input, composed)
-    return this.raceAbort(Promise.resolve(this.backend.reply(input, this.opts)))
+    this.round += 1
+    const round = this.round
+    this.emitThin({ role: this.role, round, kind: 'turn_start' })
+    try {
+      const composed = composeSessionPrompt(input)
+      this.backend.record(this.opts, input, composed)
+      const result = await this.raceAbort(Promise.resolve(this.backend.reply(input, this.opts)))
+      for (const call of result.tool_calls) {
+        const tool_name = call.name
+        this.emitThin({ role: this.role, round, kind: 'tool_start', tool_name })
+        this.emitThin({ role: this.role, round, kind: 'tool_end', tool_name })
+      }
+      this.emitThin({
+        role: this.role,
+        round,
+        kind: 'usage',
+        input_tokens_delta: result.usage.input_tokens,
+        output_tokens_delta: result.usage.output_tokens,
+      })
+      this.emitThin({ role: this.role, round, kind: 'turn_end' })
+      return result
+    } catch (err) {
+      this.emitThin({ role: this.role, round, kind: 'turn_end', is_error: true })
+      throw err
+    }
   }
 
   async abort(): Promise<void> {
@@ -1172,6 +1245,10 @@ class FakeSessionHandle implements PiSessionHandle {
     this.markDisposed()
   }
 
+  private emitThin(event: ThinSessionEvent): void {
+    emitThin(event, this.thinListeners, this.opts.onThinEvent)
+  }
+
   private assertOpen(): void {
     if (this.disposed) throw new Error(SESSION_DISPOSED_MESSAGE)
   }
@@ -1179,6 +1256,7 @@ class FakeSessionHandle implements PiSessionHandle {
   private markDisposed(): void {
     if (this.disposed) return
     this.disposed = true
+    this.thinListeners.clear()
     const err = new Error(SESSION_DISPOSED_MESSAGE)
     for (const reject of this.abortWaiters) reject(err)
     this.abortWaiters.clear()
@@ -1221,6 +1299,15 @@ class PiSessionHandleImpl implements PiSessionHandle {
   private readonly opts: ResolvedSessionOpts
   private session: PiAgentSession | undefined
   private disposed = false
+  /**
+   * 1-based turn counter. Incremented on pi `turn_start` (or on prompt start when
+   * the kernel has no subscribe). Other mapped events use the current round,
+   * floored at 1 if they arrive before the first turn_start.
+   */
+  private round = 0
+  private sawUsageThisPrompt = false
+  private readonly thinListeners = new Set<ThinSessionEventListener>()
+  private unsubPi: (() => void) | undefined
 
   constructor(opts: ResolvedSessionOpts) {
     this.opts = opts
@@ -1237,6 +1324,13 @@ class PiSessionHandleImpl implements PiSessionHandle {
     }
   }
 
+  subscribeThinEvents(listener: ThinSessionEventListener): () => void {
+    this.thinListeners.add(listener)
+    return () => {
+      this.thinListeners.delete(listener)
+    }
+  }
+
   async attach(): Promise<void> {
     await this.ensureSession()
   }
@@ -1249,6 +1343,12 @@ class PiSessionHandleImpl implements PiSessionHandle {
   async prompt(input: SessionPromptInput): Promise<SessionPromptResult> {
     const session = await this.ensureSession()
     const composed = composeSessionPrompt(input)
+    this.sawUsageThisPrompt = false
+    const hadSubscribe = this.unsubPi !== undefined
+    if (!hadSubscribe) {
+      this.round += 1
+      this.emitThin({ role: this.role, round: this.round, kind: 'turn_start' })
+    }
     await session.prompt(composed)
     const extracted = extractPiResult(session.messages, this.role)
     let json: unknown | null = extracted.json
@@ -1269,6 +1369,25 @@ class PiSessionHandleImpl implements PiSessionHandle {
           extracted.tool_calls.length * 16,
         ),
       }
+    }
+    const round = Math.max(this.round, 1)
+    if (!hadSubscribe) {
+      for (const call of extracted.tool_calls) {
+        this.emitThin({ role: this.role, round, kind: 'tool_start', tool_name: call.name })
+        this.emitThin({ role: this.role, round, kind: 'tool_end', tool_name: call.name })
+      }
+    }
+    if (!this.sawUsageThisPrompt) {
+      this.emitThin({
+        role: this.role,
+        round,
+        kind: 'usage',
+        input_tokens_delta: usage.input_tokens,
+        output_tokens_delta: usage.output_tokens,
+      })
+    }
+    if (!hadSubscribe) {
+      this.emitThin({ role: this.role, round, kind: 'turn_end' })
     }
     return {
       text: extracted.text,
@@ -1294,14 +1413,38 @@ class PiSessionHandleImpl implements PiSessionHandle {
 
   dispose(): void {
     this.disposed = true
+    this.unsubPi?.()
+    this.unsubPi = undefined
+    this.thinListeners.clear()
     this.session?.dispose()
     this.session = undefined
+  }
+
+  private emitThin(event: ThinSessionEvent): void {
+    if (event.kind === 'usage') this.sawUsageThisPrompt = true
+    emitThin(event, this.thinListeners, this.opts.onThinEvent)
+  }
+
+  private onPiEvent(raw: unknown): void {
+    if (typeof raw !== 'object' || raw === null) return
+    const type = (raw as { type?: unknown }).type
+    if (type === 'turn_start') this.round += 1
+    const mapped = mapPiSessionEventToThin(raw, {
+      role: this.role,
+      round: Math.max(this.round, 1),
+    })
+    if (mapped !== undefined) this.emitThin(mapped)
   }
 
   private async ensureSession(): Promise<PiAgentSession> {
     if (this.disposed) throw new Error(SESSION_DISPOSED_MESSAGE)
     if (this.session !== undefined) return this.session
     this.session = await createPiKernelSession(this.opts)
+    if (this.session.subscribe !== undefined) {
+      this.unsubPi = this.session.subscribe((ev) => {
+        this.onPiEvent(ev)
+      })
+    }
     return this.session
   }
 }
@@ -1312,6 +1455,60 @@ interface PiAgentSession {
   getActiveToolNames(): string[]
   readonly messages: readonly unknown[]
   abort?: () => Promise<void>
+  /** pi AgentSession.subscribe — optional so Fake kernels stay thin. */
+  subscribe?: (listener: (event: unknown) => void) => () => void
+}
+
+/**
+ * Map a pi AgentSession event to a thin event. Strips args/result/partialResult/messages.
+ * Round is the handle's current 1-based turn counter (increment on turn_start before mapping).
+ */
+export function mapPiSessionEventToThin(
+  raw: unknown,
+  ctx: { role: AgentRole; round: number },
+): ThinSessionEvent | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const ev = raw as Record<string, unknown>
+  const type = ev.type
+  const { role, round } = ctx
+  if (type === 'turn_start') return { role, round, kind: 'turn_start' }
+  if (type === 'turn_end') return { role, round, kind: 'turn_end' }
+  if (type === 'tool_execution_start') {
+    const tool_name = readToolName(ev)
+    const out: ThinSessionEvent = { role, round, kind: 'tool_start' }
+    if (tool_name !== undefined) out.tool_name = tool_name
+    return out
+  }
+  if (type === 'tool_execution_end') {
+    const tool_name = readToolName(ev)
+    const is_error = ev.isError === true || ev.is_error === true
+    const out: ThinSessionEvent = { role, round, kind: 'tool_end' }
+    if (tool_name !== undefined) out.tool_name = tool_name
+    if (is_error) out.is_error = true
+    return out
+  }
+  if (type === 'message_end') {
+    const message = ev.message
+    if (typeof message !== 'object' || message === null) return undefined
+    const rec = message as Record<string, unknown>
+    if (rec.role !== 'assistant') return undefined
+    const parsed = readPiUsage(rec.usage)
+    if (parsed === undefined) return undefined
+    return {
+      role,
+      round,
+      kind: 'usage',
+      input_tokens_delta: parsed.input_tokens,
+      output_tokens_delta: parsed.output_tokens,
+    }
+  }
+  return undefined
+}
+
+function readToolName(ev: Record<string, unknown>): string | undefined {
+  if (typeof ev.toolName === 'string' && ev.toolName.length > 0) return ev.toolName
+  if (typeof ev.tool_name === 'string' && ev.tool_name.length > 0) return ev.tool_name
+  return undefined
 }
 
 async function createPiKernelSession(opts: ResolvedSessionOpts): Promise<PiAgentSession> {
@@ -1535,6 +1732,7 @@ export function wrapRetry(
     activeToolNames: () => timed(`session.activeToolNames(${handle.role})`, () => handle.activeToolNames()),
     abort: () => handle.abort(),
     dispose: () => handle.dispose(),
+    subscribeThinEvents: (listener) => handle.subscribeThinEvents(listener),
   }
 }
 
@@ -1553,6 +1751,9 @@ export function openSession(opts: SessionFactoryOpts): PiSessionHandle {
   }
   if (opts.cwd !== undefined && opts.cwd.length > 0) {
     resolved.cwd = opts.cwd
+  }
+  if (opts.onThinEvent !== undefined) {
+    resolved.onThinEvent = opts.onThinEvent
   }
   const backend = opts.backend ?? injectedBackend ?? new PiSessionBackend()
   return wrapRetry(backend.open(resolved), resolveSessionTimeoutMs(), opts.signal)

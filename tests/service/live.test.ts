@@ -19,9 +19,12 @@ import {
   get_partial_result,
   get_warrant_tail,
   list_jobs,
+  listThinSessionEvents,
+  recordThinSessionEvent,
   registerJobFromResult,
   resetLiveState,
 } from '../../src/service/live.ts'
+import { thinEventHasForbiddenPayload } from '../../src/types/thin_session_event.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fixtures = join(here, '../fixtures/claude_code')
@@ -35,6 +38,8 @@ describe('live in-memory jobs', () => {
     assert.doesNotMatch(src, /\.listen\s*\(/)
     assert.doesNotMatch(src, /createServer/)
     assert.doesNotMatch(src, /export function (send_message|interrupt|inject_prompt|list_sessions)/)
+    assert.doesNotMatch(src, /from ['"][^'"]*agent\/sessions/)
+    assert.doesNotMatch(src, /from ['"][^'"]*open_session/)
     assert.deepEqual([...LIVE_TOOL_NAMES], [
       'list_jobs',
       'attach_job',
@@ -43,6 +48,7 @@ describe('live in-memory jobs', () => {
       'get_partial_result',
       'get_warrant_tail',
     ])
+    assert.equal(LIVE_TOOL_NAMES.length, 6)
   })
 
   it('registers DistillResult and serves the six subscribe tools', async () => {
@@ -110,5 +116,51 @@ describe('live in-memory jobs', () => {
     assert.equal(all.jobs.length, 1)
     assert.equal(all.jobs[0]?.get_cut_progress.job_id, job_id)
     assert.equal(list_jobs()[0]?.attached, false)
+    assert.ok(Array.isArray(all.thin_session_events))
+    for (const name of LIVE_TOOL_NAMES) {
+      assert.ok(Object.hasOwn(all.jobs[0]!, name))
+    }
+    assert.equal(Object.keys(all.jobs[0]!).length, LIVE_TOOL_NAMES.length)
+  })
+
+  it('recordThinSessionEvent buffers; resetLiveState clears; dump keeps six snapshot keys', () => {
+    resetLiveState()
+    assert.deepEqual([...listThinSessionEvents()], [])
+    recordThinSessionEvent({
+      role: 'hole_b_label',
+      round: 1,
+      kind: 'tool_start',
+      tool_name: 'read_segment',
+    })
+    recordThinSessionEvent({
+      role: 'hole_b_label',
+      round: 1,
+      kind: 'usage',
+      input_tokens_delta: 3,
+      output_tokens_delta: 1,
+    })
+    const listed = listThinSessionEvents()
+    assert.equal(listed.length, 2)
+    assert.equal(listed[0]?.tool_name, 'read_segment')
+    for (const event of listed) {
+      assert.equal(thinEventHasForbiddenPayload(event), false)
+      assert.ok(!('args' in event))
+      assert.ok(!('result' in event))
+      assert.ok(!('content' in event))
+      assert.ok(!('messages' in event))
+    }
+    const dump = dumpAllJobs()
+    assert.equal(dump.thin_session_events?.length, 2)
+    assert.deepEqual([...LIVE_TOOL_NAMES], [
+      'list_jobs',
+      'attach_job',
+      'detach_job',
+      'get_cut_progress',
+      'get_partial_result',
+      'get_warrant_tail',
+    ])
+    resetLiveState()
+    assert.equal(listThinSessionEvents().length, 0)
+    assert.deepEqual(dumpAllJobs().thin_session_events, [])
   })
 })
