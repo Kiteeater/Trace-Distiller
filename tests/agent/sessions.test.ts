@@ -838,6 +838,9 @@ describe('hole sessions', () => {
     }
     const maskCanon = join(repoRoot, 'src/agent/prompt/tool_mask.ts')
     assert.match(readFileSync(maskCanon, 'utf8'), /export function maskToolResult/)
+    const compactSrc = readFileSync(join(repoRoot, 'src/agent/prompt/compact.ts'), 'utf8')
+    assert.match(compactSrc, /export function prunePromptHistory/)
+    assert.match(readFileSync(join(repoRoot, 'src/agent/prompt/index.ts'), 'utf8'), /compact\.ts/)
   })
 
   it('registerProvider args match openai-completions gateway shape without a real key', () => {

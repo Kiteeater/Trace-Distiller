@@ -3,7 +3,10 @@
  * KV-cache order: stable prefix → session state pointers → unstable evidence.
  * Unstable user / evidence must not enter the stable prefix.
  * Large payloads are masked via tool_mask (ADR-0010/0012).
+ * Distiller-owned prune (compact.ts) drops older ACK/masked rounds from
+ * `messages` at assembly; S0 pointers are never pruned. Not pi compact / LLM summary.
  */
+import { prunePromptHistory } from './compact.ts'
 import {
   formatMaskedForPrompt,
   isMaskedToolSummary,
@@ -36,9 +39,11 @@ function nonEmpty(part: string | undefined): part is string {
 /**
  * Compose a session prompt in stable → state-pointer → unstable order.
  * `system` + `skill_text` form the stable prefix; `skeleton_text` /
- * `state_pointers` are compact session state; messages + `text` are unstable
- * (prior turns, user text, evidence). Messages that look like tool payloads
- * go through maskPromptMessageContent.
+ * `state_pointers` are compact session state (S0 pointers — never pruned);
+ * pruned `messages` + `text` are unstable (prior turns, user text, evidence).
+ * Distiller-owned prune keeps recent ACK/masked rounds only (ADR-0012);
+ * remaining messages still go through maskPromptMessageContent.
+ * Does not call pi compact and does not LLM-summarize history.
  */
 export function composeSessionPrompt(input: SessionPromptInput): string {
   const chunks: string[] = []
@@ -46,7 +51,8 @@ export function composeSessionPrompt(input: SessionPromptInput): string {
   if (stable.length > 0) chunks.push(stable.join('\n\n'))
   const state = [input.skeleton_text, input.state_pointers].filter(nonEmpty)
   if (state.length > 0) chunks.push(state.join('\n\n'))
-  for (const msg of input.messages ?? []) {
+  const pruned = prunePromptHistory(input.messages ?? [])
+  for (const msg of pruned) {
     const content = maskPromptMessageContent(msg.content)
     chunks.push(`${msg.role}:\n${content}`)
   }

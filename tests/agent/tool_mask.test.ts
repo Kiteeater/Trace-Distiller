@@ -210,4 +210,12 @@ describe('tool_mask', () => {
     const stableEnd = composed.indexOf('SKELETON_PTR')
     assert.doesNotMatch(composed.slice(0, stableEnd), /USER_UNSTABLE|evidence=secret|PRIOR_UNSTABLE/)
   })
+
+  it('prompt/compact.ts is a prompt-layer leaf (ADR-0016)', () => {
+    const compactSrc = readFileSync(join(here, '../../src/agent/prompt/compact.ts'), 'utf8')
+    assert.match(compactSrc, /export function prunePromptHistory/)
+    const indexSrc = readFileSync(join(here, '../../src/agent/prompt/index.ts'), 'utf8')
+    assert.match(indexSrc, /from ['"]\.\/compact\.ts['"]/)
+  })
 })
+

@@ -9,6 +9,11 @@ export {
   type SessionPromptInput,
 } from './compose.ts'
 export {
+  isAckOrMaskedRoundMessage,
+  prunePromptHistory,
+  type PrunePromptHistoryOpts,
+} from './compact.ts'
+export {
   ACK_OR_MASKED_REQUIRED_MESSAGE,
   TOOL_MASK_DEFAULT_MAX_CHARS,
   assertAckOrMaskedToolMessage,

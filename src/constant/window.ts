@@ -130,3 +130,10 @@ export const SPARSE_INTENT_FAILURE_DENSE_MIN = 2
 
 /** 强制停机时的 uncertainty 下限（agent 自报更低也抬到此值）。 */
 export const SPARSE_INTENT_FORCE_STOP_UNCERTAINTY = 0.85
+
+/**
+ * Distiller-owned prompt history: keep this many recent ACK/masked-card rounds
+ * in agent-visible messages (ADR-0012 / ADR-0016). Older evidence text is
+ * dropped at prompt assembly only — not from store/warrant. Not pi session compact.
+ */
+export const PROMPT_HISTORY_RECENT_ROUNDS = 2

@@ -46,6 +46,7 @@ import {
   type SessionPromptResult,
   type SessionToolCall,
 } from './open_session.ts'
+import { prunePromptHistory } from '../prompt/compact.ts'
 import { assertAckOrMaskedToolMessage } from '../prompt/tool_mask.ts'
 import { rethrowIfAborted, throwIfAborted } from '../../utils/timeout.ts'
 
@@ -159,6 +160,7 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
         assertAckOrMaskedToolMessage(lastAck)
         messages.push({ role: 'user', content: lastAck })
       }
+      const prunedMessages = prunePromptHistory(messages)
 
       let result: SessionPromptResult
       try {
@@ -175,7 +177,7 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
             TRACE_DATA_NOTICE,
           ].join(' '),
           skill_text,
-          messages,
+          messages: prunedMessages,
           text: composeSingleSlotText({
             intent: input.intent,
             skeleton: input.skeleton,

@@ -34,7 +34,7 @@ ADR-0010 把 how-to-cut 交给 cut-brain（洞 B 角色 + 工具），并要求 
 | **S2** | 一张证据卡 / 一次 disclose turn：`structure` \| `headtail` \| `error` 三选一 | 硬 token 帽；**永不**把全文给 B |
 | **S3** | 当前 active 的一条准则 / skill id 指针（闭集） | 极薄；不是规则全文 |
 
-全文只在 store。工具 execute = **ACK + card_id**；messages **永不**追加 raw tool body。
+全文只在 store。工具 execute = **ACK + card_id**；messages **永不**追加 raw tool body。Prompt 侧 Distiller prune（`prompt/compact.ts`）丢掉旧 ACK/masked 轮次，不是 pi compact。
 
 ### 循环
 
