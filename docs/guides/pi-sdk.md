@@ -24,7 +24,7 @@
 **不重开 [ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)。** Distiller 是流水线 + 两个洞；不要把 distill 编排交给 pi agent loop，不要做成「一个 Distiller Agent 在 pi 里跑完全程」。
 
 1. **pi = sessions 洞内核，不是 agent runtime。** 两洞需要程序化嵌入的 LLM 会话；pi 原生 TS，支持多 provider。编排器是自写薄 CLI，不用 LangChain / CrewAI，也不用 pi 的 agent loop 当 orchestrator。
-2. **`createAgentSession` 只允许在 `src/agent/sessions/`。** 现由 `open_session.ts` 真正 import；`skeleton_pass.ts` / `label_window.ts` 走工厂；`write_warrant.ts` 仍是纯代码（见 [file-architecture.md](./file-architecture.md)）。`extension.ts` 可以依赖 pi 的 **tool 类型**，但不许开会话。`eval/` 要干净会话，必须走 sessions 工厂。`service/live.ts` 不 import pi。可用 lint/grep 做门禁。
+2. **`createAgentSession` 只允许在 `src/agent/sessions/`。** 现由 `open_session.ts` 真正 import；`skeleton_pass.ts` / `label_window.ts` 走工厂；`write_warrant.ts` 仍是纯代码（见 [file-architecture.md](./file-architecture.md)）。`extension.ts` 可以依赖 pi 的 **tool 类型**，但不许开会话。`eval/` 要干净会话，必须走 sessions 工厂。`service/live.ts` 不 import pi。可用 lint/grep 做门禁。[ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md) 把洞工具 registry / prompt composer 拆到 `src/agent/tools/` 与 `src/agent/prompt/`（代码搬家 follow-up）；`createAgentSession` 仍不离开 `sessions/`。若 `defineTool` / `ToolDefinition` 必须落在 `tools/`，import allowlist **可收窄**扩到该目录（仅这些符号）。
 3. **薄包，不是框架。** 对外稳定的是 `skeletonPass` / `labelWindow`（以及 `writeWarrant`）和 L4 用的 `openSession` 工厂。见 [agent-harness.md](./agent-harness.md)。不要长出 `PiAgentRuntime`、中间件栈、图编排、pi-coding 式工具环。
 4. **可扩展面（不必换目录）：**
    - **provider / 模型**：两洞走 pi provider 抽象；档位走 env / 入参，不写死在 skill。
@@ -130,7 +130,7 @@ spike 用假 provider 或便宜档即可；要留下「三项打勾」的记录�
 
 ### 换内核时动哪里
 
-只动 `agent/sessions/`（外加 extension 里的 tool **类型** 若绑死了 pi 的接口定义）。skill Markdown、CutProfile、assembler、SQLite schema、报告、live 都不该感知「现在是不是 pi」。若换内核需要改 orchestrator，说明活口已经漏了。
+只动 `agent/sessions/`（外加 extension 里的 tool **类型** 若绑死了 pi 的接口定义；[ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md) 若把 `defineTool` 放进 `tools/`，换内核还动那一层适配，仍禁止碰 orchestrator）。skill Markdown、CutProfile、assembler、SQLite schema、报告、live 都不该感知「现在是不是 pi」。若换内核需要改 orchestrator，说明活口已经漏了。
 
 ## 边界（非目标）
 
@@ -167,6 +167,7 @@ spike 用假 provider 或便宜档即可；要留下「三项打勾」的记录�
 ## 相关文档
 
 - [ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)
+- [ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md) — `tools/` / `prompt/` / `sessions/` 叶子；registry 为洞工具唯一入口
 - [agent-harness.md](./agent-harness.md)
 - [file-architecture.md](./file-architecture.md)
 - [agent-sessions.md](../modules/agent-sessions.md)

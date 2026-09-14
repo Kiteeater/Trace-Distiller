@@ -7,6 +7,7 @@
 裁剪决策权在 **agent session（editor-in-chief）**：理解意图并决定 how to cut。Tools 只执行操作；工具结果经 **tool mask** 回灌下一 turn（全量可进 warrant/training store）。Admission / span / warrant assemble / I/O 仍是确定性 TypeScript。pi 只经 `src/agent/sessions/`（可托管 cut-brain 会话，不是 pi-coding 产品循环）。不要引入 LangChain / CrewAI。`--no-llm` 已删除。L4 不计蒸馏成本。
 
 - **Architecture enforcement**：六条不变量由代码+测试锁死（不是新框架）：(1) `mergeAdoptedWithBrain` + `assertNoRuledOverwrite` — 洞 B 不得覆盖 `isResolvedByRules` 的规则已定标；(2) `assertAckOrMaskedToolMessage` / 非长度-only 的 `maskPromptMessageContent` — 工具回灌仅 ACK + card_id / `maskToolResult`；(3) cut-brain `focus=1`，同轮 multi-focus+disclose 计 violation；(4) 骨架段 `skeleton_protect`，规则禁 drop/collapse；(5) 无 `--no-llm` / 无静默 rules-only（`assertAgentLedMode`）；(6) 破坏上述不变量的测试必须红。禁止 LangChain / CrewAI。
+- **Agent 布局（[ADR-0016](./docs/adr/0016-agent-tools-prompt-pipeline-layout.md)）**：`src/agent/tools/`（registry + executors；洞工具**唯一入口**）/ `src/agent/prompt/`（KV-friendly compose：稳定前缀 → 状态指针 → 不稳定证据；大 payload 掩码）/ `src/agent/sessions/`（洞循环 + `open_session` 工厂）。sessions 禁止绕过 registry 调洞工具，禁止绕过 composer 组 prompt。`createAgentSession` 仍只在 `sessions/`。不削弱 0010/0012/PR#68。代码搬家 follow-up；本批只授权叶子。
 
 ## 命令
 
@@ -36,11 +37,11 @@ Agent-led only（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）�
 3. **service 薄壳**：CLI 只解析参数、调流水线、写退出码。步骤顺序不写在 CLI 里。
 4. **data 统一管库**：SQLite 只出现在 `src/data/`。
 5. **utils 无状态**：有状态的进 `domain/` 或 `data/`。
-6. **pi 只经 sessions**：全仓库唯一可 `import` pi / 调用 `createAgentSession` 的地方是 `src/agent/sessions/`。`eval/` 起干净会话也必须走该目录的工厂。
+6. **pi 只经 sessions（工厂）**：`createAgentSession` 与 pi session API **只允许**出现在 `src/agent/sessions/`。`eval/` 起干净会话也必须走该目录的工厂。[ADR-0016](./docs/adr/0016-agent-tools-prompt-pipeline-layout.md)：`tools/` 优先纯 registry（不开会话）；若 `defineTool` / `ToolDefinition` 必须落在 `tools/`，import allowlist **可收窄**扩到 `src/agent/tools/`（仅这些符号）。禁止在 `tools/` / `prompt/` 调 `createAgentSession`。
 
 ## 禁止另开
 
-不要新建 `src/gateway/`、`src/runtime/`、`src/biz/`、`src/agents/`。接入门面是 `adapters/`；macaron 的 `biz/` 在这里是 `pipeline/` + `agent/`。
+不要新建 `src/gateway/`、`src/runtime/`、`src/biz/`、`src/agents/`。接入门面是 `adapters/`；macaron 的 `biz/` 在这里是 `pipeline/` + `agent/`。[ADR-0016](./docs/adr/0016-agent-tools-prompt-pipeline-layout.md) 授权的是 `src/agent/tools/` 与 `src/agent/prompt/`，不是另开顶层。
 
 每个 enum 一个文件。已定五个：`label` / `scenario` / `agent_role` / `focus` / `cut_action`。以后若加（例如 `TraceSource`），继续新文件，禁止塞回已有文件。
 
@@ -62,7 +63,7 @@ Agent-led only（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）�
 
 - 真模型 L4 重放成功率：接口已接通（假后端可测；真模型 `TRACE_DISTILLER_MODEL_L4`）。真实重放仍需仓库 + 模型，CI 不假装测到成功率。`distill({ mode: 'with_llm' })` 盲测回填仍只用纯代码对照骨架与 plan，不调 L4。
 - Unix socket 已接通（可选）：默认仍进程内 `registerJobFromResult` + `file://` dump；`--live-socket` 另开只读窗。live 仍禁止 HTTP listen。
-- pi SDK / `createAgentSession`：只允许出现在 `src/agent/sessions/`（现为 `open_session.ts`）。eval 干净会话必须走该目录的工厂。模型档走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`（`provider/modelId`）。OpenAI-compatible 自定义网关：`TRACE_DISTILLER_API_BASE` + `TRACE_DISTILLER_API_KEY`；`TRACE_DISTILLER_PROVIDER` 显式命名，或从上述 `MODEL_*` 的 `provider/modelId` 前缀推导（无内置默认；Mint/Macaron 是可选配置之一，不是内置默认）。`PiSessionBackend` 对此 `registerProvider`（`api` 走 `TRACE_DISTILLER_API_TYPE`，默认 `openai-completions`）再用 `registry.find`，不走内置 `getModel`。CLI 入口加载本机 `.env`（若存在）。密钥不进代码、不进 git、不 log。失败重试 1 次（`PI_FAILURE_RETRY`）再 Fail-Closed。生产默认 `PiSessionBackend`；`FakeSessionBackend` 仅测试。
+- pi SDK / `createAgentSession`：只允许出现在 `src/agent/sessions/`（现为 `open_session.ts`）。eval 干净会话必须走该目录的工厂。[ADR-0016](./docs/adr/0016-agent-tools-prompt-pipeline-layout.md) 授权 `tools/` / `prompt/` 叶子；`defineTool` 若迁入 `tools/`，allowlist 只扩这两个符号。模型档走环境变量 `TRACE_DISTILLER_MODEL_HOLE_A` / `TRACE_DISTILLER_MODEL_HOLE_B` / `TRACE_DISTILLER_MODEL_L4`（`provider/modelId`）。OpenAI-compatible 自定义网关：`TRACE_DISTILLER_API_BASE` + `TRACE_DISTILLER_API_KEY`；`TRACE_DISTILLER_PROVIDER` 显式命名，或从上述 `MODEL_*` 的 `provider/modelId` 前缀推导（无内置默认；Mint/Macaron 是可选配置之一，不是内置默认）。`PiSessionBackend` 对此 `registerProvider`（`api` 走 `TRACE_DISTILLER_API_TYPE`，默认 `openai-completions`）再用 `registry.find`，不走内置 `getModel`。CLI 入口加载本机 `.env`（若存在）。密钥不进代码、不进 git、不 log。失败重试 1 次（`PI_FAILURE_RETRY`）再 Fail-Closed。生产默认 `PiSessionBackend`；`FakeSessionBackend` 仅测试。
 
 ## TypeScript
 

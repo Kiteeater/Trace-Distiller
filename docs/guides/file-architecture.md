@@ -2,9 +2,9 @@
 
 | 字段 | 内容 |
 |------|------|
-| 版本 | v0.2 |
-| 日期 | 2026-09-09 |
-| 状态 | **已收口**：叶子文件树已拍板；分层纪律仍以 architecture v0.3 为准 |
+| 版本 | v0.3 |
+| 日期 | 2026-09-14 |
+| 状态 | **已收口**：叶子文件树已拍板；[ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md) 授权 `src/agent/tools/` + `src/agent/prompt/`（代码迁移 follow-up） |
 | 权威来源 | 本页确认树；分层理由见 [architecture.md](../architecture.md) v0.3、契约见 [modules/](../modules/) |
 
 ## 目的
@@ -21,9 +21,9 @@
 ## 已定结论
 
 1. **叶子树已定。** 下节那棵树是开工对照。architecture v0.3 的分层纪律有效；示例里的 `types/trace.ts`、`service/report.ts`、`label_enum.ts` 等被本树取代，不要两套并行。
-2. **不另开** `src/gateway/`、`src/runtime/`、`src/biz/`。接入门面仍是 `adapters/`（产品名「Agent Gateway」不是目录名）。编排不是 runtime agent。macaron 的 `biz/` 对应到这里是 `pipeline/` + `agent/`，不要再套一层 `biz/`。
+2. **不另开** `src/gateway/`、`src/runtime/`、`src/biz/`、`src/agents/`。接入门面仍是 `adapters/`（产品名「Agent Gateway」不是目录名）。编排不是 runtime agent。macaron 的 `biz/` 对应到这里是 `pipeline/` + `agent/`，不要再套一层 `biz/`。**允许** `src/agent/tools/` 与 `src/agent/prompt/`（[ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md)；代码搬家 follow-up，叶子已授权）。
 3. **不抄 macaron 在线层。** 参考的是纪律：契约前置、每 enum 一文件、biz 不碰库、service 薄壳、bun 装依赖 / node 跑产物、不要 `package-lock.json`。不抄 `remote/`、`middleware/`、`decorator/`、`observability/`、在线服务那套。
-4. **`createAgentSession` 只允许出现在 `src/agent/sessions/`。** 见 [pi-sdk.md](./pi-sdk.md)。
+4. **`createAgentSession` 只允许出现在 `src/agent/sessions/`。** 见 [pi-sdk.md](./pi-sdk.md)。ADR-0016：若 `defineTool` / `ToolDefinition` 必须落在 `tools/`，import allowlist **可收窄**扩到 `src/agent/tools/`（仅这些符号）；禁止在 `tools/` 开会话。
 5. **`service/live.ts` 只读订阅 Distiller 自己的裁剪进度，不进 pipeline。** live ≠ 盯对方 coding agent。蒸馏主链路仍离线。与 [users-and-surfaces.md](./users-and-surfaces.md) / 058e32e 收口一致。
 6. **工程骨架：`bun install`，`node` 跑产物。** 锁文件只用 bun lock；不要 `package-lock.json` / `yarn.lock` / `pnpm-lock.yaml`。
 7. **「树已定」≠「字段已拍板」。** P0 结构体不定，segmenter / rules / 卡片流不能并行开工——这是 [TODO.md](../TODO.md) 的硬前置。
@@ -73,10 +73,13 @@ trace-distiller/
 │  │  ├─ orchestrator.ts
 │  │  ├─ assembler.ts
 │  │  └─ tools_only.ts          # ADR-0013 tools-only RawTurn 过滤（无 IO、不进洞）
-│  ├─ agent/
-│  │  ├─ sessions/              # 全仓库唯一可 import pi（含 tool_mask.ts）
+│  ├─ agent/                    # Distiller 命名：tools / prompt / sessions（洞循环）；不是 pi-coding 产品 runtime
+│  │  ├─ tools/                 # ADR-0016：registry + executors（唯一洞工具入口）；代码迁移 follow-up
+│  │  ├─ prompt/                # ADR-0016：KV-friendly compose + 稳定前缀 + 大 payload 掩码；迁移 follow-up
+│  │  ├─ sessions/              # 洞循环 + open_session 工厂；createAgentSession 只在这里
 │  │  │  ├─ open_session.ts      # 工厂 + SessionBackend；createAgentSession 只在这里
-│  │  │  ├─ tool_mask.ts        # ADR-0010 ACK / maskToolResult；prompt 禁 raw tool body
+│  │  │  ├─ hole_tools.ts       # 迁移前：pi customTools 适配；目标 tools/ registry
+│  │  │  ├─ tool_mask.ts        # ADR-0010 ACK / maskToolResult；目标 prompt/ 或 tools/+prompt/ 共享
 │  │  │  ├─ card_index.ts       # CARD_INDEX 紧凑序列化（洞 A/B 共用）
 │  │  │  ├─ candidate_pool.ts   # ADR-0011 分层候选池
 │  │  │  ├─ sparse_intent.ts    # ADR-0011 多轮稀疏采样（洞 A）
@@ -88,7 +91,7 @@ trace-distiller/
 │  │  │  ├─ l4_qa.ts            # runQa；role=l4_qa
 │  │  │  ├─ l4_replay.ts        # runReplay；干净会话，不代理原工具历史
 │  │  │  └─ l4_review.ts        # runBlindReview；禁止 warrant/skeleton
-│  │  ├─ extension.ts
+│  │  ├─ extension.ts           # LOCKED 洞工具名 + 纯 handlers；可改 re-export shim（ADR-0016）
 │  │  └─ skills/
 │  ├─ data/                     # SQLite；biz 不直接碰库
 │  │  ├─ data_segment.ts
@@ -137,11 +140,11 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 
 ### 按树开工
 
-- 新文件必须落进已有叶子。禁止新建 `src/gateway/`、`src/runtime/`、`src/biz/`、`src/agents/`。
+- 新文件必须落进已有叶子。禁止新建 `src/gateway/`、`src/runtime/`、`src/biz/`、`src/agents/`。`src/agent/tools/` 与 `src/agent/prompt/` 已由 [ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md) 授权（搬家 follow-up）。
 - 每个 enum 一个文件。上树五个是已定集合。
 - `pipeline/` 与 `agent/` 不直接碰 SQLite；入口逻辑不写进 CLI；utils 只放无状态小函数。
 - live 只挂订阅：不改编排、不进 orchestrator 热路径、不 import pi。
-- 跳过洞的通路是一等公民：`--no-llm` 仍应能导出保守 CutPlan。
+- 蒸馏走 agent 路径（[ADR-0010](../adr/0010-agent-led-cut-with-tool-mask.md)）；禁止 `--no-llm` / 静默 rules-only。无密钥用 `FakeSessionBackend` / `--fake-l4`。
 - 依赖：`bun install`；跑：`node script/run-distill.ts distill <trace.jsonl> [--profile p.json] [--report out.html]`（见 [script-run-distill.md](../modules/script-run-distill.md)）。现在不要创建 ts / lockfile。
 
 ### 已定 / 仍 OPEN
@@ -156,8 +159,10 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 | `src/domain/` 三文件 | LabelDecision / CutDecision / SpanViolation | **文件名已定** | 不变量跟 types 一起钉 |
 | `src/adapters/claude_code.ts` | L0 解析 + Admission Gate | **M1 文件已定** | 启发式阈值见 ingest 开放问题；SWE-bench parser MVP 不做 |
 | `src/pipeline/*.ts` 五文件 | 切段 / 规则 / 编排 / 组装 / tools-only 过滤 | **文件名已定** | Jaccard / span 数字已拍板；`writeWarrant` 已改纯代码；`tools_only.ts` 是 ADR-0013 对照臂纯函数 |
-| `src/agent/sessions/` | **唯一 pi 依赖点** | **文件名已定** | `open_session.ts` 工厂；`tool_mask.ts` / `cut_brain.ts`（ADR-0010）；洞 A/B；`write_warrant.ts`；L4 |
-| `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown | **路径已定** | LOCKED：`label_segment` / `check_continuity` / `keep_segment` / `read_segment` / `apply_rules_hint`（[tools.md](./tools.md)） |
+| `src/agent/sessions/` | 洞循环 + `open_session` 工厂；**`createAgentSession` 只在这里** | **文件名已定** | `open_session.ts` 工厂；`cut_brain.ts`（ADR-0010/0012）；洞 A/B；`write_warrant.ts`；L4。`hole_tools.ts` / `tool_mask.ts` 在 ADR-0016 搬家前仍在此 |
+| `src/agent/tools/` | 工具层：registry 为洞工具**唯一入口**；dispatch 到 extension handlers | **目录已授权（ADR-0016）；代码迁移 follow-up** | 闭集不变（[tools.md](./tools.md)）。可选：仅 `defineTool` / `ToolDefinition` 的 pi import；禁止 `createAgentSession` |
+| `src/agent/prompt/` | Prompt 层：稳定前缀 → 状态指针 → 不稳定证据；大 payload 掩码 | **目录已授权（ADR-0016）；代码迁移 follow-up** | 绑现有 `tool_mask` / `maskPromptMessageContent` / `assertAckOrMaskedToolMessage`；禁止把 user/evidence 拍进稳定前缀 |
+| `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown | **路径已定** | LOCKED：`label_segment` / `check_continuity` / `keep_segment` / `read_segment` / `apply_rules_hint`（[tools.md](./tools.md)）。`extension.ts` 可改 re-export shim |
 | `src/data/data_*.ts` 四文件 | SQLite：段 / 打标 / 凭证 / 指标 | **文件名已定** | **列级 schema OPEN**（P0） |
 | `src/eval/` | L4 数字 + 分档报分（`benchmark.ts`）+ Hole A 向量效率（`vector_efficiency.ts`）+ 池级预算纯函数（`utility_budget.ts`）+ 摊薄/质量门控 ROI（`utility_roi.ts`） | **职责已定** | 盲测协议已拍板。QA/replay/review 经 sessions。`a_eff` 仅 bench，非在线停机。复合分见 [benchmark.md](./benchmark.md)；禁止跨赛道平均。摊薄 ROI 不进 composite/m1 |
 | `src/report/` | 结果 JSON → 单个 `.html` | **已定** | 视觉细节非契约 |
@@ -177,7 +182,7 @@ architecture 三条活口也已定：**目录不用为它们预留第四种形�
 - 不重写 architecture，不在这里展开 L0–L4 的算法。
 - 不把 modules 的字段草图再抄一遍。
 - 不把 OPEN 项「确认」成字段已拍板。
-- **不另开** `src/gateway/`、`src/runtime/`、`src/biz/`。Gateway 产品名落 `adapters/`；live 落 `service/live.ts`。
+- **不另开** `src/gateway/`、`src/runtime/`、`src/biz/`、`src/agents/`。Gateway 产品名落 `adapters/`；live 落 `service/live.ts`。`src/agent/tools/` / `src/agent/prompt/` 是 ADR-0016 授权叶子，不是另开顶层。
 - 不抄 macaron 的 remote / middleware / observability。
 - 不在确认书里再改树。以后要改目录，先改本页（并同步 architecture / ADR），不要在 PR 里默默加顶层目录。
 - 不把 distill 编排交给 pi agent loop（[ADR-0008](../adr/0008-pipeline-plus-two-agent-holes.md)）。
@@ -206,5 +211,6 @@ architecture 三条活口也已定：**目录不用为它们预留第四种形�
 - [architecture.md](../architecture.md) v0.3 — 分层理由
 - [modules/README.md](../modules/README.md) — 工程契约
 - [pi-sdk.md](./pi-sdk.md) / [agent-harness.md](./agent-harness.md)
+- [ADR-0016](../adr/0016-agent-tools-prompt-pipeline-layout.md) — `tools/` / `prompt/` / `sessions/` 叶子
 - [users-and-surfaces.md](./users-and-surfaces.md) — live 定义
 - [TODO.md](../TODO.md)
