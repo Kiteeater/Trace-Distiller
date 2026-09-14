@@ -11,6 +11,7 @@ import {
   openReviewSession,
   parseStructuredJson,
   playbackIndexForL4,
+  tokenUsageWithRole,
   type SessionBackend,
   type SessionPromptInput,
   type SessionPromptResult,
@@ -117,11 +118,7 @@ export function interpretReviewResult(
   }
   return {
     answer,
-    usage: {
-      role,
-      input_tokens: result.usage.input_tokens,
-      output_tokens: result.usage.output_tokens,
-    },
+    usage: tokenUsageWithRole(result.usage, role),
   }
 }
 

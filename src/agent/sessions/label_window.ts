@@ -18,6 +18,7 @@ import {
   listenSessionAbort,
   openSession,
   parseStructuredJson,
+  tokenUsageWithRole,
   type SessionBackend,
   type SessionPromptResult,
 } from './open_session.ts'
@@ -204,11 +205,7 @@ function interpretLabelWindowResult(
   const output: LabelWindowOutput = {
     decisions,
     still_unlabeled,
-    usage: {
-      role: ctx.role,
-      input_tokens: result.usage.input_tokens,
-      output_tokens: result.usage.output_tokens,
-    },
+    usage: tokenUsageWithRole(result.usage, ctx.role),
   }
   if (patch !== undefined) output.skeleton_patch = patch
   return output
@@ -238,11 +235,7 @@ function interpretContinuityResult(
     ok: accepted.accepted.reachable,
     score: accepted.accepted.score,
     reason: accepted.accepted.reason,
-    usage: {
-      role,
-      input_tokens: result.usage.input_tokens,
-      output_tokens: result.usage.output_tokens,
-    },
+    usage: tokenUsageWithRole(result.usage, role),
   }
 }
 

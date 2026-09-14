@@ -37,7 +37,7 @@ Agent-led only（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）�
 3. **service 薄壳**：CLI 只解析参数、调流水线、写退出码。步骤顺序不写在 CLI 里。
 4. **data 统一管库**：SQLite 只出现在 `src/data/`。
 5. **utils 无状态**：有状态的进 `domain/` 或 `data/`。
-6. **pi 只经 sessions（工厂）**：`createAgentSession` 与 pi session API **只允许**出现在 `src/agent/sessions/`。`eval/` 起干净会话也必须走该目录的工厂。[ADR-0016](./docs/adr/0016-agent-tools-prompt-pipeline-layout.md)：`tools/` 为 registry（不开会话）；`defineTool` / `ToolDefinition` import allowlist **仅** `src/agent/tools/`。禁止在 `tools/` / `prompt/` 调 `createAgentSession`。Distiller pi sessions expose cooperative `abort()` + AbortSignal-aware waits; on abort dispose (Fail-Closed; no raw tool bodies).
+6. **pi 只经 sessions（工厂）**：`createAgentSession` 与 pi session API **只允许**出现在 `src/agent/sessions/`。`eval/` 起干净会话也必须走该目录的工厂。[ADR-0016](./docs/adr/0016-agent-tools-prompt-pipeline-layout.md)：`tools/` 为 registry（不开会话）；`defineTool` / `ToolDefinition` import allowlist **仅** `src/agent/tools/`。禁止在 `tools/` / `prompt/` 调 `createAgentSession`。Distiller pi sessions expose cooperative `abort()` + AbortSignal-aware waits; on abort dispose (Fail-Closed; no raw tool bodies). Runner lifecycle `open → (attach?) → prompt* → abort?/dispose` (`SESSION_RUNNER_LIFECYCLE` in `open_session.ts`); budget exhaust / hard failure must still dispose. Usage tagged by `AgentRole`; distill spend = hole A+B only (ADR-0007/0015; L4 never folded into `distill_tokens`).
 
 ## 禁止另开
 
