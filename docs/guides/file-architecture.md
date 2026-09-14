@@ -81,6 +81,7 @@ trace-distiller/
 │  │  │  └─ index.ts
 │  │  ├─ prompt/                # ADR-0016：KV-friendly compose + 稳定前缀 + 大 payload 掩码
 │  │  │  ├─ compose.ts          # composeSessionPrompt：稳定前缀 → 状态指针 → 不稳定证据
+│  │  │  ├─ compact.ts          # Distiller-owned history prune（近 N 轮 ACK/masked；非 pi compact）
 │  │  │  ├─ tool_mask.ts        # ADR-0010 ACK / maskToolResult（prompt 层掩码；tools ACK 引用）
 │  │  │  └─ index.ts
 │  │  ├─ sessions/              # 洞循环 + open_session 工厂；createAgentSession 只在这里
@@ -169,7 +170,7 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 | `src/pipeline/*.ts` 五文件 | 切段 / 规则 / 编排 / 组装 / tools-only 过滤 | **文件名已定** | Jaccard / span 数字已拍板；`writeWarrant` 已改纯代码；`tools_only.ts` 是 ADR-0013 对照臂纯函数 |
 | `src/agent/sessions/` | 洞循环 + `open_session` 工厂；**`createAgentSession` 只在这里** | **文件名已定** | `open_session.ts` 工厂；`cut_brain.ts`（ADR-0010/0012）；洞 A/B；`write_warrant.ts`；L4。`hole_tools.ts` / `tool_mask.ts` 为 re-export shim |
 | `src/agent/tools/` | 工具层：registry 为洞工具**唯一入口**；dispatch 到 extension handlers | **已落地（ADR-0016）** | 闭集不变（[tools.md](./tools.md)）。`pi_tools.ts` 仅 `defineTool` / `ToolDefinition`；禁止在 `tools/` 开会话 |
-| `src/agent/prompt/` | Prompt 层：稳定前缀 → 状态指针 → 不稳定证据；大 payload 掩码 | **已落地（ADR-0016）** | `compose.ts` + `tool_mask.ts`（prompt 层掩码；tools ACK 引用）。禁止把 user/evidence 拍进稳定前缀 |
+| `src/agent/prompt/` | Prompt 层：稳定前缀 → 状态指针 → 不稳定证据；大 payload 掩码 | **已落地（ADR-0016）** | `compose.ts` + `compact.ts`（近 N 轮 ACK/masked prune；非 pi compact）+ `tool_mask.ts`（prompt 层掩码；tools ACK 引用）。禁止把 user/evidence 拍进稳定前缀 |
 | `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown；`skills/load.ts` 确定性读盘 | **路径已定** | LOCKED：`label_segment` / `check_continuity` / `keep_segment` / `read_segment` / `apply_rules_hint`（[tools.md](./tools.md)）。`extension.ts` 可改 re-export shim。`SKILL_ROUTE` 仍在 `src/constant/skill_route.ts` |
 | `src/data/data_*.ts` 四文件 | SQLite：段 / 打标 / 凭证 / 指标 | **文件名已定** | **列级 schema OPEN**（P0） |
 | `src/eval/` | L4 数字 + 分档报分（`benchmark.ts`）+ Hole A 向量效率（`vector_efficiency.ts`）+ 池级预算纯函数（`utility_budget.ts`）+ 摊薄/质量门控 ROI（`utility_roi.ts`） | **职责已定** | 盲测协议已拍板。QA/replay/review 经 sessions。`a_eff` 仅 bench，非在线停机。复合分见 [benchmark.md](./benchmark.md)；禁止跨赛道平均。摊薄 ROI 不进 composite/m1 |

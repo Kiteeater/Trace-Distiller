@@ -40,6 +40,7 @@ import {
   type SessionPromptResult,
   type SessionToolCall,
 } from './open_session.ts'
+import { prunePromptHistory } from '../prompt/compact.ts'
 import { formatMaskedForPrompt, maskToolResult } from '../prompt/tool_mask.ts'
 import { estimateTokens } from '../../utils/tokens.ts'
 import { rethrowIfAborted, throwIfAborted } from '../../utils/timeout.ts'
@@ -50,6 +51,13 @@ const SKELETON_NODE_KINDS: readonly SkeletonNodeKind[] = [
   'main_path_hypothesis',
   'verification_anchor',
 ]
+
+/** Bound in-memory ACK/masked history to recent N rounds (prompt/compact.ts). */
+function boundPromptHistory(messages: SessionMessage[]): void {
+  const pruned = prunePromptHistory(messages)
+  messages.length = 0
+  messages.push(...pruned)
+}
 
 function isSkeletonNodeKind(value: unknown): value is SkeletonNodeKind {
   return typeof value === 'string' && (SKELETON_NODE_KINDS as readonly string[]).includes(value)
@@ -175,6 +183,7 @@ export async function sparseIntent(input: SparseIntentInput): Promise<SparseInte
       }
 
       rounds = round + 1
+      boundPromptHistory(messages)
       let result: SessionPromptResult
       try {
         result = await session.prompt({
@@ -255,6 +264,7 @@ export async function sparseIntent(input: SparseIntentInput): Promise<SparseInte
             'Never emit keep/collapse/drop.',
           ].join('\n'),
         })
+        boundPromptHistory(messages)
 
         try {
           result = await session.prompt({
