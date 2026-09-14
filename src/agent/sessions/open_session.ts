@@ -22,7 +22,7 @@ import {
   type SessionPromptInput,
 } from '../prompt/compose.ts'
 import { L4_REPLAY_CODING_TOOLS, resolvePiToolRegistration } from '../tools/pi_tools.ts'
-import type { AgentRole } from '../../enums/agent_role.ts'
+import { isAgentRole, type AgentRole } from '../../enums/agent_role.ts'
 import { LABELS, type Label } from '../../enums/label.ts'
 import {
   sanitizeThinSessionEvent,
@@ -181,10 +181,69 @@ export interface ResolvedSessionOpts {
 
 export const SESSION_DISPOSED_MESSAGE = 'session already disposed'
 
+/**
+ * Distiller pi session runner lifecycle (enforceable contract):
+ *   open → (attach?) → prompt* → abort?/dispose
+ *
+ * - open: `openSession` / `open*Session` factories (wrapRetry + backend.open)
+ * - attach?: optional warm-up (`ensureSession` / pi kernel)
+ * - prompt*: zero or more `prompt` turns
+ * - abort?: cooperative cancel → always ends in dispose (Fail-Closed; no raw tool bodies)
+ * - dispose: **required** on every exit — success, budget exhaust, schema/hard failure, abort, timeout
+ *
+ * Hole loops MUST use `listenSessionAbort` + `finalizePiSession` in `finally`.
+ * Budget exhaust / early stop must still hit that finally (do not open a second session without disposing the first).
+ */
+export const SESSION_RUNNER_LIFECYCLE = [
+  'open',
+  'attach?',
+  'prompt*',
+  'abort?/dispose',
+] as const
+
+export type SessionRunnerLifecycleStep = (typeof SESSION_RUNNER_LIFECYCLE)[number]
+
+/** Distill spend roles (ADR-0007/0015): only these enter hole_a_plus_b_tokens / distill_tokens. */
+export function isDistillSpendRole(role: AgentRole): boolean {
+  return role === 'hole_a_skeleton' || role === 'hole_b_label'
+}
+
+/** L4 eval roles — never fold into distill_tokens. */
+export function isL4Role(role: AgentRole): boolean {
+  return role === 'l4_qa' || role === 'l4_replay' || role === 'l4_review'
+}
+
+/** Assert usage carries a known AgentRole (Fail-Closed for missing/garbage role). */
+export function assertTokenUsageHasRole(usage: { role?: unknown }): asserts usage is { role: AgentRole } {
+  if (!isAgentRole(usage.role)) {
+    throw new Error(
+      `TokenUsage.role is required and must be a known AgentRole, got ${String(usage.role)}`,
+    )
+  }
+}
+
+/** Prefer `usage.role` when it is a known AgentRole; else the session role. Never drop role. */
+export function tokenUsageWithRole(
+  usage: { role?: unknown; input_tokens: number; output_tokens: number },
+  fallbackRole: AgentRole,
+): TokenUsage {
+  return {
+    role: isAgentRole(usage.role) ? usage.role : fallbackRole,
+    input_tokens: usage.input_tokens,
+    output_tokens: usage.output_tokens,
+  }
+}
+
+/**
+ * Distiller pi session handle.
+ * Lifecycle: {@link SESSION_RUNNER_LIFECYCLE} (`open → (attach?) → prompt* → abort?/dispose`).
+ */
 export interface PiSessionHandle {
   readonly role: AgentRole
   readonly model: string
   readonly tools: readonly string[]
+  /** True after abort/dispose. Optional so thin test doubles need not implement it. */
+  readonly disposed?: boolean
   prompt(input: SessionPromptInput): Promise<SessionPromptResult>
   /** 触发内核建会话。假后端立即完成。 */
   attach(): Promise<void>
@@ -194,6 +253,11 @@ export interface PiSessionHandle {
   dispose(): void
   /** Thin live events only (name/usage deltas). Multiple listeners; dispose clears. */
   subscribeThinEvents(listener: ThinSessionEventListener): () => void
+}
+
+/** Observable dispose for Fake + wrapRetry without poking private fields. */
+export function isSessionDisposed(handle: PiSessionHandle): boolean {
+  return handle.disposed === true
 }
 
 export interface SessionBackend {
@@ -1178,11 +1242,15 @@ class FakeSessionHandle implements PiSessionHandle {
   readonly tools: readonly string[]
   private readonly backend: FakeSessionBackend
   private readonly opts: ResolvedSessionOpts
-  private disposed = false
+  #disposed = false
   /** 1-based; incremented on each successful-path prompt start. */
   private round = 0
   private readonly thinListeners = new Set<ThinSessionEventListener>()
   private readonly abortWaiters = new Set<(err: Error) => void>()
+
+  get disposed(): boolean {
+    return this.#disposed
+  }
 
   constructor(backend: FakeSessionBackend, opts: ResolvedSessionOpts) {
     this.backend = backend
@@ -1222,15 +1290,16 @@ class FakeSessionHandle implements PiSessionHandle {
         this.emitThin({ role: this.role, round, kind: 'tool_start', tool_name })
         this.emitThin({ role: this.role, round, kind: 'tool_end', tool_name })
       }
+      const usage = tokenUsageWithRole(result.usage, this.role)
       this.emitThin({
         role: this.role,
         round,
         kind: 'usage',
-        input_tokens_delta: result.usage.input_tokens,
-        output_tokens_delta: result.usage.output_tokens,
+        input_tokens_delta: usage.input_tokens,
+        output_tokens_delta: usage.output_tokens,
       })
       this.emitThin({ role: this.role, round, kind: 'turn_end' })
-      return result
+      return { ...result, usage }
     } catch (err) {
       this.emitThin({ role: this.role, round, kind: 'turn_end', is_error: true })
       throw err
@@ -1250,12 +1319,12 @@ class FakeSessionHandle implements PiSessionHandle {
   }
 
   private assertOpen(): void {
-    if (this.disposed) throw new Error(SESSION_DISPOSED_MESSAGE)
+    if (this.#disposed) throw new Error(SESSION_DISPOSED_MESSAGE)
   }
 
   private markDisposed(): void {
-    if (this.disposed) return
-    this.disposed = true
+    if (this.#disposed) return
+    this.#disposed = true
     this.thinListeners.clear()
     const err = new Error(SESSION_DISPOSED_MESSAGE)
     for (const reject of this.abortWaiters) reject(err)
@@ -1263,7 +1332,7 @@ class FakeSessionHandle implements PiSessionHandle {
   }
 
   private raceAbort<T>(promise: Promise<T>): Promise<T> {
-    if (this.disposed) return Promise.reject(new Error(SESSION_DISPOSED_MESSAGE))
+    if (this.#disposed) return Promise.reject(new Error(SESSION_DISPOSED_MESSAGE))
     return new Promise<T>((resolve, reject) => {
       let settled = false
       const finish = (fn: () => void): void => {
@@ -1277,7 +1346,7 @@ class FakeSessionHandle implements PiSessionHandle {
       promise.then(
         (value) =>
           finish(() => {
-            if (this.disposed) reject(new Error(SESSION_DISPOSED_MESSAGE))
+            if (this.#disposed) reject(new Error(SESSION_DISPOSED_MESSAGE))
             else resolve(value)
           }),
         (err: unknown) => finish(() => reject(err)),
@@ -1298,7 +1367,11 @@ class PiSessionHandleImpl implements PiSessionHandle {
   readonly tools: readonly string[]
   private readonly opts: ResolvedSessionOpts
   private session: PiAgentSession | undefined
-  private disposed = false
+  #disposed = false
+
+  get disposed(): boolean {
+    return this.#disposed
+  }
   /**
    * 1-based turn counter. Incremented on pi `turn_start` (or on prompt start when
    * the kernel has no subscribe). Other mapped events use the current round,
@@ -1369,6 +1442,8 @@ class PiSessionHandleImpl implements PiSessionHandle {
           extracted.tool_calls.length * 16,
         ),
       }
+    } else {
+      usage = tokenUsageWithRole(usage, this.role)
     }
     const round = Math.max(this.round, 1)
     if (!hadSubscribe) {
@@ -1398,7 +1473,7 @@ class PiSessionHandleImpl implements PiSessionHandle {
   }
 
   async abort(): Promise<void> {
-    if (this.disposed) return
+    if (this.#disposed) return
     try {
       const session = this.session
       if (session !== undefined && session.abort !== undefined) {
@@ -1412,7 +1487,7 @@ class PiSessionHandleImpl implements PiSessionHandle {
   }
 
   dispose(): void {
-    this.disposed = true
+    this.#disposed = true
     this.unsubPi?.()
     this.unsubPi = undefined
     this.thinListeners.clear()
@@ -1437,7 +1512,7 @@ class PiSessionHandleImpl implements PiSessionHandle {
   }
 
   private async ensureSession(): Promise<PiAgentSession> {
-    if (this.disposed) throw new Error(SESSION_DISPOSED_MESSAGE)
+    if (this.#disposed) throw new Error(SESSION_DISPOSED_MESSAGE)
     if (this.session !== undefined) return this.session
     this.session = await createPiKernelSession(this.opts)
     if (this.session.subscribe !== undefined) {
@@ -1705,7 +1780,10 @@ export function listenSessionAbort(handle: PiSessionHandle, signal?: AbortSignal
   }
 }
 
-/** On abort: handle.abort() then dispose. Otherwise dispose only. Idempotent. */
+/**
+ * Required lifecycle dispose step ({@link SESSION_RUNNER_LIFECYCLE}).
+ * On abort: handle.abort() then dispose. Otherwise dispose only. Idempotent.
+ */
 export async function finalizePiSession(handle: PiSessionHandle, signal?: AbortSignal): Promise<void> {
   try {
     if (signal?.aborted) await handle.abort()
@@ -1723,21 +1801,38 @@ export function wrapRetry(
 ): PiSessionHandle {
   const timed = <T>(label: string, op: () => Promise<T>): Promise<T> =>
     withTimeout(withPiRetry(op, signal), timeoutMs, label, signal)
+  let closed = false
+  const markClosed = (): void => {
+    closed = true
+  }
   return {
     role: handle.role,
     model: handle.model,
     tools: handle.tools,
+    get disposed() {
+      return closed || isSessionDisposed(handle)
+    },
     prompt: (input) => timed(`session.prompt(${handle.role})`, () => handle.prompt(input)),
     attach: () => timed(`session.attach(${handle.role})`, () => handle.attach()),
     activeToolNames: () => timed(`session.activeToolNames(${handle.role})`, () => handle.activeToolNames()),
-    abort: () => handle.abort(),
-    dispose: () => handle.dispose(),
+    abort: async () => {
+      try {
+        await handle.abort()
+      } finally {
+        markClosed()
+      }
+    },
+    dispose: () => {
+      handle.dispose()
+      markClosed()
+    },
     subscribeThinEvents: (listener) => handle.subscribeThinEvents(listener),
   }
 }
 
 /**
  * L4 与两洞共用的会话工厂。不算第三洞。eval 必须走这里，禁止自己 createAgentSession。
+ * Lifecycle: {@link SESSION_RUNNER_LIFECYCLE} (`open → (attach?) → prompt* → abort?/dispose`).
  * 生产默认 PiSessionBackend（createAgentSession + SessionManager.inMemory，无 codingTools）。
  * 测试注入 FakeSessionBackend。失败重试 PI_FAILURE_RETRY 次再向上抛。
  * 每次 prompt/attach 有 SESSION_CALL_TIMEOUT_MS 硬超时（可 env 覆盖），避免 mint 无限挂起。

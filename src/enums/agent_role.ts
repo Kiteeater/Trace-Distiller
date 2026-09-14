@@ -8,3 +8,7 @@ export const AGENT_ROLES = [
 
 /** 预算科目，不是「系统里有五个 agent」。编排器不是一个 role。 */
 export type AgentRole = (typeof AGENT_ROLES)[number]
+
+export function isAgentRole(value: unknown): value is AgentRole {
+  return typeof value === 'string' && (AGENT_ROLES as readonly string[]).includes(value)
+}

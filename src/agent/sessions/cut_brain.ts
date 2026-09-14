@@ -41,6 +41,7 @@ import {
   finalizePiSession,
   listenSessionAbort,
   openSession,
+  tokenUsageWithRole,
   type SessionBackend,
   type SessionMessage,
   type SessionPromptResult,
@@ -200,10 +201,11 @@ export async function cutBrain(input: CutBrainInput): Promise<CutBrainOutput> {
         break
       }
 
+      const tagged = tokenUsageWithRole(result.usage, session.role)
       usage = {
         role: session.role,
-        input_tokens: usage.input_tokens + result.usage.input_tokens,
-        output_tokens: usage.output_tokens + result.usage.output_tokens,
+        input_tokens: usage.input_tokens + tagged.input_tokens,
+        output_tokens: usage.output_tokens + tagged.output_tokens,
       }
 
       const hintCall = result.tool_calls.find((c) => c.name === 'apply_rules_hint')

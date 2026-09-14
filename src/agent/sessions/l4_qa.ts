@@ -11,6 +11,7 @@ import {
   openQaSession,
   parseStructuredJson,
   playbackIndexForL4,
+  tokenUsageWithRole,
   type SessionBackend,
   type SessionPromptInput,
   type SessionPromptResult,
@@ -247,11 +248,7 @@ export function interpretQaResult(
   return {
     items,
     score: { answered, correct },
-    usage: {
-      role,
-      input_tokens: result.usage.input_tokens,
-      output_tokens: result.usage.output_tokens,
-    },
+    usage: tokenUsageWithRole(result.usage, role),
   }
 }
 

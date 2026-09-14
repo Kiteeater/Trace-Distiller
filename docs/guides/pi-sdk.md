@@ -72,6 +72,8 @@
 
 失败：同一会话 **重试 1 次**（`PI_FAILURE_RETRY`），仍失败则编排器 **Fail-Closed Keep**。`createAgentSession` 仍只允许出现在 `src/agent/sessions/`。生产默认 `SessionManager.inMemory()` + `noTools: 'all'`（禁止默认 codingTools）。测试注入 `FakeSessionBackend`。会话句柄提供 cooperative `abort()`；`withTimeout` 可接 `AbortSignal`；abort 后 dispose，不把工具原文写进错误。`openSession` 可订阅 thin events（role/round/tool name/usage deltas；默认关），不是完整 pi `AgentEvent` 原文。
 
+**Runner lifecycle contract** (`SESSION_RUNNER_LIFECYCLE` in `src/agent/sessions/open_session.ts`): `open → (attach?) → prompt* → abort?/dispose`. Hole loops must `listenSessionAbort` + `finalizePiSession` in `finally` so budget exhaust / schema / hard failure still dispose. Usage on each prompt is tagged by `AgentRole`; distill spend is hole A+B only (ADR-0007/0015).
+
 ## 怎么用 / 怎么跑
 
 `openSession` 工厂已接通。正确接法是 **orchestrator 只调 `skeletonPass` / `labelWindow`；开会话只经工厂。** 洞 A/B 可经 `FakeSessionBackend` 打标；真模型需 env。orchestrator 仍不要接通这两洞。

@@ -35,6 +35,7 @@ import {
   listenSessionAbort,
   openSession,
   parseStructuredJson,
+  tokenUsageWithRole,
   type SessionBackend,
   type SessionMessage,
   type SessionPromptResult,
@@ -620,10 +621,11 @@ function tryParseJson(text: string): unknown | null {
 }
 
 function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  const tagged = tokenUsageWithRole(b, a.role)
   return {
     role: a.role,
-    input_tokens: a.input_tokens + b.input_tokens,
-    output_tokens: a.output_tokens + b.output_tokens,
+    input_tokens: a.input_tokens + tagged.input_tokens,
+    output_tokens: a.output_tokens + tagged.output_tokens,
   }
 }
 

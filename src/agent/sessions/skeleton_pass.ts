@@ -19,6 +19,7 @@ import {
   openReviewSession,
   openSession,
   parseStructuredJson,
+  tokenUsageWithRole,
   type SessionBackend,
   type SessionPromptResult,
 } from './open_session.ts'
@@ -51,7 +52,15 @@ export {
   openReplaySession,
   openReviewSession,
   openSession,
+  SESSION_RUNNER_LIFECYCLE,
+  assertTokenUsageHasRole,
+  isDistillSpendRole,
+  isL4Role,
+  isSessionDisposed,
+  tokenUsageWithRole,
 } from './open_session.ts'
+
+export type { SessionRunnerLifecycleStep } from './open_session.ts'
 
 export { TRACE_DATA_NOTICE, cardIndexEntry, cardIndexPayload } from './card_index.ts'
 
@@ -207,11 +216,7 @@ export function interpretSkeletonPassResult(
     intent: { version: 0, text: parsed.intent_text, scenario },
     scenario,
     skeleton: { version: 0, nodes: parsed.nodes },
-    usage: {
-      role,
-      input_tokens: result.usage.input_tokens,
-      output_tokens: result.usage.output_tokens,
-    },
+    usage: tokenUsageWithRole(result.usage, role),
     enough: true,
     uncertainty: 0.35,
     force_stopped: false,

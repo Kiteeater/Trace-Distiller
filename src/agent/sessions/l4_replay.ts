@@ -9,6 +9,7 @@ import {
   openReplaySession,
   parseStructuredJson,
   playbackIndexForL4,
+  tokenUsageWithRole,
   type SessionBackend,
   type SessionPromptInput,
   type SessionPromptResult,
@@ -138,11 +139,7 @@ export function interpretReplayResult(
   }
   const out: RunReplayOutput = {
     success: rec.success,
-    usage: {
-      role,
-      input_tokens: result.usage.input_tokens,
-      output_tokens: result.usage.output_tokens,
-    },
+    usage: tokenUsageWithRole(result.usage, role),
   }
   if (typeof rec.note === 'string' && rec.note.length > 0) out.note = rec.note
   return out
