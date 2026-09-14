@@ -48,7 +48,7 @@ Agent-led only（[ADR-0010](./docs/adr/0010-agent-led-cut-with-tool-mask.md)）�
 ## 契约层约定（当前已落地）
 
 - 一条 `RawTrace` = 一个任务；`ground_truth` 必填。Admission 三码：`no_ground_truth` / `unparseable` / `multi_task_ambiguous`。
-- `Scenario` 已拍板：`debug` | `implement` | `refactor` | `test_fix` | `investigate`。`SKILL_ROUTE` 指向 `agent/skills/{name}.md`；查不到回退 `implement`，禁止静默空 prompt。
+- `Scenario` 已拍板：`debug` | `implement` | `refactor` | `test_fix` | `investigate`。`SKILL_ROUTE` 指向 `agent/skills/{name}.md`；查不到回退 `implement`，禁止静默空 prompt。统一加载走 `src/agent/skills/load.ts`（确定性读盘；orchestrator 查表）；`openSession` 保持 `noSkills: true`，不启用 pi skills / 多根发现。
 - 窗口 / span / Jaccard / head / 死胡同条数已拍板：`LABEL_WINDOW_SIZE=8`、`SPAN_MAX_GAP_SEGMENTS=3`、`SIMILAR_RETRY_TOKEN_JACCARD_THRESHOLD=0.8`、`SEGMENT_HEAD_MAX_CHARS=120`、`DEAD_END_MAX_REPRESENTATIVE=3`、`DEAD_END_SUMMARY_MAX_CHARS=80`。`DEFAULT_CUT_PROFILE` 用这些数。禁止在 pipeline 另写魔数。
 - 卡片字段由代码填，禁止 LLM 生成 `head` / `sig` / `focus`。segmenter 截 `head` 到 `SEGMENT_HEAD_MAX_CHARS`。
 - L0：`src/adapters/claude_code.ts` 解析单任务 claude-code JSONL 并执行 Admission Gate。

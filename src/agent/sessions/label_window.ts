@@ -1,7 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { HOLE_TOOL_NAMES, type HoleReadContext } from '../extension.ts'
+import { loadSkillText, skillSourceName } from '../skills/load.ts'
 import { executeHoleTool } from '../tools/registry.ts'
 import { LABEL_WINDOW_SIZE } from '../../constant/window.ts'
 import type { LabelDecision } from '../../domain/label_decision.ts'
@@ -260,32 +258,6 @@ function parseSkeletonPatch(value: unknown): SkeletonPatch | undefined {
     ? patch.remove_node_ids.filter((id): id is string => typeof id === 'string')
     : []
   return { upsert_nodes, remove_node_ids }
-}
-
-function loadSkillText(input: LabelWindowInput): string {
-  if (input.skill_text !== undefined && input.skill_text.length > 0) return input.skill_text
-  const base = input.skill_path.split(/[\\/]/).pop() ?? input.skill_path
-  const here = dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    input.skill_path,
-    join(process.cwd(), input.skill_path),
-    join(process.cwd(), 'src', input.skill_path),
-    join(here, '..', 'skills', base),
-  ]
-  for (const path of candidates) {
-    try {
-      const text = readFileSync(path, 'utf8').trim()
-      if (text.length > 0) return text
-    } catch {
-      continue
-    }
-  }
-  throw new Error(`labelWindow: cannot load skill text from ${input.skill_path}`)
-}
-
-function skillSourceName(skill_path: string): string {
-  const base = skill_path.split(/[\\/]/).pop() ?? skill_path
-  return base.replace(/\.md$/i, '')
 }
 
 function tryJson(text: string): unknown {

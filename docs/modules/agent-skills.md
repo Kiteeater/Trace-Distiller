@@ -25,7 +25,7 @@ MVP 先固定 **3–5 个**文件，再扩。
 
 ## 2. 输入输出
 
-输入：Markdown 文件，sessions 读成字符串，注入洞 B system（或 pi Skills 机制，以 spike 为准）。
+输入：Markdown 文件，sessions 经 `src/agent/skills/load.ts` 读成字符串，注入洞 B 稳定前缀。不走 pi Skills。
 
 输出：无直接输出。效果体现在洞 B 的 `label_segment` 分布是否符合该场景。
 
@@ -70,10 +70,11 @@ MVP 每份只写洞 B 纪律，不另开 `_shared.md`。四类标签定义以 en
 ## 4. 依赖关系
 
 ```text
-skills（纯 Markdown）
+skills/*.md（场景策略）
   ← constant.SKILL_ROUTE 指向路径
-  ← sessions 读取并注入
-  ✗ 不 import 任何 TS
+  ← skills/load.ts 确定性读盘
+  ← sessions 注入 skill_text
+  ✗ 不走 pi ResourceLoader / Skills 发现
 ```
 
 改 skill 不应要求改 pipeline。这是「skill 热更新」活口。
@@ -92,7 +93,7 @@ skills（纯 Markdown）
 ## 6. 仍开放的设计问题
 
 1. **场景名单已拍板**。五份 Markdown 只写洞 B 纪律；洞 A/B 未接通，不算 M2 skill 完成。
-2. pi Skills 机制 vs 自读 Markdown：等 SDK spike。
+2. **加载已定**：自读 Markdown，统一走 `src/agent/skills/load.ts`；`openSession` `noSkills: true`。不是 pi Skills。
 3. skill 要不要带 few-shot 卡片例子：例子会占 token，且可能锚定过度。
 4. 中英文：原料多是英文工具日志。纪律文件现用中文；代码要的是 enum 英文值。
 
@@ -101,6 +102,6 @@ skills（纯 Markdown）
 ## 7. 实现完成标准
 
 - [x] 五份已批准场景文件 + README；路由表键与文件名一致。
-- [ ] 缺文件启动失败（sessions 接通后）。
+- [x] 缺文件 / 空文件：`loadSkillText` 抛错，禁止静默空 prompt。
 - [x] 无 TS 逻辑藏在 Markdown 代码块里冒充实现。
 - [ ] M2：prompt 注入防线完整版（数据不是指令）与场景先验长文。现在的极简纪律文件不算 M2 完成。
