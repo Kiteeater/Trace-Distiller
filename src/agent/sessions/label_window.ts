@@ -16,11 +16,14 @@ import {
   type TokenUsage,
 } from './skeleton_pass.ts'
 import {
+  finalizePiSession,
+  listenSessionAbort,
   openSession,
   parseStructuredJson,
   type SessionBackend,
   type SessionPromptResult,
 } from './open_session.ts'
+import { throwIfAborted } from '../../utils/timeout.ts'
 
 export interface LabelWindowInput {
   segment_ids: string[]
@@ -34,6 +37,7 @@ export interface LabelWindowInput {
   skill_text?: string
   /** 测试注入；生产省略。 */
   backend?: SessionBackend
+  signal?: AbortSignal
 }
 
 export interface SkeletonPatch {
@@ -72,8 +76,10 @@ export async function labelWindow(input: LabelWindowInput): Promise<LabelWindowO
   const cards = input.view.segments.filter((c) => windowIds.has(c.id))
   const skill_text = loadSkillText(input)
   const skill = skillSourceName(input.skill_path)
-  const session = openHoleB(input.backend)
+  const session = openHoleB(input.backend, input.signal)
+  const stopAbort = listenSessionAbort(session, input.signal)
   try {
+    throwIfAborted(input.signal)
     const result = await session.prompt({
       system: [
         'Label each unresolved segment by calling label_segment with a four-class Label.',
@@ -94,7 +100,8 @@ export async function labelWindow(input: LabelWindowInput): Promise<LabelWindowO
       role: session.role,
     })
   } finally {
-    session.dispose()
+    stopAbort()
+    await finalizePiSession(session, input.signal)
   }
 }
 
@@ -106,9 +113,12 @@ export async function checkContinuityPair(
   right: SegmentCard,
   skeleton: Skeleton,
   backend?: SessionBackend,
+  signal?: AbortSignal,
 ): Promise<ContinuityPairResult> {
-  const session = openHoleB(backend)
+  const session = openHoleB(backend, signal)
+  const stopAbort = listenSessionAbort(session, signal)
   try {
+    throwIfAborted(signal)
     const result = await session.prompt({
       system: [
         'Call check_continuity once for the given adjacent pair.',
@@ -124,17 +134,19 @@ export async function checkContinuityPair(
     })
     return interpretContinuityResult(result, left.id, right.id, session.role)
   } finally {
-    session.dispose()
+    stopAbort()
+    await finalizePiSession(session, signal)
   }
 }
 
 export { NotImplementedError }
 
-function openHoleB(backend?: SessionBackend) {
+function openHoleB(backend?: SessionBackend, signal?: AbortSignal) {
   return openSession({
     role: 'hole_b_label',
     tools: HOLE_TOOL_NAMES,
     ...(backend !== undefined ? { backend } : {}),
+    ...(signal !== undefined ? { signal } : {}),
   })
 }
 

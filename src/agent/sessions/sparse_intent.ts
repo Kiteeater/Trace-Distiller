@@ -31,6 +31,8 @@ import {
 } from './candidate_pool.ts'
 import { TRACE_DATA_NOTICE, cardIndexPayload } from './card_index.ts'
 import {
+  finalizePiSession,
+  listenSessionAbort,
   openSession,
   parseStructuredJson,
   type SessionBackend,
@@ -40,6 +42,7 @@ import {
 } from './open_session.ts'
 import { formatMaskedForPrompt, maskToolResult } from '../prompt/tool_mask.ts'
 import { estimateTokens } from '../../utils/tokens.ts'
+import { rethrowIfAborted, throwIfAborted } from '../../utils/timeout.ts'
 import type { TokenUsage } from './skeleton_pass.ts'
 
 const SKELETON_NODE_KINDS: readonly SkeletonNodeKind[] = [
@@ -71,6 +74,7 @@ export interface SparseIntentInput {
   round_sample_size?: number
   /** 测试注入 RNG。 */
   rng?: () => number
+  signal?: AbortSignal
 }
 
 export interface SparseIntentStructured {
@@ -121,7 +125,9 @@ export async function sparseIntent(input: SparseIntentInput): Promise<SparseInte
     role: 'hole_a_skeleton',
     tools: HOLE_A_SPARSE_TOOL_NAMES,
     ...(input.backend !== undefined ? { backend: input.backend } : {}),
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
   })
+  const stopAbort = listenSessionAbort(session, input.signal)
 
   const readSet = new Set<string>()
   const segmentsRead: string[] = []
@@ -143,6 +149,7 @@ export async function sparseIntent(input: SparseIntentInput): Promise<SparseInte
 
   try {
     for (let round = 0; round < maxRounds; round += 1) {
+      throwIfAborted(input.signal)
       if (usage.input_tokens + usage.output_tokens >= maxTokens) {
         force_stopped = true
         notes.push('sparse_intent_token_budget')
@@ -188,6 +195,7 @@ export async function sparseIntent(input: SparseIntentInput): Promise<SparseInte
           }),
         })
       } catch (error) {
+        rethrowIfAborted(input.signal, error)
         const message = error instanceof Error ? error.message : String(error)
         notes.push(`sparse_intent_round_${String(round)}_failed:${message}`)
         force_stopped = true
@@ -255,6 +263,7 @@ export async function sparseIntent(input: SparseIntentInput): Promise<SparseInte
             text: 'Judge now. Reply with sparse_intent_v0 JSON only, or call read_segment for unread batch ids.',
           })
         } catch (error) {
+          rethrowIfAborted(input.signal, error)
           const message = error instanceof Error ? error.message : String(error)
           notes.push(`sparse_intent_inner_${String(round)}_failed:${message}`)
           force_stopped = true
@@ -295,7 +304,8 @@ export async function sparseIntent(input: SparseIntentInput): Promise<SparseInte
       notes.push('sparse_intent_max_rounds')
     }
   } finally {
-    session.dispose()
+    stopAbort()
+    await finalizePiSession(session, input.signal)
   }
 
   return finalizeSparseOutput({
