@@ -67,7 +67,7 @@ Demo 的核心镜头是「500 步的墙 → 30 步的精华」，载体是**流�
 系统是 **agent 主编 + 确定性流水线护栏**。洞函数放 `agent/sessions/`（后续 cut-brain 循环也只许落这里）：
 
 ```text
-skeletonPass(trace)                          → 骨架 + 场景分类（洞 A，强模型）
+skeletonPass(trace)                          → 骨架 + 场景分类（洞 A；决策默认 Jev，ADR-0017）
 labelWindow(segments, skeleton, skill)      → 四类标签 + 置信度（洞 B）
 ```
 

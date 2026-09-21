@@ -76,6 +76,8 @@ function skeletonPass(input: SkeletonPassInput): Promise<SkeletonPassOutput>
 
 **禁止**把 `raw.turns` 全量放进洞 A prompt。这是 0009 相对 architecture 旧「对整条 Trace 抽骨架」的修正。
 
+**决策后端（[ADR-0017](../adr/0017-hole-a-jev-decisions.md)）**：采样循环不变。`enough` / `scenario` / `uncertainty` / skeleton key points 默认由 TypeSafe Jev `systemOne`（Choice / Score / Noul）作答。无 SessionBackend 时默认 jev；无 key 用 `FakeJevClient`（不联网）。注入 `FakeSessionBackend` / `--fake-l4` 仍走 pi 洞 A，除非 `TRACE_DISTILLER_HOLE_A_DECISION=jev`。`intent_v0` v1 是场景模板，不是生成式散文。洞 A 仍不产出 keep/collapse/drop。
+
 洞 A/B 卡片索引（`CARD_INDEX` / `WINDOW_CARDS`）只注入 **id + tool/sig/outcome + 短 head**（`CARD_INDEX_HEAD_MAX_CHARS`），不含 reads/writes/tokens/focus；洞 A 的 HEAD/VERIFICATION 正文按 `SKELETON_TURN_CONTENT_MAX_CHARS` 截断。需要全文时洞 B 用 `read_segment`。
 
 **成本门注记**：`distill_cost_ratio≤0.3` 对 **短 trace + with_llm** 可能仍难达到——分子含 pi 会话系统开销 / 工具 schema / 多轮 tool call 的真实 Usage，固定开销相对「已删 token」偏大。压缩 prompt 可实质降 hole tokens；不改门禁、不重开 ADR-0008。Fail-Closed Keep 仍有效。

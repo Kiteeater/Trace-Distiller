@@ -22,3 +22,4 @@
 | 0014 | **记分板 defined composite / m1**（过程门禁分仅在所需门槛全过时定义；fail 渲染 `—` 不硬写成 0；档均值只对 defined；另计 `n_gate_fail`。公式不变，见 0005） |
 | 0015 | **蒸馏成本进分母 + 记分板 ROI**（主报 saved_trainingcut/spend_AB；列+defined 均值；不计 L4；不进 composite/m1；规则覆盖是分档观测 hint；强制附摊薄 1×1/3×1/3×3 与质量门控 ROI） |
 | 0016 | **agent 目录：tools / prompt / sessions**（授权并落地 `src/agent/tools/` + `src/agent/prompt/`；registry 为洞工具唯一入口；prompt 稳定前缀 + 大 payload 掩码；`createAgentSession` 仍只在 `sessions/`） |
+| 0017 | **洞 A 决策走 TypeSafe Jev**（Choice / Score / Noul `systemOne`；候选池与稀疏采样不变；无 key 用 FakeJevClient；`intent_v0` v1 为场景模板；`decision=pi` 保留生成式洞 A） |
