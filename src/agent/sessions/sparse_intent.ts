@@ -32,6 +32,7 @@ import {
 import { TRACE_DATA_NOTICE, cardIndexPayload } from './card_index.ts'
 import {
   finalizePiSession,
+  hasInjectedSessionBackend,
   listenSessionAbort,
   openSession,
   parseStructuredJson,
@@ -41,6 +42,12 @@ import {
   type SessionPromptResult,
   type SessionToolCall,
 } from './open_session.ts'
+import {
+  resolveHoleADecision,
+  type HoleADecisionBackend,
+  type JevClient,
+} from './jev_client.ts'
+import { runSparseIntentJev } from './sparse_intent_jev.ts'
 import { prunePromptHistory } from '../prompt/compact.ts'
 import { formatMaskedForPrompt, maskToolResult } from '../prompt/tool_mask.ts'
 import { estimateTokens } from '../../utils/tokens.ts'
@@ -84,6 +91,15 @@ export interface SparseIntentInput {
   /** 测试注入 RNG。 */
   rng?: () => number
   signal?: AbortSignal
+  /**
+   * ADR-0017. Unset: jev unless a SessionBackend is injected (pi).
+   * Env TRACE_DISTILLER_HOLE_A_DECISION overrides that default.
+   */
+  decision?: HoleADecisionBackend
+  /** Test double or pre-built client. Live client is created when this is omitted. */
+  jevClient?: JevClient
+  /** Isolated env for decision + Jev key/model. Defaults to process.env. */
+  env?: NodeJS.Dict<string>
 }
 
 export interface SparseIntentStructured {
@@ -114,8 +130,43 @@ const CUT_ACTION_KEYS = ['keep', 'collapse', 'drop', 'cut_action', 'action'] as 
 
 /**
  * 洞 A 主路径：分层池 → 多轮采样/读段/判断 → 骨架关键点。
+ * 决策默认 Jev systemOne（ADR-0017）；注入 SessionBackend 且未指定 jev 时走 pi。
  */
 export async function sparseIntent(input: SparseIntentInput): Promise<SparseIntentOutput> {
+  const env = input.env ?? process.env
+  const decision = resolveHoleADecision({
+    ...(input.decision !== undefined ? { decision: input.decision } : {}),
+    hasJevClient: input.jevClient !== undefined,
+    hasSessionBackend: input.backend !== undefined || hasInjectedSessionBackend(),
+    env,
+  })
+  if (decision === 'jev') {
+    const loop = await runSparseIntentJev(input)
+    if (loop.last !== undefined) assertNoCutActions(structuredRecord(loop.last))
+    return finalizeSparseOutput({
+      last: loop.last,
+      force_stopped: loop.force_stopped,
+      rounds: loop.rounds,
+      segmentsRead: loop.segments_read,
+      usage: loop.usage,
+      notes: loop.notes,
+    })
+  }
+  return sparseIntentPi(input)
+}
+
+function structuredRecord(last: SparseIntentStructured): Record<string, unknown> {
+  return {
+    enough: last.enough,
+    intent_v0: last.intent_v0,
+    scenario: last.scenario,
+    skeleton_points: last.skeleton_points,
+    uncertainty: last.uncertainty,
+    ...(last.gaps !== undefined ? { gaps: last.gaps } : {}),
+  }
+}
+
+async function sparseIntentPi(input: SparseIntentInput): Promise<SparseIntentOutput> {
   const maxRounds = input.max_rounds ?? SPARSE_INTENT_MAX_ROUNDS
   const maxSegments = input.max_segments_read ?? SPARSE_INTENT_MAX_SEGMENTS_READ
   const maxTokens = input.max_tokens ?? SPARSE_INTENT_MAX_TOKENS

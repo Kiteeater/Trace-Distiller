@@ -132,6 +132,21 @@ export const SPARSE_INTENT_FAILURE_DENSE_MIN = 2
 export const SPARSE_INTENT_FORCE_STOP_UNCERTAINTY = 0.85
 
 /**
+ * Jev Noul ≥ this → Hole A `enough` (ADR-0017).
+ * Below → structured gaps and another sample, until the hard budget.
+ */
+export const JEV_ENOUGH_NOUL_MIN = 0.6
+
+/** Per-candidate Jev Noul ≥ this → skeleton key point. */
+export const JEV_SKELETON_NOUL_MIN = 0.55
+
+/**
+ * Unread ids at or below this count: Choice over those ids.
+ * Above it: Choice over candidate strata only.
+ */
+export const JEV_GAP_ID_CHOICE_MAX = 8
+
+/**
  * Distiller-owned prompt history: keep this many recent ACK/masked-card rounds
  * in agent-visible messages (ADR-0012 / ADR-0016). Older evidence text is
  * dropped at prompt assembly only — not from store/warrant. Not pi session compact.

@@ -150,7 +150,7 @@ const HELP = `Usage:
 
 Agent-led cut only (ADR-0010). --no-llm / pure rules-only mode was removed — passing it errors. Distill requires an agent path: injected FakeSessionBackend / --fake-l4 (CI), or TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
 
-FakeSessionBackend is for tests/CI. Production needs TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B.
+FakeSessionBackend is for tests/CI. Production Hole B still needs TRACE_DISTILLER_MODEL_HOLE_B (or --fake-l4). Hole A decisions default to TypeSafe Jev systemOne when no session backend is injected (ADR-0017): set TYPESAFE_API_KEY or TRACE_DISTILLER_JEV_API_KEY for live jev-latest (TRACE_DISTILLER_JEV_MODEL to pin). No key uses FakeJevClient (no network). TRACE_DISTILLER_HOLE_A_DECISION=pi keeps generative Hole A. --fake-l4 keeps the pi Hole A path unless that env is jev.
 
 OpenAI-compatible gateway: copy .env.example to .env. TRACE_DISTILLER_API_BASE + TRACE_DISTILLER_API_KEY register a custom provider. TRACE_DISTILLER_PROVIDER names it (else derived from the first TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B / TRACE_DISTILLER_MODEL_L4 slash prefix). TRACE_DISTILLER_API_TYPE is passed to pi registerProvider as api (default openai-completions). Models stay TRACE_DISTILLER_MODEL_HOLE_A / TRACE_DISTILLER_MODEL_HOLE_B / TRACE_DISTILLER_MODEL_L4 as provider/modelId (example provider/modelId). Mint/Macaron is one possible config, not required. Keys are never logged.
 

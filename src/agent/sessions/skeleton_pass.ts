@@ -24,6 +24,7 @@ import {
   type SessionPromptResult,
 } from './open_session.ts'
 import { TRACE_DATA_NOTICE, cardIndexEntry, cardIndexPayload } from './card_index.ts'
+import type { HoleADecisionBackend, JevClient } from './jev_client.ts'
 import { sparseIntent, type SparseIntentOutput } from './sparse_intent.ts'
 
 export class NotImplementedError extends Error {
@@ -95,6 +96,10 @@ export interface SkeletonPassInput {
   round_sample_size?: number
   rng?: () => number
   signal?: AbortSignal
+  /** ADR-0017. Unset follows resolveHoleADecision (jev, or pi when backend is injected). */
+  decision?: HoleADecisionBackend
+  jevClient?: JevClient
+  env?: NodeJS.Dict<string>
 }
 
 export interface SkeletonPassOutput {
@@ -115,7 +120,7 @@ export interface SkeletonPassOutput {
 /**
  * 洞 A（ADR-0011）：多轮稀疏采样 → intent / scenario / skeleton key points。
  * 禁止注入 raw.turns 全量；经 read_segment + tool mask；不得发出 keep/collapse/drop。
- * 会话只经 open_session.ts。模型：TRACE_DISTILLER_MODEL_HOLE_A。
+ * 决策默认 TypeSafe Jev systemOne（ADR-0017）；`decision: 'pi'` 或注入 SessionBackend 时走 open_session。
  */
 export async function skeletonPass(input: SkeletonPassInput): Promise<SkeletonPassOutput> {
   const sparse = await sparseIntent({
@@ -135,6 +140,9 @@ export async function skeletonPass(input: SkeletonPassInput): Promise<SkeletonPa
       : {}),
     ...(input.rng !== undefined ? { rng: input.rng } : {}),
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
+    ...(input.decision !== undefined ? { decision: input.decision } : {}),
+    ...(input.jevClient !== undefined ? { jevClient: input.jevClient } : {}),
+    ...(input.env !== undefined ? { env: input.env } : {}),
   })
   const out: SkeletonPassOutput = {
     intent: sparse.intent,

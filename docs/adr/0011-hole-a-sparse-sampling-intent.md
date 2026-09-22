@@ -44,3 +44,4 @@ ADR-0009 把洞 A 从「全量读」收成「头 1–2 turn + 验证点附近」
 - **实现顺序**：
   - [x] (a) 分层候选池 + 多轮循环 + 硬预算 + 结构化 `enough` / `gaps` / `skeleton_points`（本决策的代码落地 PR）
   - [x] (b) benchmark 向量效率分（cosine / recall / `quality / log(1+tokens)`）——`src/eval/vector_efficiency.ts`；bench 记分板 `a_eff`；默认确定性 hash embedding；**不是**在线停机信号
+- **决策后端见 [ADR-0017](./0017-hole-a-jev-decisions.md)**：候选池与稀疏采样循环不变；`enough` / `scenario` / `uncertainty` / skeleton key points 默认由 TypeSafe Jev `systemOne` 作答。`intent_v0` v1 允许场景模板短句。`TRACE_DISTILLER_HOLE_A_DECISION=pi` 保留生成式洞 A。

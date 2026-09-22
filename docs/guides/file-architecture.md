@@ -90,7 +90,9 @@ trace-distiller/
 │  │  │  ├─ tool_mask.ts        # re-export shim → prompt/tool_mask.ts
 │  │  │  ├─ card_index.ts       # CARD_INDEX 紧凑序列化（洞 A/B 共用）
 │  │  │  ├─ candidate_pool.ts   # ADR-0011 分层候选池
-│  │  │  ├─ sparse_intent.ts    # ADR-0011 多轮稀疏采样（洞 A）
+│  │  │  ├─ sparse_intent.ts    # ADR-0011 多轮稀疏采样（洞 A）；jev|pi 分发
+│  │  │  ├─ sparse_intent_jev.ts # ADR-0017 Jev 决策环（池/采样/read 仍在外环）
+│  │  │  ├─ jev_client.ts       # TypeSafe systemOne + FakeJevClient
 │  │  │  ├─ skeleton_pass.ts    # 洞 A 入口 → sparseIntent；兼容旧类型
 │  │  │  ├─ cut_brain.ts        # ADR-0012 单槽 + 渐进披露；洞 B 角色
 │  │  │  ├─ cut_brain_harness.ts # S0–S3 / evidence card / keep bits
@@ -168,7 +170,7 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 | `src/domain/` 三文件 | LabelDecision / CutDecision / SpanViolation | **文件名已定** | 不变量跟 types 一起钉 |
 | `src/adapters/claude_code.ts` | L0 解析 + Admission Gate | **M1 文件已定** | 启发式阈值见 ingest 开放问题；SWE-bench parser MVP 不做 |
 | `src/pipeline/*.ts` 五文件 | 切段 / 规则 / 编排 / 组装 / tools-only 过滤 | **文件名已定** | Jaccard / span 数字已拍板；`writeWarrant` 已改纯代码；`tools_only.ts` 是 ADR-0013 对照臂纯函数 |
-| `src/agent/sessions/` | 洞循环 + `open_session` 工厂；**`createAgentSession` 只在这里** | **文件名已定** | `open_session.ts` 工厂；`cut_brain.ts`（ADR-0010/0012）；洞 A/B；`write_warrant.ts`；L4。`hole_tools.ts` / `tool_mask.ts` 为 re-export shim |
+| `src/agent/sessions/` | 洞循环 + `open_session` 工厂；**`createAgentSession` 只在这里** | **文件名已定** | `open_session.ts` 工厂；`cut_brain.ts`（ADR-0010/0012）；洞 A `sparse_intent.ts` + `sparse_intent_jev.ts` / `jev_client.ts`（ADR-0017）；`write_warrant.ts`；L4。`hole_tools.ts` / `tool_mask.ts` 为 re-export shim |
 | `src/agent/tools/` | 工具层：registry 为洞工具**唯一入口**；dispatch 到 extension handlers | **已落地（ADR-0016）** | 闭集不变（[tools.md](./tools.md)）。可选 Distiller `beforeDispatch` / `afterDispatch`（非 pi Extension `on`）。`pi_tools.ts` 仅 `defineTool` / `ToolDefinition`；禁止在 `tools/` 开会话 |
 | `src/agent/prompt/` | Prompt 层：稳定前缀 → 状态指针 → 不稳定证据；大 payload 掩码 | **已落地（ADR-0016）** | `compose.ts` + `compact.ts`（近 N 轮 ACK/masked prune；非 pi compact）+ `tool_mask.ts`（prompt 层掩码；tools ACK 引用）。禁止把 user/evidence 拍进稳定前缀 |
 | `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown；`skills/load.ts` 确定性读盘 | **路径已定** | LOCKED：`label_segment` / `check_continuity` / `keep_segment` / `read_segment` / `apply_rules_hint`（[tools.md](./tools.md)）。`extension.ts` 可改 re-export shim。`SKILL_ROUTE` 仍在 `src/constant/skill_route.ts` |
