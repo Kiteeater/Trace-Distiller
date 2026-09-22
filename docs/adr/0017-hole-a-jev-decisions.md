@@ -20,7 +20,7 @@ TypeSafe Jev 的 `systemOne` 一次调用对同一份 state 并行回答 Choice 
 ## Decision
 
 1. **采样不变**。`buildCandidatePool` / `sampleCandidates`、硬预算（轮数、已读段数、token）、`read_segment` + tool mask 仍是洞 A 外环。洞 A 仍不产出 keep / collapse / drop。
-2. **决策改走 Jev**。每轮把卡片索引和掩码摘录收成一份 compact `state`，一次 `POST https://api.typesafe.ai/v1/systemone`：
+2. **决策改走 Jev**。每轮把卡片索引和掩码摘录收成一份 compact `state`，一次 `POST {base}/v1/systemone`（`@typesafe-ai/sdk` 把 `baseURL` 接到 `/v1/systemone`，只去掉末尾斜杠）：
    - `enough`：Noul
    - `scenario`：Choice，选项是 `SCENARIOS`
    - `uncertainty`：Score，有序等级再映射到 0–1
@@ -32,13 +32,17 @@ TypeSafe Jev 的 `systemOne` 一次调用对同一份 state 并行回答 Choice 
    - 注入了 Jev client → jev
    - 注入了 SessionBackend（参数或 `setSessionBackend` / `--fake-l4`）→ pi，避免打乱现有 Fake Hole A 骨架
    - 否则 **jev**
-   - jev 且设置了 `TRACE_DISTILLER_JEV_API_KEY`（优先）或 `TYPESAFE_API_KEY` → `@typesafe-ai/sdk` 的 `TypeSafeClient.systemOne`，模型 `TRACE_DISTILLER_JEV_MODEL`（默认 `jev-latest`，可钉 `jev-1.13.0`）
+   - jev 且有 key → `@typesafe-ai/sdk` 的 `TypeSafeClient.systemOne`
+   - key 顺序：`TRACE_DISTILLER_JEV_API_KEY`，然后 `TYPESAFE_API_KEY`，然后 `TRACE_DISTILLER_API_KEY`（与 pi 网关同一把钥匙）。空白不算
+   - base：`TRACE_DISTILLER_JEV_BASE`，否则 `TRACE_DISTILLER_API_BASE`，否则 `https://api.typesafe.ai`。传给 SDK 前去掉末尾 `/` 和一层末尾 `/v1`。mint-alpha 的 `https://mint-alpha.macaron.im/v1` 因此打到 `https://mint-alpha.macaron.im/v1/systemone`
+   - 模型：`TRACE_DISTILLER_JEV_MODEL`，缺省 `jev`（mint 上的 model id）。公网 TypeSafe 可改钉 `jev-latest` 或 `jev-1.13.0`
    - jev 且没有 key → `FakeJevClient`，不联网。测试和 CI 走这条
 5. 审计字段仍是 `enough` / `rounds` / `segments_read` / `gaps` / `uncertainty`。硬预算到了必须停，并抬高 uncertainty。
 
 ## Consequences
 
 - 无 SessionBackend 的生产蒸馏，洞 A 默认不再调用 `TRACE_DISTILLER_MODEL_HOLE_A`。要回到生成式洞 A，设 `TRACE_DISTILLER_HOLE_A_DECISION=pi`。
+- Live Jev 走现有 mint 网关。`.env` 里 `TRACE_DISTILLER_API_BASE=https://mint-alpha.macaron.im/v1` 与 `TRACE_DISTILLER_API_KEY` 已够；洞 A 默认模型是 `jev`。
 - `--fake-l4` 仍注入 FakeSessionBackend，洞 A 保持 pi fake 骨架，bench 行为不变；要在 fake-l4 上改走 Jev，显式设 `TRACE_DISTILLER_HOLE_A_DECISION=jev`（无 key 则 FakeJev）。
 - 洞 B / L4 不在本决策范围，仍走 pi session。
 - 向量效率分仍只做 bench，不作在线停机信号。

@@ -6,7 +6,10 @@ import {
   FakeJevClient,
   JEV_API_BASE,
   JEV_MODEL_DEFAULT,
+  readJevApiKey,
+  readJevModel,
   resolveHoleADecision,
+  resolveJevBaseUrl,
 } from '../../src/agent/sessions/jev_client.ts'
 import { FakeSessionBackend, setSessionBackend } from '../../src/agent/sessions/open_session.ts'
 import {
@@ -166,10 +169,76 @@ describe('resolveHoleADecision', () => {
   })
 })
 
+describe('Jev endpoint resolution', () => {
+  it('resolves base from JEV_BASE, else API_BASE with one trailing /v1 removed, else the public host', () => {
+    assert.equal(resolveJevBaseUrl({}), JEV_API_BASE)
+    assert.equal(resolveJevBaseUrl({ TRACE_DISTILLER_API_BASE: '   ', TRACE_DISTILLER_JEV_BASE: '' }), JEV_API_BASE)
+    assert.equal(
+      resolveJevBaseUrl({ TRACE_DISTILLER_API_BASE: 'https://mint-alpha.macaron.im/v1' }),
+      'https://mint-alpha.macaron.im',
+    )
+    assert.equal(
+      resolveJevBaseUrl({ TRACE_DISTILLER_API_BASE: 'https://mint-alpha.macaron.im/v1/' }),
+      'https://mint-alpha.macaron.im',
+    )
+    assert.equal(
+      resolveJevBaseUrl({ TRACE_DISTILLER_API_BASE: 'https://api.typesafe.ai' }),
+      'https://api.typesafe.ai',
+    )
+    assert.equal(
+      resolveJevBaseUrl({
+        TRACE_DISTILLER_JEV_BASE: 'https://jev.example',
+        TRACE_DISTILLER_API_BASE: 'https://mint-alpha.macaron.im/v1',
+      }),
+      'https://jev.example',
+    )
+    assert.equal(
+      resolveJevBaseUrl({ TRACE_DISTILLER_JEV_BASE: 'https://mint-alpha.macaron.im/v1///' }),
+      'https://mint-alpha.macaron.im',
+    )
+  })
+
+  it('reads keys alias, then TYPESAFE, then the shared distill key', () => {
+    assert.equal(readJevApiKey({}), undefined)
+    assert.equal(readJevApiKey({ TRACE_DISTILLER_API_KEY: 'mint' }), 'mint')
+    assert.equal(readJevApiKey({ TRACE_DISTILLER_API_KEY: 'mint', TYPESAFE_API_KEY: 'ts' }), 'ts')
+    assert.equal(
+      readJevApiKey({
+        TRACE_DISTILLER_API_KEY: 'mint',
+        TYPESAFE_API_KEY: 'ts',
+        TRACE_DISTILLER_JEV_API_KEY: 'alias',
+      }),
+      'alias',
+    )
+    assert.equal(
+      readJevApiKey({
+        TRACE_DISTILLER_JEV_API_KEY: '  ',
+        TYPESAFE_API_KEY: '',
+        TRACE_DISTILLER_API_KEY: 'mint',
+      }),
+      'mint',
+    )
+  })
+
+  it('defaults the model to jev', () => {
+    assert.equal(JEV_MODEL_DEFAULT, 'jev')
+    assert.equal(readJevModel({}), 'jev')
+    assert.equal(readJevModel({ TRACE_DISTILLER_JEV_MODEL: '  jev-1.13.0  ' }), 'jev-1.13.0')
+    assert.equal(readJevModel({ TRACE_DISTILLER_JEV_MODEL: '   ' }), 'jev')
+  })
+})
+
 describe('Jev client', () => {
   it('blank or missing keys use FakeJevClient', () => {
     assert.equal(createJevClient({}).kind, 'fake')
-    assert.equal(createJevClient({ TYPESAFE_API_KEY: '   ', TRACE_DISTILLER_JEV_API_KEY: '' }).kind, 'fake')
+    assert.equal(
+      createJevClient({
+        TYPESAFE_API_KEY: '   ',
+        TRACE_DISTILLER_JEV_API_KEY: '',
+        TRACE_DISTILLER_API_KEY: ' \t ',
+      }).kind,
+      'fake',
+    )
     assert.ok(createJevClient({}) instanceof FakeJevClient)
   })
 
@@ -212,7 +281,41 @@ describe('Jev client', () => {
     assert.equal(result.usage.input_tokens, 5)
   })
 
-  it('defaults the model to jev-latest', async () => {
+  it('mint API_BASE and API_KEY post to origin/v1/systemone as model jev', async () => {
+    const seen: { url: string; auth: string; model: string }[] = []
+    const fetchImpl: Fetch = async (url, init) => {
+      const body = JSON.parse(String(init?.body)) as { model: string }
+      seen.push({
+        url: String(url),
+        auth: header(init, 'authorization') ?? '',
+        model: body.model,
+      })
+      return new Response(
+        JSON.stringify({
+          model: body.model,
+          answers: { enough: { type: 'noul', noul: 0.2 } },
+          usage: { input_tokens: 2, output_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    }
+    const client = createJevClient(
+      {
+        TRACE_DISTILLER_API_BASE: 'https://mint-alpha.macaron.im/v1/',
+        TRACE_DISTILLER_API_KEY: 'mint-key',
+        TYPESAFE_API_KEY: '   ',
+        TRACE_DISTILLER_JEV_API_KEY: '',
+      },
+      { fetch: fetchImpl },
+    )
+    assert.equal(client.kind, 'typesafe')
+    await client.systemOne({ state: 'x', questions: { enough: noul('enough?') } })
+    assert.equal(seen[0]?.url, 'https://mint-alpha.macaron.im/v1/systemone')
+    assert.equal(seen[0]?.auth, 'Bearer mint-key')
+    assert.equal(seen[0]?.model, 'jev')
+  })
+
+  it('defaults the model to jev', async () => {
     let model = ''
     const fetchImpl: Fetch = async (_url, init) => {
       model = (JSON.parse(String(init?.body)) as { model: string }).model
