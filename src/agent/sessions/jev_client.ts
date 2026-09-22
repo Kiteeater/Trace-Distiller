@@ -1,6 +1,10 @@
 /**
  * TypeSafe Jev client for Hole A decisions (ADR-0017).
- * Live calls POST https://api.typesafe.ai/v1/systemone via @typesafe-ai/sdk.
+ * Live calls POST {base}/v1/systemone via @typesafe-ai/sdk.
+ * base: TRACE_DISTILLER_JEV_BASE, else TRACE_DISTILLER_API_BASE
+ * (one trailing /v1 removed — the SDK appends /v1/systemone), else https://api.typesafe.ai.
+ * Key: TRACE_DISTILLER_JEV_API_KEY, else TYPESAFE_API_KEY, else TRACE_DISTILLER_API_KEY.
+ * Model: TRACE_DISTILLER_JEV_MODEL or `jev` (mint-alpha model id).
  * No API key → FakeJevClient (no network). Keys are never logged.
  */
 import {
@@ -20,9 +24,16 @@ import { resolveTimeoutMs } from '../../utils/timeout.ts'
 export const HOLE_A_DECISION_ENV = 'TRACE_DISTILLER_HOLE_A_DECISION'
 export const JEV_API_KEY_ENV = 'TRACE_DISTILLER_JEV_API_KEY'
 export const TYPESAFE_API_KEY_ENV = 'TYPESAFE_API_KEY'
+export const DISTILLER_API_KEY_ENV = 'TRACE_DISTILLER_API_KEY'
+export const JEV_BASE_ENV = 'TRACE_DISTILLER_JEV_BASE'
+export const DISTILLER_API_BASE_ENV = 'TRACE_DISTILLER_API_BASE'
 export const JEV_MODEL_ENV = 'TRACE_DISTILLER_JEV_MODEL'
-export const JEV_MODEL_DEFAULT = 'jev-latest'
+/** mint-alpha model id. Pin another id with TRACE_DISTILLER_JEV_MODEL. */
+export const JEV_MODEL_DEFAULT = 'jev'
+/** Public TypeSafe host. Used when neither Jev base env is set. */
 export const JEV_API_BASE = 'https://api.typesafe.ai'
+/** OpenAI-compatible roots already include this; TypeSafeClient appends it again. */
+const OPENAI_V1_SUFFIX = '/v1'
 
 export type HoleADecisionBackend = 'jev' | 'pi'
 
@@ -72,13 +83,29 @@ export function resolveHoleADecision(input: ResolveHoleADecisionInput = {}): Hol
   return 'jev'
 }
 
-/** TRACE_DISTILLER_JEV_API_KEY overrides TYPESAFE_API_KEY. Blank is missing. */
+/**
+ * TRACE_DISTILLER_JEV_API_KEY, then TYPESAFE_API_KEY, then TRACE_DISTILLER_API_KEY.
+ * Blank is missing.
+ */
 export function readJevApiKey(env: NodeJS.Dict<string> = process.env): string | undefined {
-  const alias = readEnv(env, JEV_API_KEY_ENV)
-  if (alias.length > 0) return alias
-  const primary = readEnv(env, TYPESAFE_API_KEY_ENV)
-  if (primary.length > 0) return primary
+  for (const key of [JEV_API_KEY_ENV, TYPESAFE_API_KEY_ENV, DISTILLER_API_KEY_ENV]) {
+    const value = readEnv(env, key)
+    if (value.length > 0) return value
+  }
   return undefined
+}
+
+/**
+ * TRACE_DISTILLER_JEV_BASE, else TRACE_DISTILLER_API_BASE, else https://api.typesafe.ai.
+ * A trailing `/v1` is removed so TypeSafeClient's `/v1/systemone` is not doubled.
+ * mint-alpha `https://mint-alpha.macaron.im/v1` → `https://mint-alpha.macaron.im/v1/systemone`.
+ */
+export function resolveJevBaseUrl(env: NodeJS.Dict<string> = process.env): string {
+  const explicit = normalizeJevBaseUrl(readEnv(env, JEV_BASE_ENV))
+  if (explicit.length > 0) return explicit
+  const shared = normalizeJevBaseUrl(readEnv(env, DISTILLER_API_BASE_ENV))
+  if (shared.length > 0) return shared
+  return JEV_API_BASE
 }
 
 export function readJevModel(env: NodeJS.Dict<string> = process.env): string {
@@ -100,6 +127,7 @@ export function createJevClient(
   return new TypeSafeJevClient({
     apiKey,
     model: readJevModel(env),
+    baseURL: resolveJevBaseUrl(env),
     timeoutMs: resolveTimeoutMs(env[SESSION_TIMEOUT_ENV], SESSION_CALL_TIMEOUT_MS),
     ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}),
   })
@@ -133,11 +161,11 @@ export class TypeSafeJevClient implements JevClient {
   private readonly client: TypeSafeClient
   private readonly model: string
 
-  constructor(opts: { apiKey: string; model: string; timeoutMs: number; fetch?: Fetch }) {
+  constructor(opts: { apiKey: string; model: string; baseURL: string; timeoutMs: number; fetch?: Fetch }) {
     this.model = opts.model
     this.client = new TypeSafeClient({
       apiKey: opts.apiKey,
-      baseURL: JEV_API_BASE,
+      baseURL: opts.baseURL,
       defaultModel: opts.model,
       logLevel: 'off',
       timeout: opts.timeoutMs,
@@ -320,6 +348,13 @@ function readUsage(usage: unknown): { input_tokens: number; output_tokens: numbe
 function readEnv(env: NodeJS.Dict<string>, key: string): string {
   const value = env[key]
   return typeof value === 'string' ? value.trim() : ''
+}
+
+/** Trailing slashes, then one `/v1`. TypeSafeClient only strips slashes. */
+function normalizeJevBaseUrl(raw: string): string {
+  let url = raw.replace(/\/+$/, '')
+  if (url.endsWith(OPENAI_V1_SUFFIX)) url = url.slice(0, -OPENAI_V1_SUFFIX.length)
+  return url.replace(/\/+$/, '')
 }
 
 function clamp01(n: number): number {

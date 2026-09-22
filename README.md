@@ -61,7 +61,7 @@ cp .env.example .env
 
 真模型 L4：`bench --with-l4`（opt-in）。日常 CI / 本地用 `--fake-l4`。
 
-Hole A 决策默认 Jev（[ADR-0017](./docs/adr/0017-hole-a-jev-decisions.md)）。真 Jev：`TYPESAFE_API_KEY` 或 `TRACE_DISTILLER_JEV_API_KEY`，可选 `TRACE_DISTILLER_JEV_MODEL=jev-latest`（或钉 `jev-1.13.0`）。无 key 用 FakeJev，不联网。生成式洞 A：`TRACE_DISTILLER_HOLE_A_DECISION=pi`。`--fake-l4` 仍走 pi 洞 A，除非把该变量设为 `jev`。
+Hole A 决策默认 Jev（[ADR-0017](./docs/adr/0017-hole-a-jev-decisions.md)）。真 Jev 复用 `TRACE_DISTILLER_API_BASE` + `TRACE_DISTILLER_API_KEY`（mint-alpha：`https://mint-alpha.macaron.im/v1`，请求打到 `https://mint-alpha.macaron.im/v1/systemone`，模型 `jev`）。可选覆盖：`TRACE_DISTILLER_JEV_BASE`、`TRACE_DISTILLER_JEV_API_KEY` / `TYPESAFE_API_KEY`、`TRACE_DISTILLER_JEV_MODEL`。无 key 用 FakeJev，不联网。生成式洞 A：`TRACE_DISTILLER_HOLE_A_DECISION=pi`。`--fake-l4` 仍走 pi 洞 A，除非把该变量设为 `jev`。
 
 ## 开源交付包
 
