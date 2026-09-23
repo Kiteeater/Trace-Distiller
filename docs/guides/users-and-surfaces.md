@@ -58,7 +58,7 @@ CutProfile 的字段级形状在 [types.md](../modules/types.md)；本指南只�
 - 用默认 CutProfile 即可：保留 **关键决策** + **有效探索**；少量 **代表性死胡同** 压成一句；**例行操作** 删除。压缩率目标 10%–30%（[PRD.md](../../PRD.md)）。
 - 关心 span（够得着，[ADR-0004](../adr/0004-span-constraint-reachable.md)）：相邻保留步不能跳太远，否则训练等于喂幻觉。宁可多留一句排除说明，不要剪成悬崖。
 - 产物路径约定（[data/distilled/README.md](../../data/distilled/README.md)）：`*-training.*`。M1 可先落一份中间剪后表示；M2 再定 SFT 格式。
-- 验收先看两件事：压缩率落在可讨论区间；保真度盲测答得上来（新开对话只喂剪后 Trace）。完整六项指标见 [benchmark/README.md](../../benchmark/README.md)，不是每天都要跑。
+- 验收先看保真：关键步召回，以及盲测是否答得上来（新开对话只喂剪后 Trace）。记分板 headline 是 `fidelity`，压缩率不是硬门（[ADR-0018](../adr/0018-fidelity-rubric-without-compress.md)）。完整口径见 [benchmark/README.md](../../benchmark/README.md)，不是每天都要跑。
 
 训练侧一般**不必**打开 HTML 或 live 页。需要排查「为什么删了关键步」时，再点报告里的删除理由——理由来自 CutWarrant，不是事后让模型编的。
 

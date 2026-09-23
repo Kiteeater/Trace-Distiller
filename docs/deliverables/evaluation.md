@@ -58,22 +58,19 @@ Admission Gate（[ADR-0001](../adr/0001-ground-truth-admission-gate.md)）：无
 
 | 层 | 回答什么 | 主指标 | 现状 |
 |----|----------|--------|------|
-| **过程门禁** | 剪辑有没有把因果路径剪断 | 压缩率 × 关键步召回 × 重放；记分板 `m1` / `composite` | Fake 可复现；真 mint 黄区 |
+| **过程门禁** | 剪辑有没有把关键步剪掉 | `fidelity`（召回，外加真重放 / solid QA）；见 [ADR-0018](../adr/0018-fidelity-rubric-without-compress.md) | Fake 可复现 smoke；假重放不进保真。真 mint 黄区 |
 | **训练效用** | 同等 GPU-hours 学生模型谁赢 | holdout 任务成功率（ADR-0013 四臂） | **本交付范围外**（out of scope；设计见 training-utility-experiment.md） |
 | **ROI** | 蒸馏自身 token 账 | `sft_saved / distill_tokens`（proxy，不计 L4） | 记分板有列；摊薄在 `export-utility` |
 
-### 过程门禁（ADR-0005 / 0014）
+### 过程门禁（ADR-0018）
 
-六项单项始终报 value + pass/fail/skip。`composite` / `m1` **仅当所需门槛全过时定义**，否则记分板 `—`（JSON `null`），**不是** 0（ADR-0014）。档均值只对 defined；另计 `n_gate_fail`。
+Headline 是 `fidelity`。有独立金标且 `key_step_recall ≥ 0.95` 才定义，否则 `—`（JSON `null`），**不是** 0（呈现仍按 ADR-0014）。可乘入 `--with-l4` 且 verify 跑过的重放，以及标了 `qa_solid` 的 QA。假 L4 / 假重放不进。连贯性不进。压缩率不是硬门、不是乘数、不是列；不追踪 over_keep。QA 未标 solid 时只观测或 skip。成本主列是绝对量 `distill_tokens`（洞 A+B，不计 L4）；spent/saved 只观测。
 
-| 分数 | 定义（门槛全过时） | 所需门槛 |
-|------|-------------------|----------|
-| `m1_score` | 压缩率得分 × 关键步召回 | compress + recall |
-| `composite` | 压缩率得分 × 召回 × 重放 | 现行六项（**short 或 original_tokens≤25k：cost 只报不分**；仍不计 L4） |
+`n_gate_fail` 计：召回低于 0.95（有金标时）、solid QA 低于 0.85（有分数时）、distill/span 失败。档均值只对 defined fidelity。
 
-压缩率：剪后 token ÷ 原 token（RawTrace 原文；工具输出进分母）。及格 ≤30%。压缩率得分分段映射，不奖励剪到 0%。召回对照**独立金标**，不读 LabelDecision。L4 token 不计蒸馏成本（ADR-0007 / 0015）。
+废弃的 `m1_score` / `composite` 仍按 ADR-0005 写在 JSON（含压缩率乘法），名字含义不改，Markdown 不把它们当列。召回对照**独立金标**，不读 LabelDecision。
 
-Hole A `a_eff`（ADR-0011 b）仅 bench，不是在线停机，不进 m1/composite。
+Hole A `a_eff`（ADR-0011 b）仅 bench，不是在线停机，不进 fidelity。
 
 ### 训练效用（ADR-0013）
 
@@ -138,7 +135,8 @@ bun run export:utility -- examples/add-fix.jsonl --fake-l4 --align-budget [--bud
 
 读板约定：
 
-- 先看单项 pass/fail/skip，再看 defined composite/m1 与 `gate fails`。
+- 2026-09-13 及更早的归档表是 ADR-0018 **之前**的六门板（含 compress 列与 composite/m1）。现行 headline 见 [ADR-0018](../adr/0018-fidelity-rubric-without-compress.md)。
+- 现行先看 recall / fidelity / `gate fails`，成本看 `distill_tokens`。
 - 2026-09-11 板在 ADR-0014 落地前，fail 样本 headline 仍可能写成 `0.00`；现行渲染为 `—`。
 - Fake 的 replay=1 带 note「deterministic workspace heal (CI only; not mint fidelity)」。
 - MIMO replay skip ≠ fail=0。

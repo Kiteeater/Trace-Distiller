@@ -6,6 +6,8 @@ accepted（2026-09-12）
 
 **Patch（2026-09-12）**: Distill Systems review — 规则覆盖改为分档观测 hint，不再暗示硬门禁；常量改名 `RULES_SAFE_COVERAGE_HINT`；ROI 主报 `saved_trainingcut / spend_AB`，并强制附摊薄情景与质量门控说明。记分板摊薄列本 PR 不做。
 
+**Superseded in part by** [ADR-0018](./0018-fidelity-rubric-without-compress.md)：spent/saved 不再是硬门；记分板主报绝对量 `distill_tokens`；质量门控 ROI 不再要求 compress。L4 不计成本分母、ROI 不作保真门，仍然有效。
+
 **Related**:
 
 - [ADR-0007](./0007-separate-brain-label-judge-budgets.md)（L4 不计蒸馏成本；主比分子仍只含洞 A+B）

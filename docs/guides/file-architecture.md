@@ -109,7 +109,7 @@ trace-distiller/
 │  │  ├─ data_label.ts
 │  │  ├─ data_warrant.ts
 │  │  └─ data_metric.ts
-│  ├─ eval/                     # L4 数字 + 分档报分壳（benchmark.ts）+ Hole A 向量效率（vector_efficiency.ts，bench-only）+ 池级预算纯函数（utility_budget.ts）+ 摊薄/质量门控 ROI（utility_roi.ts）；干净会话走 sessions 工厂
+│  ├─ eval/                     # L4 数字 + 分档报分壳（benchmark.ts；headline fidelity，ADR-0018）+ Hole A 向量效率（vector_efficiency.ts，bench-only）+ 池级预算纯函数（utility_budget.ts）+ 摊薄/质量门控 ROI（utility_roi.ts）；干净会话走 sessions 工厂
 │  ├─ service/
 │  │  ├─ cli.ts
 │  │  ├─ export_utility.ts      # ADR-0013 四臂 TrainingCut 导出脚手架
@@ -175,7 +175,7 @@ SWE-bench / pi-session 的 adapter **类型可预留**，MVP **不写 parser 文
 | `src/agent/prompt/` | Prompt 层：稳定前缀 → 状态指针 → 不稳定证据；大 payload 掩码 | **已落地（ADR-0016）** | `compose.ts` + `compact.ts`（近 N 轮 ACK/masked prune；非 pi compact）+ `tool_mask.ts`（prompt 层掩码；tools ACK 引用）。禁止把 user/evidence 拍进稳定前缀 |
 | `src/agent/extension.ts` / `skills/` | 洞内工具 + 分场景 Markdown；`skills/load.ts` 确定性读盘 | **路径已定** | LOCKED：`label_segment` / `check_continuity` / `keep_segment` / `read_segment` / `apply_rules_hint`（[tools.md](./tools.md)）。`extension.ts` 可改 re-export shim。`SKILL_ROUTE` 仍在 `src/constant/skill_route.ts` |
 | `src/data/data_*.ts` 四文件 | SQLite：段 / 打标 / 凭证 / 指标 | **文件名已定** | **列级 schema OPEN**（P0） |
-| `src/eval/` | L4 数字 + 分档报分（`benchmark.ts`）+ Hole A 向量效率（`vector_efficiency.ts`）+ 池级预算纯函数（`utility_budget.ts`）+ 摊薄/质量门控 ROI（`utility_roi.ts`） | **职责已定** | 盲测协议已拍板。QA/replay/review 经 sessions。`a_eff` 仅 bench，非在线停机。复合分见 [benchmark.md](./benchmark.md)；禁止跨赛道平均。摊薄 ROI 不进 composite/m1 |
+| `src/eval/` | L4 数字 + 分档报分（`benchmark.ts`）+ Hole A 向量效率（`vector_efficiency.ts`）+ 池级预算纯函数（`utility_budget.ts`）+ 摊薄/质量门控 ROI（`utility_roi.ts`） | **职责已定** | 盲测协议已拍板。QA/replay/review 经 sessions。`a_eff` 仅 bench，非在线停机。headline 是 fidelity（[ADR-0018](../adr/0018-fidelity-rubric-without-compress.md)）；禁止跨赛道平均。摊薄 ROI 不进 fidelity |
 | `src/report/` | 结果 JSON → 单个 `.html` | **已定** | 视觉细节非契约 |
 | `src/service/cli.ts` | CLI 薄壳 | **已定** | argv 细节 OPEN |
 | `src/service/export_utility.ts` | ADR-0013 四臂 TrainingCut 导出 | **已定** | 仍非 SFT；human_curated v0 可 stub |

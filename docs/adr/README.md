@@ -23,3 +23,4 @@
 | 0015 | **蒸馏成本进分母 + 记分板 ROI**（主报 saved_trainingcut/spend_AB；列+defined 均值；不计 L4；不进 composite/m1；规则覆盖是分档观测 hint；强制附摊薄 1×1/3×1/3×3 与质量门控 ROI） |
 | 0016 | **agent 目录：tools / prompt / sessions**（授权并落地 `src/agent/tools/` + `src/agent/prompt/`；registry 为洞工具唯一入口；prompt 稳定前缀 + 大 payload 掩码；`createAgentSession` 仍只在 `sessions/`） |
 | 0017 | **洞 A 决策走 TypeSafe Jev**（Choice / Score / Noul `systemOne`；候选池与稀疏采样不变；无 key 用 FakeJevClient；`intent_v0` v1 为场景模板；`decision=pi` 保留生成式洞 A） |
+| 0018 | **记分板改为 fidelity**（删除 compress 硬门 / 乘数 / 列 / over_keep；硬门只剩召回 ≥0.95，QA 仅 solid case set；假重放不进保真；连贯性退出；成本主报 `distill_tokens`；不改旧 m1/composite 公式的含义） |

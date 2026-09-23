@@ -708,6 +708,8 @@ describe('cli', { concurrency: 1 }, () => {
     type Sample = {
       trace_id: string
       composite: number | null
+      fidelity: number | null
+      replay_fidelity: string
       metrics: { replay: { value: number | null; status: string } }
       notes?: string[]
       distill_tokens: number | null
@@ -732,19 +734,26 @@ describe('cli', { concurrency: 1 }, () => {
     assert.equal(report.l4, true)
     const fluff = report.bins.short.samples.find((s) => s.trace_id.includes('short-fluff'))
     assert.ok(fluff, 'missing fluff sample')
-    assert.equal(fluff!.metrics.replay.status, 'pass')
+    assert.equal(fluff!.metrics.replay.status, 'observed')
     assert.equal(fluff!.metrics.replay.value, 1)
+    assert.equal(fluff!.replay_fidelity, 'fake')
+    assert.ok(
+      fluff!.fidelity !== null && fluff!.fidelity >= 0.95 && fluff!.fidelity <= 1,
+      `fidelity=${String(fluff!.fidelity)}`,
+    )
     assert.equal(typeof fluff!.distill_tokens, 'number')
     assert.equal(typeof fluff!.sft_saved, 'number')
     assert.ok(fluff!.sft_saved! > 0, `sft_saved=${String(fluff!.sft_saved)}`)
     assert.ok(fluff!.roi === null || typeof fluff!.roi === 'number')
     assert.equal(typeof report.bins.short.n_defined_roi, 'number')
     assert.ok(fluff!.composite !== null && fluff!.composite > 0, `composite=${String(fluff!.composite)}`)
+    assert.ok(fluff!.composite! > fluff!.fidelity!, 'fake replay must not turn fidelity into the compress product')
     assert.ok((fluff!.notes ?? []).some((n) => /verify ok|heal/.test(n)))
     for (const bin of ['long', 'multi_dead_end'] as const) {
       const sample = report.bins[bin].samples[0]
       assert.ok(sample, `missing ${bin} sample`)
-      assert.equal(sample!.metrics.replay.status, 'pass', bin)
+      assert.equal(sample!.metrics.replay.status, 'observed', bin)
+      assert.equal(sample!.replay_fidelity, 'fake', bin)
       assert.equal(sample!.metrics.replay.value, 1, bin)
       assert.ok(
         sample!.composite !== null && sample!.composite > 0,
@@ -759,9 +768,13 @@ describe('cli', { concurrency: 1 }, () => {
     assert.match(md, /multi-dead/)
     assert.match(md, /### notes/)
     assert.match(md, /ADR-0015/)
+    assert.match(md, /ADR-0018/)
+    assert.match(md, /\| fidelity \|/)
     assert.match(md, /\| roi \|/)
     assert.match(md, /\| distill_tokens \|/)
+    assert.match(md, /mean fidelity=/)
     assert.match(md, /mean roi=/)
+    assert.doesNotMatch(md, /\| compress \|/)
   })
 
   it('parseArgv reads --with-l4', () => {

@@ -11,7 +11,7 @@
 **目的**
 
 - 段队、标签、凭证、token 用量、规则覆盖率可查询——报告首页「LLM 只看了 X%」从这里来。
-- 评测闭环：同一 `trace_id` 能把 Raw 路径、CutPlan、六项指标对上。
+- 评测闭环：同一 `trace_id` 能把 Raw 路径、CutPlan、指标行对上。出门线是 fidelity，不是六门压缩硬门（[ADR-0018](../adr/0018-fidelity-rubric-without-compress.md)）。
 - 零运维单文件（architecture 选型）。
 
 **非目标**

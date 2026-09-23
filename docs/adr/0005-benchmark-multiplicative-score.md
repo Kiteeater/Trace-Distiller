@@ -6,4 +6,6 @@
 
 记分板呈现（fail 不再硬写成字面 0；公式在 defined 时不变）见 [ADR-0014](./0014-scoreboard-defined-composite.md)。
 
+**现行出门线已改**：[ADR-0018](./0018-fidelity-rubric-without-compress.md) 删除 compress 硬门、乘数和记分板列，headline 改为 `fidelity`。下文乘法公式只留在已废弃的 `compositeScore` / `m1Score`，名字含义不改。
+
 详见 [benchmark/README.md](../../benchmark/README.md)。

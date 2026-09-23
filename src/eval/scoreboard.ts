@@ -16,11 +16,13 @@ export function renderScoreboardMarkdown(input: {
     '',
     'Tracks are scored separately and **never averaged**.',
     '',
-    '> **Defined composite / m1 (ADR-0014):** 单项列始终显示 value + pass/fail/skip。`composite` / `m1_score` **仅当该分所需门槛全过且有数值时才定义**；否则 `—`（JSON `null`），**不是** 0。m1 所需：compression + key_step_recall。composite 所需：现行六项（**short 档或 original_tokens≤25k 的 cost 只报不分**；仍不计 L4）。QA 0/0 视为 skipped。档均值只对 defined 样本；`gate fails` 计任一项 metric `fail` 的样本。公式在 defined 时不变（ADR-0005）：composite = 压缩率得分 × 召回 × 重放；m1 = 压缩率得分 × 召回。',
+    '> **Fidelity (ADR-0018):** headline is `fidelity`. Defined only when independent gold exists and `key_step_recall ≥ 0.95`; otherwise `—` (JSON `null`), **not** 0 (ADR-0014). It may scale by real replay (`--with-l4` and workspace verify) and by QA only when the case set is marked `qa_solid`. Fake L4 / fake replay is smoke and does **not** enter fidelity. Coherence does not enter fidelity. Compress is not a hard gate, not a multiplier, and not a column; over-wide keep can still be green. No over-keep column. Hard gates that count as `gate fails`: recall below 0.95 (when gold is present), solid QA below 0.85 (when a score is present), and distill/span failures. Unmarked QA, cost, coherence, and replay are observational (`o`) or skip — they do not fail the sample. QA 0/0 is skipped.',
     '',
-    '> **Distill token economics (ADR-0015):** 主报 `roi` = `sft_saved / distill_tokens`（=`saved_trainingcut / spend_AB`；Hole A+B only；**L4 never counted**）。`sft_saved` 是 **proxy_saved_trainingcut** = `max(0, original − TrainingCut tokens)`，不是真实训练节省。主比 `cost` = spent/saved。ROI = saved/spent when spent>0；`ROI > 1` ⇔ `cost < 1` ⇔ token-profitable for a single reuse。spent=0 → ROI `—`（JSON `null`，不把 Infinity 灌进均值）。ROI 是 **列 + defined 均值**，**不是** composite/m1 门禁。摊薄情景 1×1/3×1/3×3（学生×epoch）与质量门控 ROI 写在 `export-utility` 的 `utility-report.json`（本板无摊薄列；质量挂了或缺 recall/compress 则 gated roi 为 null）。规则覆盖是分档观测 hint（`RULES_SAFE_COVERAGE_HINT=0.7`，complement of `LLM_LABEL_FRACTION_HINT=0.3`），**不是**硬门禁、**不是** `--no-llm`。本仓库不内置大模型训练循环。',
+    '> **Deprecated composite / m1 (ADR-0005 formulas, not redefined):** JSON still has `composite` and `m1_score` with the old formulas (compress × recall × replay, and compress × recall). They are **not** this board\'s headline and are **not** columns here. A null deprecated composite does not mean fidelity is null.',
     '',
-    '> **Hole A vector efficiency (ADR-0011 b):** `a_eff` = quality / log(1+tokens). Quality = embedding cosine(predicted intent vs gold intent) [, skeleton point recall if `skeleton_segment_ids` gold]. **Bench-only — not an online stop** (`sparse_intent` still stops on `enough` + hard budget). Default embedding = deterministic hash (no API key). Not part of m1/composite.',
+    '> **Distill token economics (ADR-0015 / ADR-0018):** primary cost column is absolute AB `distill_tokens` (Hole A+B only; **L4 never counted**). `cost` = spent/saved is observational, not a hard gate. `sft_saved` is **proxy_saved_trainingcut** = `max(0, original − TrainingCut tokens)`, not real training savings. `roi` = saved/spent when spent>0; spent=0 → ROI `—` (JSON `null`). ROI is a column + defined mean, not a fidelity gate. Amortized 1×1/3×1/3×3 and quality-gated ROI (recall only; compress is not a quality gate) live in `export-utility` `utility-report.json`. Rules coverage stays an observational hint (`RULES_SAFE_COVERAGE_HINT=0.7`), not a hard gate and not `--no-llm`. This repo does not train a model.',
+    '',
+    '> **Hole A vector efficiency (ADR-0011 b):** `a_eff` = quality / log(1+tokens). Quality = embedding cosine(predicted intent vs gold intent) [, skeleton point recall if `skeleton_segment_ids` gold]. **Bench-only — not an online stop** (`sparse_intent` still stops on `enough` + hard budget). Default embedding = deterministic hash (no API key). Not part of fidelity.',
     '',
   ]
 
@@ -33,14 +35,10 @@ export function renderScoreboardMarkdown(input: {
       lines.push('')
       continue
     }
-    const mean =
-      table.mean_composite === null || table.mean_composite === undefined
+    const meanFidelity =
+      table.mean_fidelity === null || table.mean_fidelity === undefined
         ? '—'
-        : table.mean_composite.toFixed(2)
-    const meanM1 =
-      table.mean_m1_score === null || table.mean_m1_score === undefined
-        ? '—'
-        : table.mean_m1_score.toFixed(2)
+        : table.mean_fidelity.toFixed(3)
     const meanA =
       table.mean_hole_a_efficiency === null || table.mean_hole_a_efficiency === undefined
         ? '—'
@@ -50,13 +48,13 @@ export function renderScoreboardMarkdown(input: {
         ? '—'
         : table.mean_roi.toFixed(2)
     lines.push(
-      `n=${String(table.n)} · mean composite=${mean} (defined=${String(table.n_defined_composite)}) · mean m1=${meanM1} (defined=${String(table.n_defined_m1)}) · gate fails=${String(table.n_gate_fail)} · mean a_eff=${meanA} · mean roi=${meanRoi} (defined=${String(table.n_defined_roi)})`,
+      `n=${String(table.n)} · mean fidelity=${meanFidelity} (defined=${String(table.n_defined_fidelity)}) · gate fails=${String(table.n_gate_fail)} · mean a_eff=${meanA} · mean roi=${meanRoi} (defined=${String(table.n_defined_roi)})`,
     )
     lines.push('')
     lines.push(
-      '| trace | compress | recall | replay | qa | coherence | cost | distill_tokens | sft_saved | roi | composite | m1 | a_eff | gold |',
+      '| trace | recall | replay | qa | coherence | distill_tokens | cost | sft_saved | roi | fidelity | a_eff | gold |',
     )
-    lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|')
+    lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|')
     for (const s of table.samples) {
       lines.push(row(s))
     }
@@ -81,15 +79,15 @@ function row(s: ScoredSample): string {
   const cell = (c: { value: number | null; status: string }) => {
     if (c.status === 'skipped' || c.value === null) return 'skip'
     const v = typeof c.value === 'number' ? c.value.toFixed(3) : String(c.value)
+    if (c.status === 'observed') return `${v} (o)`
     return `${v} (${c.status[0]!})`
   }
-  const comp = s.composite === null ? '—' : s.composite.toFixed(2)
-  const m1 = s.m1_score === null ? '—' : s.m1_score.toFixed(2)
+  const fidelity = s.fidelity === null ? '—' : s.fidelity.toFixed(3)
   const aEff =
     s.hole_a_vector === undefined || s.hole_a_vector === null || s.hole_a_vector.efficiency === null
       ? 'skip'
       : s.hole_a_vector.efficiency.toFixed(3)
-  return `| ${s.trace_id} | ${cell(m.compression_ratio)} | ${cell(m.key_step_recall)} | ${cell(m.replay)} | ${cell(m.qa)} | ${cell(m.coherence)} | ${cell(m.distill_cost_ratio)} | ${tokenCell(s.distill_tokens)} | ${tokenCell(s.sft_saved)} | ${roiCell(s.roi)} | ${comp} | ${m1} | ${aEff} | ${s.gold} |`
+  return `| ${s.trace_id} | ${cell(m.key_step_recall)} | ${cell(m.replay)} | ${cell(m.qa)} | ${cell(m.coherence)} | ${tokenCell(s.distill_tokens)} | ${cell(m.distill_cost_ratio)} | ${tokenCell(s.sft_saved)} | ${roiCell(s.roi)} | ${fidelity} | ${aEff} | ${s.gold} |`
 }
 
 function tokenCell(n: number | null | undefined): string {

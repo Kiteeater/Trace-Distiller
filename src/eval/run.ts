@@ -36,21 +36,29 @@ export interface OptionalL4Input {
 export interface OptionalL4Result {
   qa: number | null
   replay: number | null
+  /**
+   * True only when workspace `verify[]` actually ran (pass or fail).
+   * ADR-0018: replay may enter fidelity only together with `--with-l4`.
+   * Fake L4 can set this and still must not enter fidelity.
+   */
+  replay_verified: boolean
   notes: string[]
 }
 
 /**
  * CLI eval 的 L4 开关。无后端则跳过并注明，不假装跑过。
  * Replay：若 manifest 映射到真实小仓，则物化临时 cwd 再跑 runReplay。
- * 无 mapped workspace → replay skipped (null)，不因缺 fixture 把 composite 归零。
+ * 无 mapped workspace → replay skipped (null)，不因缺 fixture 把 fidelity 写成 0。
  * QA 0/0 → skipped；QA 重试后仍无合法 pairs → skipped（不是 fail=0）。
  * replay 解析失败但 workspace verify 通过则可恢复 success。
  * 有 verify[] 时成功后硬跑闸门；失败则 replay=0。
+ * `replay_verified` 只表示 verify[] 跑过。假后端即使 verify 通过也不进 fidelity（ADR-0018）。
  */
 export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4Result> {
   const notes: string[] = []
   let qa: number | null = null
   let replayScore: number | null = null
+  let replayVerified = false
   const available = l4BackendAvailable()
 
   if (input.run_qa) {
@@ -124,6 +132,7 @@ export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4R
 
           const verifyArgv = resolved.entry.verify
           if (verifyArgv !== undefined && verifyArgv.length > 0) {
+            replayVerified = true
             const verified = runWorkspaceVerify(work, verifyArgv)
             notes.push(`replay ${verified.note}`)
             if (verified.ok) {
@@ -158,7 +167,7 @@ export async function runOptionalL4(input: OptionalL4Input): Promise<OptionalL4R
     }
   }
 
-  return { qa, replay: replayScore, notes }
+  return { qa, replay: replayScore, replay_verified: replayVerified, notes }
 }
 
 function errMessage(err: unknown): string {

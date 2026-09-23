@@ -25,7 +25,7 @@ bun run bench:long:mint   # 真 mint long-only；默认 SESSION_TIMEOUT_MS=30000
 | 能力 | 怎么跑 | 说明 |
 |------|--------|------|
 | **离线蒸馏（假后端 agent 路径）** | `bun run distill:example` 或 `node script/run-distill.ts distill … --fake-l4` | ADR-0010/0011：无 `--no-llm`；FakeSessionBackend 走洞 A 多轮稀疏采样 + cut-brain（可选 `apply_rules_hint`）；写出 Training/Playback、HTML 报告、可选 live dump |
-| **假 L4 记分板 + m1 + Hole A a_eff** | `bun run bench:fake` / `bun run bench:m1` | `bench --fake-l4`；stdout JSON + `benchmark/out/scoreboard.md`；有 `m1` 列（压缩率得分 × 关键步召回；cost 失败不归零 m1）。读板：单项始终可见；composite/m1 未过门槛显示 `—` 而非 0（ADR-0014）；均值只对 defined；另计 `n_gate_fail`。另有 `distill_tokens` / `sft_saved` / `roi`（ADR-0015；ROI 是列+defined 均值，不是 composite 归零门禁；`sft_saved` 为 proxy_saved_trainingcut；规则覆盖是观测 hint 不是门禁）。另有 bench-only `a_eff`（ADR-0011 b：intent cosine / log(1+tokens)；默认确定性 embedding；`--no-vector-efficiency` 可关） |
+| **假 L4 记分板 + fidelity + Hole A a_eff** | `bun run bench:fake` / `bun run bench:m1` | `bench --fake-l4`；stdout JSON + `benchmark/out/scoreboard.md`。Headline 是 `fidelity`（ADR-0018：有金标且召回 ≥0.95 才定义，否则 `—` 不是 0）。假重放是 smoke，不进 fidelity。压缩率不是列、不是硬门。成本主列是 `distill_tokens`（不计 L4）；spent/saved 与 ROI 只观测（ADR-0015）。另有 bench-only `a_eff`（ADR-0011 b；`--no-vector-efficiency` 可关） |
 | **真 mint 重放 + 校验（接口）** | `bench --with-l4`（需本机 `.env`）+ workspace fixture | L4 会话硬超时；mapped workspace 有 `verify[]` 时门禁重放；密钥不进仓库 |
 
 同源双投影：assembler 已从同一 CutPlan 写出 `*-training.json`（`TrainingCut`：按保留集抽出的 RawTurn 列）与 `*-playback.json`（卡片流）。这是 M1 中间表示，**不是**定型 SFT 模板。
@@ -36,7 +36,7 @@ bun run bench:long:mint   # 真 mint long-only；默认 SESSION_TIMEOUT_MS=30000
 
 | 能力 | 风险 | 建议 |
 |------|------|------|
-| **短样 `with_llm`（真洞 A/B）** | mint token 成本；洞 A+B ~6–10k 固定开销会顶穿 0.3 | **short / original_tokens≤25k：cost 只报不分**（仍不计 L4）；短档阀门更少剪（`bin:short`）；看 `m1_score` + 软 cost 后的 composite；不要把过夜默认改成 `--with-l4` |
+| **短样 `with_llm`（真洞 A/B）** | mint token 成本；洞 A+B ~6–10k 固定开销相对短样很大 | 成本看绝对量 `distill_tokens`（不计 L4），比值不硬门（ADR-0018）。短档阀门更少剪（`bin:short`）。不要把过夜默认改成 `--with-l4` |
 | **长样 `with_llm` / long mint** | 慢、易超时；洞窗更积极 + 更强 dead_end collapse | `--bin long` 单独跑；`SESSION_TIMEOUT_MS≥300000`；keep 地板 ~8–15%；可用 `TRACE_DISTILLER_BENCH_LONG_SAMPLE` 只 mint 一条 |
 | **真 mint L4 QA / replay / review** | 会话超时、模型波动；无 mapped workspace 的导入样 replay 为 skipped；QA 曾现畸形 JSON / `correct=1/3` | 显式 `--with-l4`；长样用 `--bin long` + `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`（或 `bun run bench:long:mint`）；CI 继续 `--fake-l4`；**QA near-JSON 软修复（含字符串内未转义引号）+ 畸形最多再试 2 次、低分再试 1 次**；仍无法解析 → skipped；题必须可从 playback 答；真 replay 需 `manifest` 映射 fixture |
 | **可选 live Unix socket** | 默认关闭；命令结束即 unlink | 日常仍用 `--live-dump` / `file://` |

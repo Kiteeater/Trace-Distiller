@@ -10,6 +10,7 @@ export const COMPRESSION_RATIO_TARGET = { min: 0.1, max: 0.3 }
 /**
  * 压缩率得分分段结点（ADR-0005）。ratio = 剪后/原。
  * 不奖励剪到 0%。中间线性插值。
+ * ADR-0018：只服务已废弃的 `m1Score` / `compositeScore`。不乘进 fidelity，不是硬门。
  */
 export const COMPRESSION_SCORE_KNOTS: readonly { ratio: number; score: number }[] = [
   { ratio: 0, score: 0 },
@@ -19,14 +20,31 @@ export const COMPRESSION_SCORE_KNOTS: readonly { ratio: number; score: number }[
   { ratio: 1, score: 0 },
 ]
 
-/** 六项及格线（ADR-0005 / benchmark）。未跑的项不算及格。 */
+/**
+ * Threshold numbers (ADR-0005), read under ADR-0018.
+ *
+ * Active hard gates: `key_step_recall_min`, and `qa_min` only when the case set
+ * is marked solid. `replay_min` is not a hard gate — real replay (`--with-l4`
+ * and workspace verify) may scale `fidelity`; fake replay must not.
+ *
+ * `compression_ratio_max`, `coherence_*`, and `distill_cost_ratio_max` are not
+ * active hard gates, not fidelity inputs, and compress is not a scoreboard
+ * column. They stay so deprecated `compositeScore` / `m1Score` keep their old
+ * formulas (do not redefine those names to mean fidelity). No over-keep tracking.
+ */
 export const BENCHMARK_PASS = {
+  /** @deprecated ADR-0018 — not an active hard gate. Deprecated m1/composite only. */
   compression_ratio_max: 0.3,
   key_step_recall_min: 0.95,
+  /** @deprecated ADR-0018 — not an active hard gate. Deprecated composite only. */
   replay_min: 0.9,
+  /** Hard gate only when the QA case set is marked solid. */
   qa_min: 0.85,
+  /** @deprecated ADR-0018 — coherence is observational, not a fidelity input. */
   coherence_mean_min: 4,
+  /** @deprecated ADR-0018 — coherence is observational, not a fidelity input. */
   coherence_item_min: 2,
+  /** @deprecated ADR-0018 — spent/saved is observational, not a hard gate. */
   distill_cost_ratio_max: 0.3,
 } as const
 

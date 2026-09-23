@@ -30,6 +30,8 @@
 
 ## 3. 什么证明什么
 
+> 本节数字来自 ADR-0018 之前的六门记分板（compress 硬门、composite/m1）。现行 headline 是 `fidelity`，假重放不进保真。见 [ADR-0018](../adr/0018-fidelity-rubric-without-compress.md)。
+
 ### 绿：过程门禁在 Fake 上可复现
 
 [fake-m1-2026-09-13.md](./results/fake-m1-2026-09-13.md)：

@@ -5,9 +5,18 @@
 | 版本 | v0.2 |
 | 日期 | 2026-09-09 |
 | 状态 | **已收口**（公式与及格线）；token 口径对齐 ingest；盲测协议已拍板（LLM review 仍待 spike） |
-| 权威来源 | [benchmark/README.md](../../benchmark/README.md)、[ADR-0005](../adr/0005-benchmark-multiplicative-score.md)、[ADR-0014](../adr/0014-scoreboard-defined-composite.md)、[ADR-0015](../adr/0015-distill-cost-roi.md) |
+| 权威来源 | [benchmark/README.md](../../benchmark/README.md)、[ADR-0018](../adr/0018-fidelity-rubric-without-compress.md)（现行）、[ADR-0005](../adr/0005-benchmark-multiplicative-score.md)（废弃公式）、[ADR-0014](../adr/0014-scoreboard-defined-composite.md)、[ADR-0015](../adr/0015-distill-cost-roi.md) |
 
-> 压缩和保真绑在一起看。单项好看不算数。设计原文在 [benchmark/README.md](../../benchmark/README.md)，本页把它写成已定验收口径。
+> 现行出门线是保真分，不是压缩硬门。见 [ADR-0018](../adr/0018-fidelity-rubric-without-compress.md)。下文六项乘法是 ADR-0005 的历史公式，只留在已废弃的 `composite` / `m1`，不是 headline。
+
+## 现行记分（ADR-0018）
+
+- **删除 compress**：不是硬门，不乘进分数，记分板没有这一列，也不追踪 over_keep。召回过线时，留得偏宽仍可以绿。
+- **硬门**：`key_step_recall ≥ 0.95`。QA 只有 case set 标了 `qa_solid: true`（写在 `*.key-decisions.json`）才硬门（`≥ 0.85`）；没标则只观测或 skip。现有数据集都没标，所以现行 QA 不是硬门。
+- **Replay**：`--fake-l4` / 假后端是 smoke，不进 fidelity。只有 `--with-l4` 且 workspace `verify[]` 跑过，才可以乘进 fidelity。
+- **连贯性**：退出 fidelity。洞 B 自打分；假后端没有独立信息。
+- **成本**：主列是绝对量 `distill_tokens`（洞 A+B，不计 L4）。spent/saved 只观测，不硬门。
+- **Headline `fidelity`**：有独立金标且召回 ≥ 0.95 才定义，否则 `—`（JSON `null`，不是 0）。可再乘真实验证过的重放和 solid QA。`m1` / `composite` 公式不改含义，JSON 里还在，Markdown 不把它们当列。
 
 ## 目的
 
@@ -23,7 +32,9 @@
 
 ## 已定结论
 
-拍板在 [ADR-0005](../adr/0005-benchmark-multiplicative-score.md) 与 benchmark README。三层结构：
+下面这一节是 ADR-0005 的历史结构。现行硬门与 headline 以上一节和 [ADR-0018](../adr/0018-fidelity-rubric-without-compress.md) 为准。三层结构里，分档赛道仍然有效；六项全过才乘总分不再是出门线。
+
+拍板原文在 [ADR-0005](../adr/0005-benchmark-multiplicative-score.md)。历史结构：
 
 ```text
 第一层  6 个单项（自动）
@@ -81,8 +92,8 @@ Score = 压缩率得分 × 关键步召回率 × 重放成功率
 - **人工 + 强模型双标**；争议仲裁后再入库。旁路文件约定见 [datasets.md](./datasets.md)：`data/raw/<trace_id>.key-decisions.json`，gitignore，**不喂洞 B**。
 - **不拿 Distiller 自己的 Rule / 洞 B 标签评自己。**
 - **成本只计洞 A + 洞 B**，不含 L4（QA / 重放 / review）token。
-- **Cost soft gate（真 mint）**：`short` 档，或 `original_tokens ≤ 25_000`（`COST_SOFT_ORIGINAL_TOKENS`）时，`distill_cost_ratio` **照常写入记分板**，但 **不因 >0.3 判 fail / 不拖垮 composite**——洞 A+B 固定开销在短样上几乎必然 >0.3。更大 long 样仍用硬门槛 0.3。
-- **Distill token economics / ROI（ADR-0015）**：主报 `roi` = `sft_saved / distill_tokens`（=`saved_trainingcut / spend_AB`；分子仅 Hole A+B，**不计 L4**）。`sft_saved` = **proxy_saved_trainingcut** = `max(0, original − TrainingCut tokens)`，不是真实训练节省。主比 `distill_cost_ratio` = spent/saved。`ROI > 1` ⇔ 单次复用 token 盈利 ⇔ cost_ratio < 1。spent=0 → ROI `null`/`—`。记分板列 `distill_tokens` / `sft_saved` / `roi`；`mean_roi` 只对 defined。**不是** composite/m1 门禁。文档摊薄情景 1×1 / 3×1 / 3×3（学生×epoch；本板无摊薄列）。质量门控 ROI：`key_step_recall≥0.95` / 骨架保护 / compress 门仍成立时数字才有意义。规则覆盖是分档观测 hint（`RULES_SAFE_COVERAGE_HINT=0.7`），不是 70% 硬门、不是 `--no-llm`。Fake / `--fake-l4` 同样填列（Fake 用量为 0 时 roi 为 `—`）。
+- **成本（ADR-0018）**：记分板主列是绝对量 `distill_tokens`（洞 A+B，**不计 L4**）。`distill_cost_ratio` = spent/saved 只观测，短样顶穿 0.3 也不判 fail。废弃 composite 仍可能因旧 cost 门为 null，那不是 fidelity。
+- **Distill token economics / ROI（ADR-0015）**：`roi` = `sft_saved / distill_tokens`（=`saved_trainingcut / spend_AB`）。`sft_saved` = **proxy_saved_trainingcut** = `max(0, original − TrainingCut tokens)`，不是真实训练节省。`ROI > 1` ⇔ 单次复用 token 盈利 ⇔ cost_ratio < 1。spent=0 → ROI `null`/`—`。记分板列 `distill_tokens` / `sft_saved` / `roi`；`mean_roi` 只对 defined。**不是** fidelity 门禁。文档摊薄情景 1×1 / 3×1 / 3×3（学生×epoch；本板无摊薄列）。质量门控 ROI 只看 `key_step_recall≥0.95`（compress 不再是质量门）。规则覆盖是分档观测 hint（`RULES_SAFE_COVERAGE_HINT=0.7`），不是 70% 硬门、不是 `--no-llm`。Fake / `--fake-l4` 同样填列（Fake 用量为 0 时 roi 为 `—`）。
 - **Keep 地板**：`original_tokens≥5k` 时 `KEEP_RATIO_FLOOR=0.08`（软顶 `KEEP_RATIO_SOFT_CAP=0.15`），避免 long/multi 被剪到 <5%；短样不强制抬 keep，以免单段跳过 0.3。
 - **短 / 长阀门（CutProfile bin valve）**：`cutProfileForBin(bin)` 为三档提供默认 CutProfile——**short**：`max_representative=5`、更大/默认洞窗、`keep_ratio_floor=null`（少剪 + 已有 soft cost）；**long**：`max_representative=2`、更小洞窗（更积极）、`keep_ratio_floor≈0.08`（目标带 8–15%）；**multi_dead_end**：代表上限 3 + 同 long 的地板/洞窗。`bench --bin short|long|multi_dead_end` 或 `--bins a,b` 只跑所选赛道，避免短长混跑挂起。长 mint 建议 `TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000`；快捷：`bun run bench:long:mint`。
 - **QA 0/0**：视为 skipped（不是 fail）。
@@ -116,7 +127,7 @@ node script/run-distill.ts bench --dir benchmark/datasets
 
 产品口径：[PRD.md](../../PRD.md) §5、[milestones.md](../milestones.md)——**压缩率 + 保真度**。对应本表的 **指标 1 +（指标 2 关键步召回；日常亦可用指标 4 QA 或盲测 review）**。重放太贵，M1 不强制。处理成本比尽量算——**不是 M1 硬门禁**。
 
-实现：`composite` / `m1_score` **仅当该分所需门槛全过时才定义**（ADR-0014）；否则记分板 `—`（JSON `null`），不硬写成 0。`composite` 仍为六项全过才计分（含 cost；short/small 的 cost 只报不分）。`m1_score` = 压缩率得分 × 关键步召回，只看 compress+recall，便于过夜 demo 在 cost>0.3 时仍显示 M1 成功。档均值只对 defined 样本；`n_gate_fail` 另计。
+实现（ADR-0018）：headline 是 `fidelity`，有金标且召回 ≥ 0.95 才定义，否则 `—`（不是 0）。压缩率不参与。假重放不参与。档均值只对 defined fidelity；`n_gate_fail` 计召回失败、solid QA 失败、distill/span 失败。废弃的 `composite` / `m1_score` 仍按 ADR-0005 公式写在 JSON 里。
 
 M1 操作清单：
 

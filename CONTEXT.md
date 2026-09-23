@@ -85,7 +85,7 @@ _Avoid_: dataset row, cleaned trace
 _Avoid_: summary report, dashboard view
 
 **Compression Ratio（压缩率）**：
-剪后 token / 原 token；MVP 目标先做到 10%–30%。
+剪后 token / 原 token；描述产物有多短。记分板不把它当硬门、不乘进保真分、不单列（ADR-0018）。过宽只靠召回等保真信号约束。
 _Avoid_: length reduction, step count only
 
 **Fidelity（保真度）**：
@@ -115,12 +115,16 @@ _Avoid_: 重放成功率
 _Avoid_: fluency, readability（人类可读性是另一项）
 
 **处理成本比（Distill Cost Ratio）**：
-剪辑自身消耗的 token ÷ 剪掉的 token（洞 A+B；不计 L4）。记分板另报 ROI = proxy_saved_trainingcut / spend_AB（ADR-0015；`sft_saved` 非真实训练节省）；摊薄情景 1×1/3×1/3×3 仅文档；质量门控 ROI；规则覆盖是观测 hint 不是门禁。ROI 不是复合分门禁。
-_Avoid_: API bill, absolute token spend
+剪辑自身消耗的 token ÷ 剪掉的 token（洞 A+B；不计 L4）。记分板主报绝对量 `distill_tokens`；这个比值只观测、不是硬门（ADR-0018）。另报 ROI = proxy_saved_trainingcut / spend_AB（ADR-0015；`sft_saved` 非真实训练节省）；摊薄情景 1×1/3×1/3×3 仅文档；质量门控只看召回；规则覆盖是观测 hint 不是门禁。
+_Avoid_: API bill
+
+**保真分（Fidelity Score）**：
+记分板 headline（ADR-0018）。有独立金标且关键步召回 ≥ 0.95 才定义，否则 —（不是 0）。可乘入真重放（`--with-l4` 且 workspace verify）以及标了 solid 的 QA。假 L4 / 假重放、洞 B 自打连贯性、压缩率、成本比都不进这个分。
+_Avoid_: composite score, m1（那是已废弃的旧公式，名字不改成这个意思）
 
 **复合分（Composite Score）**：
-六项全部及格后才计算的总分：压缩率得分 × 关键步召回率 × 重放成功率；任一趋零则总分崩盘。
-_Avoid_: weighted average, single metric leaderboard
+已废弃的旧总分，公式不改：六项全部及格后才计算，压缩率得分 × 关键步召回率 × 重放成功率。不是现行 headline（ADR-0018）。`m1` 同样保留「压缩率得分 × 召回」，不改含义。
+_Avoid_: weighted average, single metric leaderboard, 把 composite 当成 fidelity
 
 ### 运行时
 

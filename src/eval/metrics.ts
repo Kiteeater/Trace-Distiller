@@ -129,7 +129,8 @@ export function distillEconomics(input: DistillEconomicsInput): DistillEconomics
 }
 
 /**
- * Cost gate for composite: short-bin / small original_tokens → reported but not failing.
+ * @deprecated ADR-0018. Cost ratio is observational on the active rubric (primary
+ * display is absolute AB `distill_tokens`). Retained for deprecated `compositeScore`.
  * L4 tokens never enter distill_cost_ratio (ADR-0007).
  */
 export function costGateApplies(input: {
@@ -203,7 +204,11 @@ export function skeletonWeakGoldIds(skeleton: Skeleton): string[] {
   return ids
 }
 
-/** 连贯性：均分 ≥4.0 且任一项不得低于 2。空列表不及格。 */
+/**
+ * @deprecated ADR-0018. Coherence leaves fidelity (Hole B self-score; fake is a
+ * constant and carries no information). Retained for deprecated `compositeScore`.
+ * 均分 ≥4.0 且任一项不得低于 2。空列表不及格。
+ */
 export function coherencePass(scores: readonly number[]): boolean {
   if (scores.length === 0) return false
   const mean = scores.reduce((sum, n) => sum + n, 0) / scores.length
@@ -211,7 +216,10 @@ export function coherencePass(scores: readonly number[]): boolean {
   return mean >= BENCHMARK_PASS.coherence_mean_min && min >= BENCHMARK_PASS.coherence_item_min
 }
 
-/** 压缩率得分分段映射（0–100），不奖励剪到 0%。 */
+/**
+ * 压缩率得分分段映射（0–100），不奖励剪到 0%。
+ * @deprecated ADR-0018 as a score multiplier. Knots remain for deprecated m1/composite only.
+ */
 export function compressionScore(ratio: number): number {
   const knots = COMPRESSION_SCORE_KNOTS
   if (ratio <= knots[0]!.ratio) return knots[0]!.score
@@ -232,9 +240,33 @@ export interface BenchmarkParts {
   qa: number | null
   coherence_scores: readonly number[] | null
   distill_cost_ratio: number
-  /** 用于 short/small soft cost gate；缺省按硬门槛。 */
+  /** 用于 deprecated composite 的 short/small soft cost gate；缺省按硬门槛。 */
   bin?: string
   original_tokens?: number
+  /**
+   * ADR-0018: QA is a hard gate only when the case set is marked solid.
+   * Omitted / false → observational (not a fail, not a fidelity input).
+   */
+  qa_solid?: boolean
+}
+
+/**
+ * How a replay number may enter fidelity (ADR-0018).
+ * - `real`: `--with-l4` and workspace verify ran. May scale fidelity.
+ * - `fake`: FakeSessionBackend / `--fake-l4` / default bench smoke. Never scales fidelity.
+ * - `unverified`: a replay number without verify. Never scales fidelity.
+ * - `absent`: no replay score. Never scales fidelity.
+ */
+export type ReplayFidelityKind = 'real' | 'fake' | 'unverified' | 'absent'
+
+export interface FidelityInput {
+  /** null = no independent gold (or recall not computed). */
+  key_step_recall: number | null
+  replay?: number | null
+  replay_fidelity?: ReplayFidelityKind
+  qa?: number | null
+  /** Hard-gate and fidelity input only when true. */
+  qa_solid?: boolean
 }
 
 export function sixMetricsPresent(parts: BenchmarkParts): boolean {
@@ -246,6 +278,11 @@ export function sixMetricsPresent(parts: BenchmarkParts): boolean {
   )
 }
 
+/**
+ * @deprecated ADR-0018. Old six-gate predicate, **including compress ≤ 0.3**.
+ * Kept so `compositeScore` is not silently redefined. The active rubric does not
+ * call this: compress is not a hard gate. Use `fidelityScore`.
+ */
 export function sixMetricsPassed(parts: BenchmarkParts): boolean {
   if (!sixMetricsPresent(parts)) return false
   return (
@@ -264,10 +301,10 @@ export function sixMetricsPassed(parts: BenchmarkParts): boolean {
 }
 
 /**
- * 六项全及格才计总分，否则 null（记分板 —，不硬写成 0；ADR-0014）。
- * 缺项（未跑 L4 / 无金标）同样 null，不假装 0 分样本。
- * Score = 压缩率得分 × 关键步召回 × 重放成功率（召回与重放用 0–1）。
- * 完整 composite 仍含 cost 等六项门槛；勿静默去掉 cost。
+ * @deprecated ADR-0018. Formula unchanged (ADR-0005 / ADR-0014): defined only when
+ * `sixMetricsPassed` (compress, recall, replay, QA, coherence, cost). Score =
+ * compressionScore × recall × replay. Not the headline. Do not redefine this
+ * name to mean `fidelity`.
  */
 export function compositeScore(parts: BenchmarkParts): number | null {
   if (!sixMetricsPassed(parts)) return null
@@ -275,11 +312,9 @@ export function compositeScore(parts: BenchmarkParts): number | null {
 }
 
 /**
- * M1 出门分：只强制压缩率 + 关键步召回（产品 MVP 硬指标）。
- * 不读 cost / replay / qa / coherence——那些仍只进完整 composite。
- * 仅当 compress 与 recall 门槛都过且 recall 有数值时才定义：
- * Score = compressionScore × key_step_recall（0–1）。
- * 任一门未过或缺召回 → null（记分板 —，不硬写成 0；ADR-0014）。
+ * @deprecated ADR-0018. Formula unchanged: defined only when compress ≤ 0.3 and
+ * recall ≥ 0.95. Score = compressionScore × key_step_recall. Not the headline.
+ * Do not redefine this name to mean `fidelity`.
  */
 export function m1Score(
   parts: Pick<BenchmarkParts, 'compression_ratio' | 'key_step_recall'>,
@@ -289,6 +324,53 @@ export function m1Score(
   const recallOk = parts.key_step_recall >= BENCHMARK_PASS.key_step_recall_min
   if (!compressOk || !recallOk) return null
   return compressionScore(parts.compression_ratio) * parts.key_step_recall
+}
+
+/**
+ * Headline score (ADR-0018). Null rules match ADR-0014: missing gold or recall
+ * below the gate → `null`, never a sentinel 0.
+ *
+ * Defined only when `key_step_recall` is a finite number (independent gold was
+ * scored) and `key_step_recall ≥ key_step_recall_min` (0.95).
+ *
+ * When defined:
+ * - start at `key_step_recall`
+ * - scale by `replay` only when `replay_fidelity === 'real'` (with-l4 + verify)
+ * - scale by `qa` only when `qa_solid` and a finite QA score is present
+ *
+ * Does not read compress, coherence, cost, fake replay, or unverified replay.
+ * A wide keep with high recall stays defined. Solid QA below `qa_min` still
+ * scales this number and is a separate hard-gate fail at the scoreboard; it
+ * does not by itself make the score null.
+ */
+export function fidelityScore(input: FidelityInput): number | null {
+  const recall = input.key_step_recall
+  if (recall === null || !Number.isFinite(recall)) return null
+  if (recall < BENCHMARK_PASS.key_step_recall_min) return null
+  let score = recall
+  const kind = input.replay_fidelity ?? 'absent'
+  const replay = input.replay
+  if (kind === 'real' && replay !== null && replay !== undefined && Number.isFinite(replay)) {
+    score *= replay
+  }
+  const qa = input.qa
+  if (input.qa_solid === true && qa !== null && qa !== undefined && Number.isFinite(qa)) {
+    score *= qa
+  }
+  return score
+}
+
+/**
+ * Active hard gates (ADR-0018). Recall must clear 0.95. Solid QA, when a score
+ * exists, must clear `qa_min`. Missing gold is not a pass. Compress, cost,
+ * coherence, and replay are not gates. A skipped solid QA (null) does not fail.
+ */
+export function rubricGatesPassed(input: FidelityInput): boolean {
+  if (fidelityScore(input) === null) return false
+  if (input.qa_solid === true && input.qa !== null && input.qa !== undefined) {
+    if (!Number.isFinite(input.qa) || input.qa < BENCHMARK_PASS.qa_min) return false
+  }
+  return true
 }
 
 function lerp(x: number, x0: number, y0: number, x1: number, y1: number): number {

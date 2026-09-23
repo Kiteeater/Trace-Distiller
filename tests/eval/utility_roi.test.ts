@@ -30,7 +30,7 @@ describe('amortizedRoiScenarios', () => {
 })
 
 describe('qualityGatedRoi', () => {
-  it('quality fail (recall 0.5 or compress 0.5) → gated roi null', () => {
+  it('quality fail is low recall; compress does not null gated roi', () => {
     const recallFail = qualityGatedRoi({
       roi: 4,
       key_step_recall: 0.5,
@@ -40,17 +40,16 @@ describe('qualityGatedRoi', () => {
     assert.equal(recallFail.roi, null)
     assert.match(recallFail.reason ?? '', /key_step_recall/)
 
-    const compressFail = qualityGatedRoi({
+    const wideKeep = qualityGatedRoi({
       roi: 4,
       key_step_recall: 1,
       compression_ratio: 0.5,
     })
-    assert.equal(compressFail.quality_ok, false)
-    assert.equal(compressFail.roi, null)
-    assert.match(compressFail.reason ?? '', /compression_ratio/)
+    assert.equal(wideKeep.quality_ok, true)
+    assert.equal(wideKeep.roi, 4)
   })
 
-  it('missing recall/compress → fail-closed null', () => {
+  it('missing recall fails closed; missing compress does not', () => {
     const missing = qualityGatedRoi({
       roi: 4,
       key_step_recall: null,
@@ -59,6 +58,14 @@ describe('qualityGatedRoi', () => {
     assert.equal(missing.quality_ok, false)
     assert.equal(missing.roi, null)
     assert.match(missing.reason ?? '', /missing key_step_recall/)
+
+    const noCompress = qualityGatedRoi({
+      roi: 4,
+      key_step_recall: 1,
+      compression_ratio: undefined,
+    })
+    assert.equal(noCompress.quality_ok, true)
+    assert.equal(noCompress.roi, 4)
   })
 
   it('quality pass → roi preserved', () => {
