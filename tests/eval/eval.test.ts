@@ -21,6 +21,7 @@ import {
   compressionScore,
   computeDistillMetrics,
   compositeScore,
+  fidelityScore,
   m1Score,
   distillCostRatio,
   distillEconomics,
@@ -364,6 +365,41 @@ describe('six-metric pure functions', () => {
     assert.equal(m1Score({ ...base, key_step_recall: 0.5 }), null)
     assert.equal(m1Score({ ...base, key_step_recall: null }), null)
     assert.equal(m1Score({ compression_ratio: 0.9, key_step_recall: null }), null)
+  })
+
+  it('fidelityScore is gold + recall only, and ignores compress, fake replay, and coherence', () => {
+    assert.equal(fidelityScore({ key_step_recall: null }), null)
+    assert.equal(fidelityScore({ key_step_recall: 0.94 }), null)
+    assert.equal(fidelityScore({ key_step_recall: 0.95 }), 0.95)
+    assert.equal(
+      fidelityScore({
+        key_step_recall: 1,
+        replay: 0,
+        replay_fidelity: 'fake',
+        qa: 0,
+      }),
+      1,
+    )
+    assert.equal(
+      fidelityScore({
+        key_step_recall: 1,
+        replay: 0.5,
+        replay_fidelity: 'real',
+        qa: 0.9,
+        qa_solid: true,
+      }),
+      0.45,
+    )
+    assert.equal(
+      fidelityScore({
+        key_step_recall: 1,
+        replay: 1,
+        replay_fidelity: 'unverified',
+        qa: 0.5,
+        qa_solid: false,
+      }),
+      1,
+    )
   })
 })
 

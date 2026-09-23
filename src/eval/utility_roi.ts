@@ -23,6 +23,9 @@ export function amortizedRoiScenarios(roi: number | null): {
 export interface QualityGatedRoiInput {
   roi: number | null
   key_step_recall: number | null | undefined
+  /**
+   * Ignored by the gate (ADR-0018). Callers may still pass the measured ratio.
+   */
   compression_ratio: number | null | undefined
   /** optional: skeleton protect / other fail flags; true skips metric checks (unit tests). */
   quality_ok?: boolean
@@ -35,8 +38,10 @@ export interface QualityGatedRoi {
 }
 
 /**
- * Quality gate: if process gates fail, do not treat saved as free lunch.
- * Missing recall/compress → fail-closed (gated roi null) unless quality_ok: true.
+ * Quality gate for ROI (ADR-0015, compress clause retired by ADR-0018).
+ * Missing or low recall → fail-closed (gated roi null) unless quality_ok: true.
+ * `compression_ratio` is ignored: over-wide keep is not watched. Cost ratio is
+ * not a gate here either.
  */
 export function qualityGatedRoi(input: QualityGatedRoiInput): QualityGatedRoi {
   if (input.quality_ok === false) {
@@ -49,21 +54,11 @@ export function qualityGatedRoi(input: QualityGatedRoiInput): QualityGatedRoi {
   if (input.key_step_recall === null || input.key_step_recall === undefined) {
     return { roi: null, quality_ok: false, reason: 'missing key_step_recall' }
   }
-  if (input.compression_ratio === null || input.compression_ratio === undefined) {
-    return { roi: null, quality_ok: false, reason: 'missing compression_ratio' }
-  }
   if (input.key_step_recall < BENCHMARK_PASS.key_step_recall_min) {
     return {
       roi: null,
       quality_ok: false,
       reason: `key_step_recall ${String(input.key_step_recall)} < ${String(BENCHMARK_PASS.key_step_recall_min)}`,
-    }
-  }
-  if (input.compression_ratio > BENCHMARK_PASS.compression_ratio_max) {
-    return {
-      roi: null,
-      quality_ok: false,
-      reason: `compression_ratio ${String(input.compression_ratio)} > ${String(BENCHMARK_PASS.compression_ratio_max)}`,
     }
   }
   return { roi: input.roi, quality_ok: true }

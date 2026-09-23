@@ -55,7 +55,7 @@ function amortizeRoi(roi: number | null, students: number, epochs: number): numb
 function amortizedRoiScenarios(roi: number | null): { '1x1': number | null; '3x1': number | null; '3x3': number | null }
 
 function qualityGatedRoi(input: { roi: number | null; key_step_recall: number | null | undefined; compression_ratio: number | null | undefined; quality_ok?: boolean }): { roi: number | null; quality_ok: boolean; reason?: string }
-// 缺 recall/compress → fail-closed null；质量挂了不算省 token（ADR-0015）
+// 缺召回或召回 < 0.95 → fail-closed null。compression_ratio 忽略（ADR-0018）
 
 function choosePoolBudget(armPoolTokens: Record<string, number>): number
 function subsampleTraceIds(traces: Record<string, { tokens: number }>, budget: number): { selected: string[]; pool_tokens: number }
@@ -86,17 +86,22 @@ function answerQa(cut: TrainingCut | PlaybackCut, items: QaItem[]): Promise<QaSc
 
 function replay(task: ReplayTask, plan: CutPlan): Promise<{ success: boolean }>
 
+function fidelityScore(input: FidelityInput): number | null
+// ADR-0018 headline。无金标或召回 < 0.95 → null（不是 0）。
+// 可乘 real replay（--with-l4 + verify）与 solid QA。不乘 compress / fake replay / coherence / cost。
+
 function compositeScore(parts: BenchmarkParts): number | null
-// 六项未全部及格 → null（记分板 —，ADR-0014）；否则 压缩率得分 × 关键步召回 × 重放成功率（含 cost 门槛）
+// @deprecated ADR-0018。公式不改：旧六门都过才定义，否则 null。
+// 定义时 = 压缩率得分 × 关键步召回 × 重放。不是 headline。
 
 function m1Score(parts: Pick<BenchmarkParts, 'compression_ratio' | 'key_step_recall'>): number | null
-// M1：压缩率得分 × 关键步召回（两门都过才定义，否则 null）；cost/replay/qa/coherence 不参与
+// @deprecated ADR-0018。公式不改：压缩率得分 × 关键步召回（compress 与 recall 都过才定义）。不是 headline。
 
 function scoreHoleAVectorEfficiency(input: HoleAVectorInput): Promise<HoleAVectorScore>
 // ADR-0011 b：quality / log(1+tokens)；默认 DeterministicHashEmbedding；bench-only
 ```
 
-M1 最低：`compressionRatio` + 关键步召回（日常亦可用 `blindReview` / `answerQa`）。`m1_score` 已落地；完整 `composite` 仍要求六项。
+现行 headline 是 `fidelityScore`（ADR-0018）：金标召回 ≥ 0.95。`compositeScore` / `m1Score` 公式保留但已废弃。日常保真仍可用 `blindReview` / `answerQa`；QA 硬门只在 case set 标 solid 时生效。
 
 ---
 
@@ -133,8 +138,8 @@ eval → types, enums, constant, domain, data
 
 ## 5. 关键规则 / 算法
 
-- **乘法复合分**（ADR-0005 / [ADR-0014](../adr/0014-scoreboard-defined-composite.md)）：六项全及格才计总分（defined）；否则 null（记分板 —，不硬写成 0）。压缩率得分分段映射，不奖励剪到 0%。
-- **连贯性卡下限**不只卡均值。
+- **保真分**（[ADR-0018](../adr/0018-fidelity-rubric-without-compress.md)）：有金标且召回 ≥ 0.95 才定义，否则 null（记分板 —，不硬写成 0；呈现沿用 [ADR-0014](../adr/0014-scoreboard-defined-composite.md)）。不乘压缩率。假重放不进。连贯性不进。
+- **废弃乘法**（ADR-0005）：`compositeScore` / `m1Score` 仍用压缩率得分分段映射，不奖励剪到 0%，但不再是出门线。
 - **盲测对抗性**（ADR-0009，已拍板）：review 只拿意图 + playback。缺失骨架点 → `reviewFillInIds` 回填对应段 keep，最多 `REVIEW_MAX_ROUNDS=2`。这既是门禁也是闭环修正，也是 Fail-Closed 的另一种实现。
 - **关键步召回**：金标来源是人工+强模型双标（benchmark）；MVP 可用洞 A 骨架节点当弱代理，但报告必须写明「非金标」。
 - 压缩率口径与 `TraceMeta.total_tokens`、段 `tokens` 同一套（P0 未定）。
@@ -163,6 +168,6 @@ eval → types, enums, constant, domain, data
 - [x] grep 无 pi SDK。
 - [x] 未关闭的 P0 口径不得假装「压缩率已达标」。（数字会算，不宣称落入 10%–30%）
 - [x] replay / QA / review 接口经 sessions（假后端可测；真模型 `TRACE_DISTILLER_MODEL_L4`）。真实重放成功率需仓库+模型，CI 不假装。
-- [x] 分档报分壳：`src/eval/benchmark.ts`；六项门槛；乘法分；一项 fail → composite/m1 `null`（—）；无金标 skipped；三档禁止合并平均；均值只对 defined；`n_gate_fail`（ADR-0014）。
+- [x] 分档报分壳：`src/eval/benchmark.ts`；headline `fidelity`（ADR-0018）；无金标 skipped；三档禁止合并平均；均值只对 defined；`n_gate_fail` 不含 compress（呈现沿用 ADR-0014）。废弃 composite/m1 仍在 JSON。
 - [x] Hole A 向量效率（ADR-0011 b）：`src/eval/vector_efficiency.ts`；bench `a_eff`；默认确定性 embedding；不进 m1/composite；不进 sparse_intent 停机。
-- [x] ADR-0013 P0：`choosePoolBudget` / `subsampleTraceIds`（池级 T，greedy lex skip-and-continue）；`amortizeRoi` / `amortizedRoiScenarios` / `qualityGatedRoi`（1×1/3×1/3×3；缺 recall/compress fail-closed）。不进 composite/m1。本仓库不内置大模型训练循环。
+- [x] ADR-0013 P0：`choosePoolBudget` / `subsampleTraceIds`（池级 T，greedy lex skip-and-continue）；`amortizeRoi` / `amortizedRoiScenarios` / `qualityGatedRoi`（1×1/3×1/3×3；缺召回或召回不足 fail-closed；compress 不是质量门，ADR-0018）。不进 fidelity。本仓库不内置大模型训练循环。

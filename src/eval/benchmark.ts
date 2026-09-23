@@ -2,15 +2,14 @@ import { dirname, join } from 'node:path'
 import { isSpanFailure } from '../domain/span_violation.ts'
 import { BENCHMARK_PASS } from '../constant/compression.ts'
 import {
-  coherencePass,
-  compressionScore,
-  costGateApplies,
-  costGatePass,
+  compositeScore,
   distillRoi,
+  fidelityScore,
   keyStepRecall,
   m1Score,
   sftTokensSaved,
   type BenchmarkParts,
+  type ReplayFidelityKind,
 } from './metrics.ts'
 import type { HoleAVectorScore } from './vector_efficiency.ts'
 
@@ -18,7 +17,8 @@ import type { HoleAVectorScore } from './vector_efficiency.ts'
 export const BENCHMARK_BINS = ['short', 'long', 'multi_dead_end'] as const
 export type BenchmarkBin = (typeof BENCHMARK_BINS)[number]
 
-export type MetricStatus = 'pass' | 'fail' | 'skipped'
+/** `observed` is a reported number that is not a hard gate (ADR-0018). */
+export type MetricStatus = 'pass' | 'fail' | 'skipped' | 'observed'
 
 export interface KeyDecisionsGold {
   trace_id: string
@@ -27,6 +27,11 @@ export interface KeyDecisionsGold {
   intent_text?: string
   /** Optional gold skeleton point ids. Missing → skeleton recall skipped. */
   skeleton_segment_ids?: string[]
+  /**
+   * ADR-0018: QA hard-gates only when the case set is marked solid.
+   * Absent or false → QA is observational and does not enter fidelity.
+   */
+  qa_solid?: boolean
 }
 
 export interface ScoreSampleInput {
@@ -48,7 +53,14 @@ export interface ScoreSampleInput {
   /** null = 无独立金标（M1 skipped，不算硬挂）。禁止用流水线自己的标签当金标。 */
   gold_segment_ids: readonly string[] | null
   replay: number | null
+  /**
+   * ADR-0018. Omitted → `absent` (the replay number does not enter fidelity).
+   * Bench sets `fake` for `--fake-l4` and `real` only for `--with-l4` + verify.
+   */
+  replay_fidelity?: ReplayFidelityKind
   qa: number | null
+  /** ADR-0018. True only when the case set is marked solid. */
+  qa_solid?: boolean
   coherence_scores: readonly number[] | null
   /** L4 / coherence / verify 可观察失败说明（类似 hole_notes） */
   notes?: readonly string[]
@@ -67,8 +79,12 @@ export interface MetricCell {
 export interface ScoredSample {
   trace_id: string
   bin: BenchmarkBin
+  /**
+   * Active rubric cells (ADR-0018). No compress column.
+   * `replay`, `coherence`, and `distill_cost_ratio` are observational (`observed`
+   * or `skipped`) — they do not fail the sample. `qa` fails only when `qa_solid`.
+   */
   metrics: {
-    compression_ratio: MetricCell
     key_step_recall: MetricCell
     replay: MetricCell
     qa: MetricCell
@@ -76,12 +92,27 @@ export interface ScoredSample {
     distill_cost_ratio: MetricCell
   }
   /**
-   * 六项全过才定义（乘法分，含 cost）；任一门 fail 或 skipped → null（记分板 —，不硬写成 0；ADR-0014）。
+   * Headline (ADR-0018). Defined only with gold and recall ≥ 0.95.
+   * Real verified replay and solid QA may scale it. Fake replay does not.
+   * Otherwise null (scoreboard —, not 0).
+   */
+  fidelity: number | null
+  /** ADR-0018. Recorded so fake replay cannot be mistaken for a fidelity input. */
+  replay_fidelity: ReplayFidelityKind
+  /** ADR-0018. QA hard-gate applies only when true. */
+  qa_solid: boolean
+  /**
+   * Distill / span failure. Counts toward `n_gate_fail`. Not a compress gate.
+   */
+  process_failed: boolean
+  /**
+   * @deprecated ADR-0018. Unchanged ADR-0005 formula (includes compress).
+   * JSON migration field. Not the headline and not a scoreboard column.
    */
   composite: number | null
   /**
-   * M1 出门分：压缩率得分 × 关键步召回。只看 compress+recall；
-   * 两门都过才定义，否则 null（cost/replay/qa/coherence 失败不拖垮 m1_score）。
+   * @deprecated ADR-0018. Unchanged formula: compressionScore × recall.
+   * JSON migration field. Not the headline and not a scoreboard column.
    */
   m1_score: number | null
   gold: 'independent' | 'skipped'
@@ -100,15 +131,28 @@ export interface ScoredSample {
 export interface BinTable {
   bin: BenchmarkBin
   n: number
+  /** Headline mean over defined fidelity only (ADR-0018 / ADR-0014). */
+  mean_fidelity: number | null
+  stddev_fidelity: number | null
+  /** Samples whose fidelity is defined (gold + recall gate). */
+  n_defined_fidelity: number
+  /**
+   * @deprecated ADR-0018. Mean of defined composite (old six-gate formula).
+   * Not the headline.
+   */
   mean_composite: number | null
   stddev_composite: number | null
-  /** Samples whose composite is defined (all six gates passed). Mean is over these only. */
+  /** @deprecated ADR-0018. Samples whose deprecated composite is defined. */
   n_defined_composite: number
+  /** @deprecated ADR-0018. Not the headline. */
   mean_m1_score: number | null
   stddev_m1_score: number | null
-  /** Samples whose m1 is defined (compression + recall gates passed). */
+  /** @deprecated ADR-0018. Samples whose deprecated m1 is defined. */
   n_defined_m1: number
-  /** Samples with any metric status `fail` (process-gate / distill / span). */
+  /**
+   * Samples with a hard-gate `fail` or a distill/span failure.
+   * Compress, cost, coherence, and fake replay do not count.
+   */
   n_gate_fail: number
   mean_hole_a_efficiency: number | null
   stddev_hole_a_efficiency: number | null
@@ -156,7 +200,14 @@ export function parseKeyDecisions(text: string): KeyDecisionsGold {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('key-decisions.json 必须是对象')
   }
-  const row = parsed as { trace_id?: unknown; segment_ids?: unknown; intent_text?: unknown; intent?: unknown; skeleton_segment_ids?: unknown }
+  const row = parsed as {
+    trace_id?: unknown
+    segment_ids?: unknown
+    intent_text?: unknown
+    intent?: unknown
+    skeleton_segment_ids?: unknown
+    qa_solid?: unknown
+  }
   if (typeof row.trace_id !== 'string' || row.trace_id.length === 0) {
     throw new Error('key-decisions.json 需要 trace_id')
   }
@@ -171,6 +222,12 @@ export function parseKeyDecisions(text: string): KeyDecisionsGold {
       throw new Error('key-decisions.json skeleton_segment_ids 必须是 string[]')
     }
     gold.skeleton_segment_ids = row.skeleton_segment_ids
+  }
+  if (row.qa_solid !== undefined) {
+    if (typeof row.qa_solid !== 'boolean') {
+      throw new Error('key-decisions.json qa_solid 必须是 boolean')
+    }
+    if (row.qa_solid) gold.qa_solid = true
   }
   return gold
 }
@@ -191,63 +248,60 @@ function readOptionalIntentText(value: unknown): string | undefined {
 }
 
 /**
- * 六项门槛：缺项 skipped；任一项 fail 或 skipped → 总分 null（记分板 —，ADR-0014）。
- * 全过：Score = 压缩率得分 × 召回 × 重放（召回/重放 0–1）。
- * 完整 composite 含 cost 门槛（short/small soft：只报不分）；勿静默去掉 L4 外成本。
+ * @deprecated ADR-0018. Delegates to `compositeScore` (old six-gate formula,
+ * including compress). Not the headline.
  */
 export function scoredComposite(parts: BenchmarkParts): number | null {
-  const statuses = metricStatuses(parts)
-  if (Object.values(statuses).some((s) => s !== 'pass')) return null
-  return compressionScore(parts.compression_ratio) * parts.key_step_recall! * parts.replay!
+  return compositeScore(parts)
 }
 
-/** M1：仅 compress + key_step_recall。见 metrics.m1Score。 */
+/** @deprecated ADR-0018. Delegates to `m1Score`. Not the headline. */
 export function scoredM1(parts: BenchmarkParts): number | null {
   return m1Score(parts)
 }
 
+/**
+ * Active cells (ADR-0018). Compress is absent. Replay, coherence, and cost
+ * never return `fail`. QA returns `fail` only for a solid case set below `qa_min`.
+ */
 export function metricStatuses(parts: BenchmarkParts): {
-  compression_ratio: MetricStatus
   key_step_recall: MetricStatus
   replay: MetricStatus
   qa: MetricStatus
   coherence: MetricStatus
   distill_cost_ratio: MetricStatus
 } {
+  const coherenceValue = coherenceMean(parts.coherence_scores)
   return {
-    compression_ratio: parts.compression_ratio <= BENCHMARK_PASS.compression_ratio_max ? 'pass' : 'fail',
     key_step_recall: optionalGate(
       parts.key_step_recall,
       (v) => v >= BENCHMARK_PASS.key_step_recall_min,
     ),
-    replay: optionalGate(parts.replay, (v) => v >= BENCHMARK_PASS.replay_min),
-    qa: optionalGate(parts.qa, (v) => v >= BENCHMARK_PASS.qa_min),
-    coherence:
-      parts.coherence_scores === null
-        ? 'skipped'
-        : coherencePass(parts.coherence_scores)
-          ? 'pass'
-          : 'fail',
-    distill_cost_ratio: (() => {
-      if (!Number.isFinite(parts.distill_cost_ratio)) return 'fail'
-      // short / small original: report value but do not fail composite
-      const gateOpts = {
-        ...(parts.bin !== undefined ? { bin: parts.bin } : {}),
-        ...(parts.original_tokens !== undefined
-          ? { original_tokens: parts.original_tokens }
-          : {}),
-      }
-      if (!costGateApplies(gateOpts)) {
-        return 'pass'
-      }
-      return costGatePass(parts.distill_cost_ratio, gateOpts)
-        ? 'pass'
-        : 'fail'
-    })(),
+    replay: observedOrSkipped(parts.replay),
+    qa:
+      parts.qa_solid === true
+        ? optionalGate(parts.qa, (v) => v >= BENCHMARK_PASS.qa_min)
+        : observedOrSkipped(parts.qa),
+    coherence: observedOrSkipped(coherenceValue),
+    distill_cost_ratio: observedOrSkipped(
+      Number.isFinite(parts.distill_cost_ratio) ? parts.distill_cost_ratio : null,
+    ),
   }
 }
 
-/** Bench sample that failed distill (e.g. SpanFailure): composite null, compression fail. Counts as n_gate_fail. */
+/** Bench wiring: only `--with-l4` plus a verify run is `real`. */
+export function classifyReplayFidelity(input: {
+  replay: number | null
+  real_l4: boolean
+  replay_verified: boolean
+}): ReplayFidelityKind {
+  if (input.replay === null) return 'absent'
+  if (input.real_l4 && input.replay_verified) return 'real'
+  if (input.real_l4) return 'unverified'
+  return 'fake'
+}
+
+/** Bench sample that failed distill (e.g. SpanFailure). fidelity null. Counts as n_gate_fail via process_failed, not compress. */
 export function failedBenchSample(input: {
   bin: BenchmarkBin
   trace_id: string
@@ -257,13 +311,16 @@ export function failedBenchSample(input: {
     trace_id: input.trace_id,
     bin: input.bin,
     metrics: {
-      compression_ratio: { value: null, status: 'fail' },
       key_step_recall: { value: null, status: 'skipped' },
       replay: { value: null, status: 'skipped' },
       qa: { value: null, status: 'skipped' },
       coherence: { value: null, status: 'skipped' },
       distill_cost_ratio: { value: null, status: 'skipped' },
     },
+    fidelity: null,
+    replay_fidelity: 'absent',
+    qa_solid: false,
+    process_failed: true,
     composite: null,
     m1_score: null,
     gold: 'skipped',
@@ -299,6 +356,8 @@ export function scoreSample(input: ScoreSampleInput): ScoredSample {
     gold === null
       ? null
       : keyStepRecall({ gold_segment_ids: gold, kept: input.kept })
+  const qaSolid = input.qa_solid === true
+  const replayFidelity: ReplayFidelityKind = input.replay_fidelity ?? 'absent'
   const parts: BenchmarkParts = {
     compression_ratio: input.compression_ratio,
     key_step_recall: recall,
@@ -307,20 +366,24 @@ export function scoreSample(input: ScoreSampleInput): ScoredSample {
     coherence_scores: input.coherence_scores,
     distill_cost_ratio: input.distill_cost_ratio,
     bin: input.bin,
+    qa_solid: qaSolid,
     ...(input.original_tokens !== undefined
       ? { original_tokens: input.original_tokens }
       : {}),
   }
   const statuses = metricStatuses(parts)
-  const coherenceValue =
-    input.coherence_scores === null || input.coherence_scores.length === 0
-      ? null
-      : input.coherence_scores.reduce((sum, n) => sum + n, 0) / input.coherence_scores.length
+  const coherenceValue = coherenceMean(input.coherence_scores)
+  const fidelity = fidelityScore({
+    key_step_recall: recall,
+    replay: input.replay,
+    replay_fidelity: replayFidelity,
+    qa: input.qa,
+    qa_solid: qaSolid,
+  })
   const sample: ScoredSample = {
     trace_id: input.trace_id,
     bin: input.bin,
     metrics: {
-      compression_ratio: { value: input.compression_ratio, status: statuses.compression_ratio },
       key_step_recall: { value: recall, status: statuses.key_step_recall },
       replay: { value: input.replay, status: statuses.replay },
       qa: { value: input.qa, status: statuses.qa },
@@ -330,6 +393,10 @@ export function scoreSample(input: ScoreSampleInput): ScoredSample {
         status: statuses.distill_cost_ratio,
       },
     },
+    fidelity,
+    replay_fidelity: replayFidelity,
+    qa_solid: qaSolid,
+    process_failed: false,
     composite: scoredComposite(parts),
     m1_score: scoredM1(parts),
     gold: gold === null ? 'skipped' : 'independent',
@@ -357,6 +424,13 @@ export function aggregateBins(samples: readonly ScoredSample[]): BenchmarkReport
   for (const bin of BENCHMARK_BINS) {
     const table = bins[bin]
     table.n = table.samples.length
+    const fidelityScores = table.samples
+      .map((s) => s.fidelity)
+      .filter((n): n is number => n !== null)
+    const fidelityStats = meanStd(fidelityScores)
+    table.mean_fidelity = fidelityStats.mean
+    table.stddev_fidelity = fidelityStats.stddev
+    table.n_defined_fidelity = fidelityScores.length
     const scores = table.samples
       .map((s) => s.composite)
       .filter((n): n is number => n !== null)
@@ -393,6 +467,9 @@ function emptyBin(bin: BenchmarkBin): BinTable {
   return {
     bin,
     n: 0,
+    mean_fidelity: null,
+    stddev_fidelity: null,
+    n_defined_fidelity: 0,
     mean_composite: null,
     stddev_composite: null,
     n_defined_composite: 0,
@@ -433,7 +510,19 @@ function economicsFromScoreInput(input: ScoreSampleInput): {
 }
 
 function sampleHasGateFail(sample: ScoredSample): boolean {
+  if (sample.process_failed) return true
   return Object.values(sample.metrics).some((cell) => cell.status === 'fail')
+}
+
+function coherenceMean(scores: readonly number[] | null): number | null {
+  if (scores === null || scores.length === 0) return null
+  return scores.reduce((sum, n) => sum + n, 0) / scores.length
+}
+
+/** Finite number → observed (not a gate). Null / non-finite → skipped. */
+function observedOrSkipped(value: number | null): MetricStatus {
+  if (value === null || !Number.isFinite(value)) return 'skipped'
+  return 'observed'
 }
 
 function optionalGate(value: number | null, pass: (v: number) => boolean): MetricStatus {

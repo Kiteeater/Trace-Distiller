@@ -29,6 +29,7 @@ import {
   failedBenchSample,
   isBenchmarkBin,
   keyDecisionFileCandidates,
+  classifyReplayFidelity,
   noteFromBenchDistillError,
   parseKeyDecisions,
   scoreSample,
@@ -42,12 +43,13 @@ import {
   type EmbeddingProvider,
   type HoleAVectorScore,
 } from '../eval/vector_efficiency.ts'
-import { computeDistillMetrics, compositeScore, type DistillMetrics } from '../eval/metrics.ts'
+import { computeDistillMetrics, compositeScore, fidelityScore, type DistillMetrics } from '../eval/metrics.ts'
 import { scoreKeptPathCoherence } from '../eval/coherence.ts'
 import { L4_METRICS_ONLY_NOTE, runOptionalL4 } from '../eval/run.ts'
 import { renderScoreboardMarkdown } from '../eval/scoreboard.ts'
 import {
   FakeSessionBackend,
+  hasInjectedSessionBackend,
   holeModelsConfigured,
   l4BackendAvailable,
   setSessionBackend,
@@ -156,7 +158,7 @@ OpenAI-compatible gateway: copy .env.example to .env. TRACE_DISTILLER_API_BASE +
 
 eval reads distill metrics from SQLite. --qa / --replay run L4 sessions when a backend is injected or TRACE_DISTILLER_MODEL_L4 is set; otherwise skip and note. L4 tokens are not distill cost. Real replay success needs a mapped benchmark/workspaces fixture + model; this command wires cwd when present.
 
-bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample, scores six gates, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Default injects FakeSessionBackend when not --with-l4 so overnight/CI cannot hang on mint (ADR-0010 agent path, not rules-only). --with-l4 opts into real mint L4 (session calls have SESSION_CALL_TIMEOUT_MS hard timeout; for long mint set TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000). --fake-l4 also runs deterministic L4 heal + verify so composite can exceed 0 without mint. --bin / --bins select tracks so short and long are not forced into one hang-prone run; each selected bin uses its CutProfile valve (short=less aggressive dead_end + soft cost; long/multi=stronger collapse + keep floor ~8–15%) unless --profile overrides. Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces; unmapped traces skip replay (null, not fail=0); success is gated by workspace verify[] when present. QA near-JSON is repaired; still-unparseable after retries skips (null). Tracks are never averaged. Missing *.key-decisions.json skips key-step recall (M1). composite / m1_score are defined only when that score's required gates all pass (numeric values); otherwise null (rendered —), not 0 (ADR-0014). Required for m1: compression + key_step_recall. Required for composite: all six (short/small cost still soft). Skipped among the six keeps composite null. Means are over defined scores only; n_gate_fail counts samples with any metric fail. m1_score = compressionScore x key_step_recall when defined (cost fail does not undefine m1). Hole A vector efficiency (ADR-0011 b) is bench-only: a_eff = quality / log(1+tokens); quality = cosine(predicted intent vs optional gold intent_text) and optional skeleton_segment_ids recall. Default embedding is deterministic hash (no API key; TRACE_DISTILLER_EMBEDDING_PROVIDER=openai|http for a real provider). Not an online stop (sparse_intent still uses enough + hard budget). --no-vector-efficiency skips. L4/coherence failures surface as sample notes. Distill/SpanFailure per sample is recorded (composite null, compression fail; counts toward n_gate_fail) so the scoreboard still writes.
+bench scans --dir/{short,long,multi_dead_end}/*.jsonl, distills each sample, scores the ADR-0018 rubric, prints JSON, and writes scoreboard.md under --out-dir (default benchmark/out). Default injects FakeSessionBackend when not --with-l4 so overnight/CI cannot hang on mint (ADR-0010 agent path, not rules-only). --with-l4 opts into real mint L4 (session calls have SESSION_CALL_TIMEOUT_MS hard timeout; for long mint set TRACE_DISTILLER_SESSION_TIMEOUT_MS=300000). --fake-l4 runs deterministic L4 heal + verify as smoke only: fake replay does not enter fidelity. --bin / --bins select tracks; each selected bin uses its CutProfile valve (short=less aggressive dead_end; long/multi=stronger collapse + keep floor ~8–15%) unless --profile overrides. Replay resolves benchmark/workspaces/manifest.json and materializes a temp cwd for mapped traces; unmapped traces skip replay (null, not fail=0). Real replay enters fidelity only for --with-l4 when workspace verify[] ran. QA near-JSON is repaired; still-unparseable after retries skips (null). QA hard-gates only when key-decisions.json sets qa_solid true; otherwise QA is observational. Tracks are never averaged. Missing *.key-decisions.json skips key-step recall. Headline fidelity is defined only when gold exists and key_step_recall >= 0.95; otherwise null (rendered —), not 0. It may scale by that real verified replay and by solid QA. Compress is not a hard gate, not a multiplier, and not a scoreboard column; a wide keep can still be green. Coherence is observational and does not enter fidelity. Primary cost column is absolute AB distill_tokens; spent/saved is observational, not a hard gate; L4 is excluded. Deprecated composite / m1_score keep their old formulas (including compress) in JSON only and are not the headline. Means are over defined scores only. n_gate_fail counts recall fails, solid-QA fails, and distill/span failures — not compress, cost, coherence, or fake replay. Hole A vector efficiency (ADR-0011 b) is bench-only: a_eff = quality / log(1+tokens); quality = cosine(predicted intent vs optional gold intent_text) and optional skeleton_segment_ids recall. Default embedding is deterministic hash (no API key; TRACE_DISTILLER_EMBEDDING_PROVIDER=openai|http for a real provider). Not an online stop (sparse_intent still uses enough + hard budget). --no-vector-efficiency skips. L4/coherence notes stay on the sample. Distill/SpanFailure per sample is recorded (fidelity null, process_failed; counts toward n_gate_fail) so the scoreboard still writes.
 
 live dumps Distiller's own cut (segment / rules / holes / assemble, Partial Playback, warrant tail) to JSON + a self-contained live.html opened via file://. It is not the other agent's runtime. --live-dump writes <dir>/<job_id>.live.json and <dir>/live.html. Default transport is in-process registerJobFromResult + file dump. --live-socket <path> optionally listens on a Unix domain socket (JSON lines: {op:list_jobs|attach_job|...}) during distill; the command closes it on exit (stopLiveSocket unlinks the sock file) and does not keep the process alive. No HTTP listen. Never a TCP port.
 
@@ -687,6 +689,7 @@ async function runBench(args: CliArgs): Promise<number> {
 
           let qa: number | null = null
           let replay: number | null = null
+          let replayVerified = false
           let coherence_scores: number[] | null = null
           const sampleNotes: string[] = []
           if (runL4) {
@@ -699,6 +702,7 @@ async function runBench(args: CliArgs): Promise<number> {
             })
             qa = l4.qa
             replay = l4.replay
+            replayVerified = l4.replay_verified
             sampleNotes.push(...l4.notes)
           } else if (!wantFakeL4 && !wantRealL4) {
             sampleNotes.push(
@@ -752,7 +756,13 @@ async function runBench(args: CliArgs): Promise<number> {
               kept: result.plan.kept,
               gold_segment_ids: gold === null ? null : gold.segment_ids,
               replay,
+              replay_fidelity: classifyReplayFidelity({
+                replay,
+                real_l4: wantRealL4,
+                replay_verified: replayVerified,
+              }),
               qa,
+              qa_solid: gold?.qa_solid === true,
               coherence_scores,
               ...(sampleNotes.length > 0 ? { notes: sampleNotes } : {}),
               ...(hole_a_vector !== undefined ? { hole_a_vector } : {}),
@@ -893,6 +903,20 @@ async function runEval(args: CliArgs): Promise<number> {
       coherence_scores: null,
       distill_cost_ratio: metrics.distill_cost_ratio,
     })
+    // Stored replay/QA have unknown provenance. Only this invocation's replay
+    // may enter fidelity, and only when it is real mint + verify (ADR-0018).
+    const fidelityReplay = run_replay ? l4.replay : null
+    const fidelity = fidelityScore({
+      key_step_recall: metrics.key_step_recall,
+      replay: fidelityReplay,
+      replay_fidelity: classifyReplayFidelity({
+        replay: fidelityReplay,
+        real_l4: run_replay && !hasInjectedSessionBackend(),
+        replay_verified: run_replay && l4.replay_verified,
+      }),
+      qa,
+      qa_solid: false,
+    })
     if (l4.qa !== null || l4.replay !== null) {
       insertMetrics(db, {
         ...metrics,
@@ -918,6 +942,7 @@ async function runEval(args: CliArgs): Promise<number> {
         replay,
         qa,
         coherence: metrics.coherence,
+        fidelity,
         composite,
         note: notes.join('; '),
       })}\n`,

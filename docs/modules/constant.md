@@ -27,7 +27,7 @@
 /** 压缩率：剪后 token / 原 token。PRD MVP 目标。 */
 const COMPRESSION_RATIO_TARGET = { min: 0.10, max: 0.30 }
 
-/** 压缩率得分结点与六项及格线见 `src/constant/compression.ts`（ADR-0005）。 */
+/** 压缩率得分结点与阈值见 `src/constant/compression.ts`。现行硬门只有召回，QA 仅 solid（ADR-0018）。compress 阈值只服务废弃的 composite/m1。 */
 
 /** 洞 B 每窗段数。已拍板。 */
 const LABEL_WINDOW_SIZE = 8

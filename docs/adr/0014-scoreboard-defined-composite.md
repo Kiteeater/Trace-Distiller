@@ -4,6 +4,8 @@
 
 accepted（2026-09-12）
 
+**Superseded in part by** [ADR-0018](./0018-fidelity-rubric-without-compress.md)：compress 不再是硬门或记分板列；headline 改为 `fidelity`。`null` → `—`、不硬写成 0、均值只对 defined，这条呈现规则继续用于 fidelity。下文「不放松 compress ≤ 0.3」描述的是当时的门，不是现行门。
+
 **Related**:
 
 - [ADR-0005](./0005-benchmark-multiplicative-score.md)（乘法公式：压缩率得分 × 召回 × 重放；本 ADR 不改公式，只改「未过门槛」的呈现）

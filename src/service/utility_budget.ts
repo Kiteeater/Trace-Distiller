@@ -465,7 +465,7 @@ export function renderUtilityReportMarkdown(report: UtilityReport): string {
     lines.push(`- reason: ${report.quality_gated_roi.reason}`)
   }
   lines.push('')
-  lines.push('本仓库不内置大模型训练循环。Amortized numbers use quality-gated ROI (null when gates fail).')
+  lines.push('本仓库不内置大模型训练循环。Amortized numbers use quality-gated ROI (null when recall is missing or below 0.95; compress is not a quality gate, ADR-0018).')
   lines.push('')
   return `${lines.join('\n')}\n`
 }

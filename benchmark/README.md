@@ -1,6 +1,8 @@
 # Benchmark 设计
 
-> **一句话**：6 个单项、3 层结构。用乘法复合分把「压缩 ↔ 保真」锁死；用连贯性下限卡住跳步幻觉；用分档赛道防止只挑软柿子。
+> **一句话（ADR-0018）**：出门看保真分 `fidelity`，不看压缩硬门。有金标且关键步召回 ≥ 0.95 才定义。假重放不进分。压缩率不是硬门、不是乘数、不是列。下文六项乘法是历史设计，公式留在废弃的 `composite` / `m1`。
+
+> **历史一句话**：6 个单项、3 层结构。用乘法复合分把「压缩 ↔ 保真」锁死；用连贯性下限卡住跳步幻觉；用分档赛道防止只挑软柿子。分档赛道仍然有效。压缩硬门已被 [ADR-0018](../docs/adr/0018-fidelity-rubric-without-compress.md) 撤掉。
 
 | 字段 | 内容 |
 |------|------|
@@ -150,8 +152,8 @@ node script/run-distill.ts bench --with-l4
 - 扫 `short/` `long/` `multi_dead_end/` 下的 `*.jsonl`。**默认 `no_llm`**（即使 `.env` 有 mint 也不自动连网），避免过夜挂起。
 - `--fake-l4`：注入 `FakeSessionBackend`（确定性 heal + verify），三档均可出现 `replay=1` / `composite>0`。
 - `--with-l4`：才启用真 mint L4 / with_llm。
-- **composite**：六项全过才**定义**；否则 `null`（记分板 `—`，不硬写成 0；ADR-0014）。公式（defined 时）= 压缩率得分 × 关键步召回 × 重放（乘法）。含 cost≤0.3 门槛（**short / original_tokens≤25k：cost 只报不分**；仍不计 L4）。三档**禁止合成平均**。档均值只对 defined；另计 `n_gate_fail`。
-- **m1_score**：M1 硬门禁 = 压缩率得分 × 关键步召回（compress+recall 都过才定义）。cost/replay/qa/coherence 失败不归零 m1。短 trace 真 mint 成本比常 >0.3 → composite 为 `—` 但 m1 可 defined。
+- **fidelity（现行 headline，ADR-0018）**：有金标且 `key_step_recall ≥ 0.95` 才定义；否则 `null`（记分板 `—`，不硬写成 0）。可乘 `--with-l4` 且 `verify[]` 跑过的重放，以及 `qa_solid: true` 的 QA。`--fake-l4` 的 replay 是 smoke，不进 fidelity。连贯性不进。压缩率不进，过宽仍可绿。QA 未标 solid 则只观测。成本主列是 `distill_tokens`（不计 L4）；spent/saved 只观测。三档**禁止合成平均**。`n_gate_fail` 计召回失败、solid QA 失败、distill/span 失败。
+- **composite / m1_score（废弃，公式不改）**：JSON 仍带 ADR-0005 的压缩率乘法。不是记分板列，不是 headline。不要把这两个名字读成 fidelity。
 - 金标：先读 `data/raw/<trace_id>.key-decisions.json`，没有再读样本旁的 `<stem>.key-decisions.json`。没有金标 → 关键步召回 `skipped`，M1 **不算硬挂**。
 - stdout 一行 JSON + `benchmark/out/scoreboard.md`。
 - 现有样本：`short/`（add-fix + fluff-heavy）、`long/long-debug`、`multi_dead_end/many-retries`；workspaces 见 `manifest.json`。

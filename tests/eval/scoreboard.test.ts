@@ -7,6 +7,9 @@ function emptyBin(bin: BenchmarkBin): BinTable {
   return {
     bin,
     n: 0,
+    mean_fidelity: null,
+    stddev_fidelity: null,
+    n_defined_fidelity: 0,
     mean_composite: null,
     stddev_composite: null,
     n_defined_composite: 0,
@@ -29,6 +32,9 @@ describe('scoreboard markdown', () => {
       short: {
         bin: 'short',
         n: 1,
+        mean_fidelity: 1,
+        stddev_fidelity: 0,
+        n_defined_fidelity: 1,
         mean_composite: 10,
         stddev_composite: 0,
         n_defined_composite: 1,
@@ -46,13 +52,16 @@ describe('scoreboard markdown', () => {
             trace_id: 't1',
             bin: 'short',
             metrics: {
-              compression_ratio: { value: 0.2, status: 'pass' },
               key_step_recall: { value: 1, status: 'pass' },
-              replay: { value: 1, status: 'pass' },
-              qa: { value: 0.9, status: 'pass' },
-              coherence: { value: 4.5, status: 'pass' },
-              distill_cost_ratio: { value: 0.1, status: 'pass' },
+              replay: { value: 1, status: 'observed' },
+              qa: { value: 0.9, status: 'observed' },
+              coherence: { value: 4.5, status: 'observed' },
+              distill_cost_ratio: { value: 0.1, status: 'observed' },
             },
+            fidelity: 1,
+            replay_fidelity: 'absent',
+            qa_solid: false,
+            process_failed: false,
             composite: 60,
             m1_score: 80,
             gold: 'independent',
@@ -80,12 +89,12 @@ describe('scoreboard markdown', () => {
     assert.match(md, /t1/)
     assert.match(md, /never averaged/i)
     assert.match(md, /m1_score/)
-    assert.match(md, /\| m1 \|/)
+    assert.match(md, /\| fidelity \|/)
     assert.match(md, /\| a_eff \|/)
     assert.match(md, /\| roi \|/)
     assert.match(md, /\| distill_tokens \|/)
     assert.match(md, /\| sft_saved \|/)
-    assert.match(md, /mean m1=/)
+    assert.match(md, /mean fidelity=1\.000 \(defined=1\)/)
     assert.match(md, /mean a_eff=/)
     assert.match(md, /mean roi=10\.00 \(defined=1\)/)
     assert.match(md, /defined=1/)
@@ -94,18 +103,25 @@ describe('scoreboard markdown', () => {
     assert.match(md, /ADR-0011 b/)
     assert.match(md, /ADR-0014/)
     assert.match(md, /ADR-0015/)
+    assert.match(md, /ADR-0018/)
     assert.match(md, /utility-report/)
     assert.match(md, /1×1/)
+    assert.doesNotMatch(md, /\| compress \|/)
+    assert.doesNotMatch(md, /\| composite \|/)
+    assert.doesNotMatch(md, /\| m1 \|/)
     assert.doesNotMatch(md, /overall score/i)
     assert.doesNotMatch(md, /hard-?zero/i)
     assert.doesNotMatch(md, /fail → 0/)
   })
 
-  it('renders undefined composite/m1 as em dash, not zero', () => {
+  it('renders undefined fidelity as em dash, not zero', () => {
     const bins: BenchmarkReport['bins'] = {
       short: {
         bin: 'short',
         n: 1,
+        mean_fidelity: null,
+        stddev_fidelity: null,
+        n_defined_fidelity: 0,
         mean_composite: null,
         stddev_composite: null,
         n_defined_composite: 0,
@@ -123,13 +139,16 @@ describe('scoreboard markdown', () => {
             trace_id: 't-fail',
             bin: 'short',
             metrics: {
-              compression_ratio: { value: 0.9, status: 'fail' },
-              key_step_recall: { value: 1, status: 'pass' },
-              replay: { value: 1, status: 'pass' },
-              qa: { value: 0.9, status: 'pass' },
-              coherence: { value: 4.5, status: 'pass' },
-              distill_cost_ratio: { value: 0.1, status: 'pass' },
+              key_step_recall: { value: 0.5, status: 'fail' },
+              replay: { value: 1, status: 'observed' },
+              qa: { value: 0.9, status: 'observed' },
+              coherence: { value: 4.5, status: 'observed' },
+              distill_cost_ratio: { value: 0.1, status: 'observed' },
             },
+            fidelity: null,
+            replay_fidelity: 'fake',
+            qa_solid: false,
+            process_failed: false,
             composite: null,
             m1_score: null,
             gold: 'independent',
@@ -144,12 +163,12 @@ describe('scoreboard markdown', () => {
     }
     const md = renderScoreboardMarkdown({ dir: 'benchmark/datasets', mode: 'with_llm', l4: false, bins })
     assert.match(md, /t-fail/)
-    assert.match(md, /0\.900 \(f\)/)
-    assert.match(md, /mean composite=— \(defined=0\)/)
-    assert.match(md, /mean m1=— \(defined=0\)/)
+    assert.match(md, /0\.500 \(f\)/)
+    assert.match(md, /mean fidelity=— \(defined=0\)/)
     assert.match(md, /mean roi=— \(defined=0\)/)
     assert.match(md, /gate fails=1/)
-    assert.match(md, /\| t-fail \|.*\| — \| — \|/)
+    assert.match(md, /\| t-fail \|.*\| — \|/)
+    assert.doesNotMatch(md, /\| compress \|/)
     assert.doesNotMatch(md, /\| t-fail \|.*\| 0\.00 \|/)
   })
 })

@@ -101,6 +101,7 @@ describe("real replay workspace wiring", () => {
       repo_root: repoRoot,
     })
     assert.equal(l4.replay, 1, `replay notes: ${l4.notes.join("; ")}`)
+    assert.equal(l4.replay_verified, true)
     assert.equal(l4.qa, 1)
     assert.ok(l4.notes.some((n) => /deterministic workspace heal|verify ok/.test(n)), l4.notes.join("; "))
     assert.ok(l4.notes.some((n) => /verify ok/.test(n)), l4.notes.join("; "))
@@ -121,17 +122,19 @@ describe("real replay workspace wiring", () => {
       kept: ["s0017", "s0018"],
       gold_segment_ids: ["s0017", "s0018"],
       replay: l4.replay,
+      replay_fidelity: "fake",
       qa: l4.qa,
       coherence_scores: coh.scores,
       notes: [...l4.notes, ...coh.notes],
     })
-    assert.equal(sample.metrics.replay.status, "pass")
-    assert.equal(sample.metrics.compression_ratio.status, "pass")
-    assert.equal(sample.metrics.coherence.status, "pass")
+    assert.equal(sample.metrics.replay.status, "observed")
+    assert.equal(sample.metrics.coherence.status, "observed")
+    assert.equal(sample.fidelity, 1)
     assert.ok(sample.composite !== null)
     assert.ok(sample.composite! > 0)
     const expected = compressionScore(0.062210456651224356) * 1 * 1
     assert.equal(sample.composite, expected)
+    assert.notEqual(sample.fidelity, sample.composite)
     assert.ok(sample.notes !== undefined && sample.notes.length > 0)
   })
 
@@ -226,9 +229,10 @@ describe("real replay workspace wiring", () => {
       coherence_scores: [5, 5, 4, 5],
     })
     assert.equal(sample.metrics.replay.status, "skipped")
-    // skipped replay keeps composite null (not zeroed by missing fixture)
+    // skipped replay keeps deprecated composite null (not zeroed by missing fixture)
     assert.equal(sample.composite, null)
     assert.ok(sample.m1_score !== null && sample.m1_score! > 0)
+    assert.equal(sample.fidelity, 1)
   })
 
   it("salvages QA near-JSON with trailing commas via parse path", async () => {

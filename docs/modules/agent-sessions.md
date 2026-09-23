@@ -80,7 +80,7 @@ function skeletonPass(input: SkeletonPassInput): Promise<SkeletonPassOutput>
 
 洞 A/B 卡片索引（`CARD_INDEX` / `WINDOW_CARDS`）只注入 **id + tool/sig/outcome + 短 head**（`CARD_INDEX_HEAD_MAX_CHARS`），不含 reads/writes/tokens/focus；洞 A 的 HEAD/VERIFICATION 正文按 `SKELETON_TURN_CONTENT_MAX_CHARS` 截断。需要全文时洞 B 用 `read_segment`。
 
-**成本门注记**：`distill_cost_ratio≤0.3` 对 **短 trace + with_llm** 可能仍难达到——分子含 pi 会话系统开销 / 工具 schema / 多轮 tool call 的真实 Usage，固定开销相对「已删 token」偏大。压缩 prompt 可实质降 hole tokens；不改门禁、不重开 ADR-0008。Fail-Closed Keep 仍有效。
+**成本注记**：短 trace 上洞 A+B 固定开销会让 `distill_cost_ratio` 很大。ADR-0018 起这是观测值，不是硬门；记分板主报绝对量 `distill_tokens`（不计 L4）。压缩 prompt 仍可降 hole tokens。Fail-Closed Keep 仍有效。
 
 ### 洞 A 二次调用 — 写 CutWarrant（建议）
 
